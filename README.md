@@ -11,6 +11,8 @@ An Obsidian plugin that reads your notes aloud using text-to-speech. MVP ships w
 - **Playback speed** setting (0.5x–2x), applied client-side on the audio player so it works with any TTS provider or voice.
 - Long notes are automatically split into multiple requests (respecting each ElevenLabs model's character limit) and played back-to-back, rather than failing outright.
 - Markdown syntax (headings, links, emphasis, code blocks, frontmatter, etc.) is stripped before sending text to the TTS provider so it isn't read aloud literally.
+- **Voice** is a dropdown populated from your ElevenLabs account's voices (first 100), with a refresh button — no need to look up voice IDs manually.
+- **Save generated audio to a file** setting (off by default) — saves each read as an `.mp3`, either in the same folder as the note or a configurable custom folder.
 
 ### Planned
 
@@ -21,13 +23,14 @@ An Obsidian plugin that reads your notes aloud using text-to-speech. MVP ships w
 
 1. Install the plugin (see below).
 2. Open **Settings → Obsidian Reader** and add your ElevenLabs API key. It's stored via Obsidian's built-in [SecretStorage](https://docs.obsidian.md/plugins/guides/secret-storage), not in this plugin's own settings file — the setting only remembers which secret to look up, so the key can be shared with other plugins that use the same secret and never appears in `data.json`.
-3. Set a **Voice ID** (find one in your ElevenLabs voice library) and pick a **Model** — Eleven v3 (research preview), Eleven Multilingual v2, or Eleven Flash v2.5.
+3. Pick a **Voice** from the dropdown (fetched from your ElevenLabs account) and a **Model** — Eleven v3 (research preview), Eleven Multilingual v2, or Eleven Flash v2.5.
 4. Click the ribbon icon in the left sidebar, or the speaker icon at the top-right of a note (or run **Read note aloud** from the command palette). This opens the **Obsidian Reader** panel in the right sidebar with progress and playback controls.
 
 ## Known limitations (MVP)
 
-- The player view and pause/resume/skip controls have only been verified by type-checking and code inspection against Obsidian's actual source, not by clicking through them in a running vault — the per-note action icon and ribbon icon are both confirmed working.
-
+- The player view, pause/resume/skip controls, voice dropdown, and save-to-file feature have only been verified by type-checking, lint, and standalone logic tests, not by clicking through them in a running vault — the per-note action icon and ribbon icon are confirmed working.
+- The voice dropdown fetches only the first 100 voices from your ElevenLabs account (no pagination past that).
+- Saving audio concatenates raw chunk bytes for multi-part reads rather than properly re-muxing the MP3 stream; this works in practice for ElevenLabs' output but isn't a fully spec-correct MP3 concatenation.
 - Eleven v3 is ElevenLabs' own "research preview" model — it can be more expressive but also more prone to hallucinated/mispronounced output than Multilingual v2, and their Professional Voice Clones aren't fully optimized for it yet.
 - No scrubbing to an arbitrary point — only relative rewind/skip by the configured skip amount.
 - Requires an ElevenLabs account and API key; this plugin makes network requests to `api.elevenlabs.io` only when you trigger a read.

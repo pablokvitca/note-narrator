@@ -1,4 +1,5 @@
-import { App, Events, MarkdownView, Notice } from 'obsidian';
+import { App, Events, MarkdownView, moment, Notice, normalizePath, TFile } from 'obsidian';
+import { concatArrayBuffers } from './audio-utils';
 import { DEFAULT_ELEVENLABS_CHAR_LIMIT, ELEVENLABS_MODEL_CHAR_LIMITS, ReaderSettings } from './settings';
 import { chunkText, stripMarkdown } from './text-utils';
 import { ElevenLabsProvider } from './tts/elevenlabs-provider';
@@ -90,10 +91,10 @@ export class Reader extends Events {
 
 		const selection = target.editor.getSelection();
 		const useSelection = this.settings.readSelectionIfPresent && selection.length > 0;
-		await this.readText(useSelection ? selection : target.editor.getValue());
+		await this.readText(useSelection ? selection : target.editor.getValue(), target.file);
 	}
 
-	private async readText(rawText: string): Promise<void> {
+	private async readText(rawText: string, sourceFile: TFile | null): Promise<void> {
 		const text = stripMarkdown(rawText).trim();
 		if (!text) {
 			new Notice('Nothing to read.');
@@ -115,6 +116,8 @@ export class Reader extends Events {
 
 		this.setState({ status: 'generating', chunkIndex: 0, chunkCount: chunks.length, currentTime: 0, duration: 0 });
 
+		const generatedChunks: ArrayBuffer[] = [];
+
 		for (const [i, chunk] of chunks.entries()) {
 			if (session !== this.sessionId) return;
 			this.setState({ status: 'generating', chunkIndex: i });
@@ -129,11 +132,56 @@ export class Reader extends Events {
 				return;
 			}
 
+			generatedChunks.push(audioData);
 			if (session !== this.sessionId) return;
 			await this.playChunk(audioData, i, chunks.length);
 		}
 
-		if (session === this.sessionId) this.setState(IDLE_STATE);
+		if (session !== this.sessionId) return;
+		this.setState(IDLE_STATE);
+
+		if (this.settings.saveAudioFile) {
+			await this.saveAudioFile(generatedChunks, sourceFile);
+		}
+	}
+
+	private async saveAudioFile(chunks: ArrayBuffer[], sourceFile: TFile | null): Promise<void> {
+		try {
+			const folderPath = this.resolveSaveFolder(sourceFile);
+			await this.ensureFolder(folderPath);
+			const baseName = sourceFile?.basename ?? `Reading ${moment().format('YYYY-MM-DD HHmmss')}`;
+			const path = await this.uniquePath(folderPath, baseName, 'mp3');
+			await this.app.vault.createBinary(path, concatArrayBuffers(chunks));
+			new Notice(`Saved audio to ${path}`);
+		} catch (error) {
+			console.error('Obsidian Reader: failed to save audio file', error);
+			new Notice(`Failed to save audio file: ${error instanceof Error ? error.message : String(error)}`);
+		}
+	}
+
+	private resolveSaveFolder(sourceFile: TFile | null): string {
+		if (this.settings.saveAudioLocation === 'custom-folder') {
+			return normalizePath(this.settings.saveAudioFolderPath || '/');
+		}
+		return sourceFile?.parent?.path ?? '/';
+	}
+
+	private async ensureFolder(folderPath: string): Promise<void> {
+		if (!folderPath || folderPath === '/') return;
+		if (!this.app.vault.getAbstractFileByPath(folderPath)) {
+			await this.app.vault.createFolder(folderPath);
+		}
+	}
+
+	private async uniquePath(folder: string, baseName: string, extension: string): Promise<string> {
+		const base = folder && folder !== '/' ? `${folder}/${baseName}` : baseName;
+		let candidate = normalizePath(`${base}.${extension}`);
+		let counter = 1;
+		while (this.app.vault.getAbstractFileByPath(candidate)) {
+			candidate = normalizePath(`${base} (${counter}).${extension}`);
+			counter++;
+		}
+		return candidate;
 	}
 
 	private playChunk(audioData: ArrayBuffer, index: number, count: number): Promise<void> {
