@@ -56,6 +56,7 @@ export class Reader {
 			const blob = new Blob([audioData], { type: 'audio/mpeg' });
 			const url = URL.createObjectURL(blob);
 			this.audio = new Audio(url);
+			this.audio.playbackRate = this.settings.playbackRate;
 			this.audio.addEventListener('ended', () => this.stop());
 			await this.audio.play();
 		} catch (error) {

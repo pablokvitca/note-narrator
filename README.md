@@ -7,6 +7,7 @@ An Obsidian plugin that reads your notes aloud using text-to-speech. MVP ships w
 - A ribbon (toolbar) button and a **Read note aloud** command that read the active note's text.
 - **Read selection instead of whole note** setting — when on, reading a note with an active text selection reads only the selection instead of the whole note.
 - A **Stop reading** command to interrupt playback.
+- **Playback speed** setting (0.5x–2x), applied client-side on the audio player so it works with any TTS provider or voice.
 - Markdown syntax (headings, links, emphasis, code blocks, frontmatter, etc.) is stripped before sending text to the TTS provider so it isn't read aloud literally.
 
 ### Planned

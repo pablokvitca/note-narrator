@@ -9,6 +9,8 @@ export interface ReaderSettings {
 	stability: number;
 	similarityBoost: number;
 	readSelectionIfPresent: boolean;
+	/** HTMLAudioElement.playbackRate applied to the generated audio during playback. */
+	playbackRate: number;
 }
 
 export const DEFAULT_SETTINGS: ReaderSettings = {
@@ -18,6 +20,7 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
 	stability: 0.5,
 	similarityBoost: 0.75,
 	readSelectionIfPresent: true,
+	playbackRate: 1,
 };
 
 export const ELEVENLABS_MODELS: Record<string, string> = {
@@ -115,6 +118,19 @@ export class ReaderSettingTab extends PluginSettingTab {
 					this.plugin.settings.readSelectionIfPresent = value;
 					await this.plugin.saveSettings();
 				}),
+			);
+
+		new Setting(containerEl)
+			.setName('Playback speed')
+			.setDesc('Speed of the generated audio during playback. Applied on the audio player, so it works regardless of TTS provider or voice.')
+			.addSlider((slider) =>
+				slider
+					.setLimits(0.5, 2, 0.05)
+					.setValue(this.plugin.settings.playbackRate)
+					.onChange(async (value) => {
+						this.plugin.settings.playbackRate = value;
+						await this.plugin.saveSettings();
+					}),
 			);
 	}
 }
