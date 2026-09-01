@@ -21,6 +21,10 @@ export interface ReaderSettings {
 	saveAudioLocation: SaveAudioLocation;
 	/** Vault-relative folder path used when saveAudioLocation is 'custom-folder'. */
 	saveAudioFolderPath: string;
+	/** Whether to write a link to the saved audio file into the note's frontmatter. */
+	linkAudioInNote: boolean;
+	/** Frontmatter property the audio link is written to; a companion "<name>-hash" property tracks staleness. */
+	audioLinkProperty: string;
 }
 
 export const DEFAULT_SETTINGS: ReaderSettings = {
@@ -35,6 +39,8 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
 	saveAudioFile: false,
 	saveAudioLocation: 'note-folder',
 	saveAudioFolderPath: 'Reader Audio',
+	linkAudioInNote: false,
+	audioLinkProperty: 'reader-audio',
 };
 
 export const ELEVENLABS_MODELS: Record<string, string> = {
@@ -158,7 +164,7 @@ export class ReaderSettingTab extends PluginSettingTab {
 			)
 			.addSlider((slider) =>
 				slider
-					.setLimits(0.5, 2, 0.05)
+					.setLimits(0.5, 3, 0.05)
 					.setValue(this.plugin.settings.playbackRate)
 					.onChange(async (value) => {
 						this.plugin.reader.setPlaybackRate(value);
@@ -218,6 +224,37 @@ export class ReaderSettingTab extends PluginSettingTab {
 							.onChange(async (value) => {
 								this.plugin.settings.saveAudioFolderPath = value.trim() || DEFAULT_SETTINGS.saveAudioFolderPath;
 								await this.plugin.saveSettings();
+							}),
+					);
+			}
+
+			new Setting(containerEl)
+				.setName('Link saved audio in the note')
+				.setDesc(
+					'When enabled, writes a link to the saved audio file into a frontmatter property on the note, and tracks whether the note has changed since — shown in the player view.',
+				)
+				.addToggle((toggle) =>
+					toggle.setValue(this.plugin.settings.linkAudioInNote).onChange(async (value) => {
+						this.plugin.settings.linkAudioInNote = value;
+						await this.plugin.saveSettings();
+						this.display();
+					}),
+				);
+
+			if (this.plugin.settings.linkAudioInNote) {
+				new Setting(containerEl)
+					.setName('Audio link property')
+					.setDesc(
+						`Frontmatter property the audio link is written to. A companion "${this.plugin.settings.audioLinkProperty}-hash" property tracks whether the note has changed since.`,
+					)
+					.addText((text) =>
+						text
+							.setPlaceholder(DEFAULT_SETTINGS.audioLinkProperty)
+							.setValue(this.plugin.settings.audioLinkProperty)
+							.onChange(async (value) => {
+								this.plugin.settings.audioLinkProperty = value.trim() || DEFAULT_SETTINGS.audioLinkProperty;
+								await this.plugin.saveSettings();
+								this.display();
 							}),
 					);
 			}

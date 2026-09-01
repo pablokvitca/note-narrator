@@ -1,10 +1,15 @@
 import { App, Events, MarkdownView, moment, Notice, normalizePath, TFile } from 'obsidian';
 import { concatArrayBuffers } from './audio-utils';
 import { DEFAULT_ELEVENLABS_CHAR_LIMIT, ELEVENLABS_MODEL_CHAR_LIMITS, ReaderSettings } from './settings';
-import { chunkText, stripMarkdown } from './text-utils';
+import { chunkText, hashText, stripMarkdown } from './text-utils';
 import { ElevenLabsProvider } from './tts/elevenlabs-provider';
 
 export type ReaderStatus = 'idle' | 'generating' | 'playing' | 'paused';
+export type AudioLinkStatus = 'none' | 'up-to-date' | 'outdated';
+
+function hashPropertyName(property: string): string {
+	return `${property}-hash`;
+}
 
 export interface ReaderState {
 	status: ReaderStatus;
@@ -151,12 +156,40 @@ export class Reader extends Events {
 			await this.ensureFolder(folderPath);
 			const baseName = sourceFile?.basename ?? `Reading ${moment().format('YYYY-MM-DD HHmmss')}`;
 			const path = await this.uniquePath(folderPath, baseName, 'mp3');
-			await this.app.vault.createBinary(path, concatArrayBuffers(chunks));
+			const audioFile = await this.app.vault.createBinary(path, concatArrayBuffers(chunks));
 			new Notice(`Saved audio to ${path}`);
+
+			if (this.settings.linkAudioInNote && sourceFile) {
+				await this.linkAudioInNote(audioFile, sourceFile);
+			}
 		} catch (error) {
 			console.error('Obsidian Reader: failed to save audio file', error);
 			new Notice(`Failed to save audio file: ${error instanceof Error ? error.message : String(error)}`);
 		}
+	}
+
+	private async linkAudioInNote(audioFile: TFile, sourceFile: TFile): Promise<void> {
+		const property = this.settings.audioLinkProperty;
+		const link = this.app.fileManager.generateMarkdownLink(audioFile, sourceFile.path);
+		const currentContent = await this.app.vault.cachedRead(sourceFile);
+		const hash = hashText(currentContent);
+
+		await this.app.fileManager.processFrontMatter(sourceFile, (frontmatter: Record<string, unknown>) => {
+			frontmatter[property] = link;
+			frontmatter[hashPropertyName(property)] = hash;
+		});
+	}
+
+	/** Compares the note's current content against the hash stored when its linked audio was last generated. */
+	async getAudioStatus(file: TFile): Promise<AudioLinkStatus> {
+		const property = this.settings.audioLinkProperty;
+		const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
+		const link = frontmatter?.[property] as string | undefined;
+		const storedHash = frontmatter?.[hashPropertyName(property)] as string | undefined;
+		if (!link || !storedHash) return 'none';
+
+		const currentContent = await this.app.vault.cachedRead(file);
+		return hashText(currentContent) === storedHash ? 'up-to-date' : 'outdated';
 	}
 
 	private resolveSaveFolder(sourceFile: TFile | null): string {

@@ -1,15 +1,28 @@
-import { ItemView, Setting, WorkspaceLeaf } from 'obsidian';
+import { debounce, ItemView, MarkdownView, setIcon, Setting, WorkspaceLeaf } from 'obsidian';
 import ObsidianReaderPlugin from './main';
-import { ReaderState } from './reader';
+import { AudioLinkStatus, ReaderState } from './reader';
 
 export const READER_VIEW_TYPE = 'obsidian-reader-player';
 
 const STATUS_LABELS: Record<ReaderState['status'], string> = {
-	idle: 'Nothing playing.',
+	idle: 'Nothing playing',
 	generating: 'Generating speech…',
 	playing: 'Reading…',
-	paused: 'Paused.',
+	paused: 'Paused',
 };
+
+const AUDIO_STATUS_LABELS: Record<AudioLinkStatus, string> = {
+	none: '',
+	'up-to-date': '✓ Saved audio is up to date',
+	outdated: '⚠ Saved audio is outdated — note has changed since it was generated',
+};
+
+function formatTime(totalSeconds: number): string {
+	if (!Number.isFinite(totalSeconds) || totalSeconds < 0) totalSeconds = 0;
+	const minutes = Math.floor(totalSeconds / 60);
+	const seconds = Math.floor(totalSeconds % 60);
+	return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+}
 
 export class PlayerView extends ItemView {
 	constructor(
@@ -33,6 +46,12 @@ export class PlayerView extends ItemView {
 
 	async onOpen(): Promise<void> {
 		this.registerEvent(this.plugin.reader.on('change', () => this.render()));
+		this.registerEvent(this.app.workspace.on('active-leaf-change', () => this.render()));
+		this.registerEvent(this.app.metadataCache.on('changed', () => this.render()));
+
+		const debouncedRender = debounce(() => this.render(), 1000, true);
+		this.registerEvent(this.app.workspace.on('editor-change', () => debouncedRender()));
+
 		this.render();
 	}
 
@@ -43,6 +62,7 @@ export class PlayerView extends ItemView {
 
 		const state = this.plugin.reader.getState();
 		const active = state.status !== 'idle';
+		const skipSeconds = this.plugin.settings.skipSeconds;
 
 		contentEl.createDiv({ cls: 'obsidian-reader-status', text: STATUS_LABELS[state.status] });
 
@@ -63,38 +83,77 @@ export class PlayerView extends ItemView {
 			fill.style.width = `${percent}%`;
 		}
 
+		if (state.duration > 0) {
+			const rate = this.plugin.settings.playbackRate;
+			const remaining = (state.duration - state.currentTime) / rate;
+			contentEl.createDiv({
+				cls: 'obsidian-reader-time',
+				text: `${formatTime(state.currentTime)} / ${formatTime(state.duration)} · ${formatTime(remaining)} remaining`,
+			});
+		}
+
 		const controls = contentEl.createDiv({ cls: 'obsidian-reader-controls' });
-		const skipSeconds = this.plugin.settings.skipSeconds;
 
-		const rewindBtn = controls.createEl('button', { text: `« ${skipSeconds}s` });
-		rewindBtn.disabled = !active;
-		rewindBtn.onclick = () => this.plugin.reader.skip(-skipSeconds);
+		this.createIconButton(controls, 'skip-back', `Rewind ${skipSeconds}s`, !active, () =>
+			this.plugin.reader.skip(-skipSeconds),
+		);
 
-		const playPauseBtn = controls.createEl('button', {
-			text: state.status === 'paused' ? 'Resume' : 'Pause',
-		});
-		playPauseBtn.disabled = !active;
-		playPauseBtn.onclick = () => {
+		this.createIconButton(controls, state.status === 'paused' ? 'circle-play' : 'circle-pause', state.status === 'paused' ? 'Resume' : 'Pause', !active, () => {
 			if (state.status === 'playing') this.plugin.reader.pause();
 			else if (state.status === 'paused') this.plugin.reader.resume();
-		};
+		}).addClass('obsidian-reader-control-primary');
 
-		const skipBtn = controls.createEl('button', { text: `${skipSeconds}s »` });
-		skipBtn.disabled = !active;
-		skipBtn.onclick = () => this.plugin.reader.skip(skipSeconds);
+		this.createIconButton(controls, 'skip-forward', `Skip forward ${skipSeconds}s`, !active, () =>
+			this.plugin.reader.skip(skipSeconds),
+		);
 
-		const stopBtn = controls.createEl('button', { text: 'Stop' });
-		stopBtn.disabled = !active;
-		stopBtn.onclick = () => this.plugin.reader.stop();
+		this.createIconButton(controls, 'square-stop', 'Stop', !active, () => this.plugin.reader.stop());
 
-		new Setting(contentEl).setName('Playback speed').addSlider((slider) =>
+		const speedSetting = new Setting(contentEl).setName(`Playback speed: ${this.plugin.settings.playbackRate.toFixed(2)}x`);
+		speedSetting.addSlider((slider) =>
 			slider
-				.setLimits(0.5, 2, 0.05)
+				.setLimits(0.5, 3, 0.05)
 				.setValue(this.plugin.settings.playbackRate)
 				.onChange(async (value) => {
 					this.plugin.reader.setPlaybackRate(value);
+					speedSetting.setName(`Playback speed: ${value.toFixed(2)}x`);
 					await this.plugin.saveSettings();
 				}),
 		);
+		const speedRange = speedSetting.controlEl.createDiv({ cls: 'obsidian-reader-speed-range' });
+		speedRange.createSpan({ text: '0.5x' });
+		speedRange.createSpan({ text: '3x' });
+
+		this.renderAudioStatus(contentEl);
+	}
+
+	private createIconButton(
+		container: HTMLElement,
+		icon: string,
+		label: string,
+		disabled: boolean,
+		onClick: () => void,
+	): HTMLElement {
+		const button = container.createDiv({ cls: 'clickable-icon obsidian-reader-icon-button' });
+		setIcon(button, icon);
+		button.setAttribute('aria-label', label);
+		if (disabled) {
+			button.addClass('is-disabled');
+		} else {
+			button.onclick = onClick;
+		}
+		return button;
+	}
+
+	private renderAudioStatus(container: HTMLElement): void {
+		const activeFile = this.app.workspace.getActiveViewOfType(MarkdownView)?.file;
+		if (!activeFile || !this.plugin.settings.linkAudioInNote) return;
+
+		const statusEl = container.createDiv({ cls: 'obsidian-reader-audio-status' });
+		void this.plugin.reader.getAudioStatus(activeFile).then((status) => {
+			if (status === 'none') return;
+			statusEl.setText(AUDIO_STATUS_LABELS[status]);
+			statusEl.addClass(status === 'outdated' ? 'is-outdated' : 'is-up-to-date');
+		});
 	}
 }
