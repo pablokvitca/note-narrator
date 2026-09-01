@@ -21,8 +21,8 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
 };
 
 export const ELEVENLABS_MODELS: Record<string, string> = {
+	eleven_v3: 'Eleven v3 (research preview)',
 	eleven_multilingual_v2: 'Eleven Multilingual v2',
-	eleven_turbo_v2_5: 'Eleven Turbo v2.5',
 	eleven_flash_v2_5: 'Eleven Flash v2.5',
 };
 
@@ -78,7 +78,10 @@ export class ReaderSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('Stability')
-			.setDesc('Lower values sound more expressive and varied; higher values sound steadier.')
+			.setDesc(
+				'Lower values sound more expressive and varied; higher values sound steadier. ' +
+					"On Eleven v3, this maps to ElevenLabs' Creative (low) / Natural (middle) / Robust (high) presets.",
+			)
 			.addSlider((slider) =>
 				slider
 					.setLimits(0, 1, 0.05)
