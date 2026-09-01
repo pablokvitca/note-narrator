@@ -4,7 +4,7 @@ An Obsidian plugin that reads your notes aloud using text-to-speech. MVP ships w
 
 ## Features
 
-- A speaker icon in each note's top-right action row (next to the "more options" `⋯` icon) and a **Read note aloud** command, both of which read the note's text and open the **Obsidian Reader** panel as a tab in the right sidebar.
+- Two ways to trigger a read, both of which open the **Obsidian Reader** panel as a tab in the right sidebar: a ribbon icon in the left sidebar (always visible), and a speaker icon in each note's top-right action row (next to the "more options" `⋯` icon). A **Read note aloud** command does the same.
 - The player view shows generation/playback progress and has **Pause/Resume**, **Rewind**, **Skip forward**, and **Stop** controls, plus a live **Playback speed** slider.
 - **Skip amount** setting controls how many seconds Rewind/Skip forward jump by (default 15s).
 - **Read selection instead of whole note** setting — when on, reading a note with an active text selection reads only the selection instead of the whole note.
@@ -22,11 +22,11 @@ An Obsidian plugin that reads your notes aloud using text-to-speech. MVP ships w
 1. Install the plugin (see below).
 2. Open **Settings → Obsidian Reader** and add your ElevenLabs API key. It's stored via Obsidian's built-in [SecretStorage](https://docs.obsidian.md/plugins/guides/secret-storage), not in this plugin's own settings file — the setting only remembers which secret to look up, so the key can be shared with other plugins that use the same secret and never appears in `data.json`.
 3. Set a **Voice ID** (find one in your ElevenLabs voice library) and pick a **Model** — Eleven v3 (research preview), Eleven Multilingual v2, or Eleven Flash v2.5.
-4. Click the speaker icon at the top-right of a note (or run **Read note aloud** from the command palette). This opens the **Obsidian Reader** panel in the right sidebar with progress and playback controls.
+4. Click the ribbon icon in the left sidebar, or the speaker icon at the top-right of a note (or run **Read note aloud** from the command palette). This opens the **Obsidian Reader** panel in the right sidebar with progress and playback controls.
 
 ## Known limitations (MVP)
 
-- The player view, action-icon placement, and pause/resume/skip controls are new and have only been verified by type-checking and code inspection against Obsidian's actual source, not by clicking through them in a running vault — check these specifically after installing.
+- The player view and pause/resume/skip controls have only been verified by type-checking and code inspection against Obsidian's actual source, not by clicking through them in a running vault — the per-note action icon and ribbon icon are both confirmed working.
 
 - Eleven v3 is ElevenLabs' own "research preview" model — it can be more expressive but also more prone to hallucinated/mispronounced output than Multilingual v2, and their Professional Voice Clones aren't fully optimized for it yet.
 - No scrubbing to an arbitrary point — only relative rewind/skip by the configured skip amount.

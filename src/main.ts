@@ -15,6 +15,11 @@ export default class ObsidianReaderPlugin extends Plugin {
 
 		this.registerView(READER_VIEW_TYPE, (leaf) => new PlayerView(leaf, this));
 
+		this.addRibbonIcon('audio-lines', 'Read note aloud', () => {
+			void this.activateView();
+			void this.reader.readNote();
+		});
+
 		this.app.workspace.onLayoutReady(() => this.patchOpenMarkdownViews());
 		this.registerEvent(this.app.workspace.on('active-leaf-change', () => this.patchOpenMarkdownViews()));
 		this.registerEvent(this.app.workspace.on('layout-change', () => this.patchOpenMarkdownViews()));
