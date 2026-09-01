@@ -11,6 +11,8 @@ export interface ReaderSettings {
 	readSelectionIfPresent: boolean;
 	/** HTMLAudioElement.playbackRate applied to the generated audio during playback. */
 	playbackRate: number;
+	/** Seconds the skip-forward/rewind buttons in the player view jump by. */
+	skipSeconds: number;
 }
 
 export const DEFAULT_SETTINGS: ReaderSettings = {
@@ -21,6 +23,7 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
 	similarityBoost: 0.75,
 	readSelectionIfPresent: true,
 	playbackRate: 1,
+	skipSeconds: 15,
 };
 
 export const ELEVENLABS_MODELS: Record<string, string> = {
@@ -28,6 +31,15 @@ export const ELEVENLABS_MODELS: Record<string, string> = {
 	eleven_multilingual_v2: 'Eleven Multilingual v2',
 	eleven_flash_v2_5: 'Eleven Flash v2.5',
 };
+
+/** ElevenLabs' documented per-request character limit for each model. */
+export const ELEVENLABS_MODEL_CHAR_LIMITS: Record<string, number> = {
+	eleven_v3: 5000,
+	eleven_multilingual_v2: 10000,
+	eleven_flash_v2_5: 40000,
+};
+
+export const DEFAULT_ELEVENLABS_CHAR_LIMIT = 5000;
 
 export class ReaderSettingTab extends PluginSettingTab {
 	plugin: ObsidianReaderPlugin;
@@ -122,13 +134,28 @@ export class ReaderSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('Playback speed')
-			.setDesc('Speed of the generated audio during playback. Applied on the audio player, so it works regardless of TTS provider or voice.')
+			.setDesc(
+				'Speed of the generated audio during playback. Applied on the audio player, so it works regardless of TTS provider or voice. Also adjustable live from the player view.',
+			)
 			.addSlider((slider) =>
 				slider
 					.setLimits(0.5, 2, 0.05)
 					.setValue(this.plugin.settings.playbackRate)
 					.onChange(async (value) => {
-						this.plugin.settings.playbackRate = value;
+						this.plugin.reader.setPlaybackRate(value);
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName('Skip amount')
+			.setDesc('How many seconds the skip-forward and rewind buttons in the player view jump by.')
+			.addSlider((slider) =>
+				slider
+					.setLimits(5, 60, 5)
+					.setValue(this.plugin.settings.skipSeconds)
+					.onChange(async (value) => {
+						this.plugin.settings.skipSeconds = value;
 						await this.plugin.saveSettings();
 					}),
 			);

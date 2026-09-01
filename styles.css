@@ -1,0 +1,55 @@
+.obsidian-reader-player-view {
+	padding: var(--size-4-4);
+}
+
+.obsidian-reader-status {
+	font-weight: var(--font-medium);
+	color: var(--text-normal);
+	margin-bottom: var(--size-2-2);
+}
+
+.obsidian-reader-chunk-progress {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	margin-bottom: var(--size-4-2);
+}
+
+.obsidian-reader-progress-bar {
+	position: relative;
+	height: var(--size-2-2);
+	border-radius: var(--radius-s);
+	background-color: var(--background-modifier-border);
+	overflow: hidden;
+	margin-bottom: var(--size-4-3);
+}
+
+.obsidian-reader-progress-fill {
+	height: 100%;
+	background-color: var(--interactive-accent);
+	border-radius: var(--radius-s);
+	transition: width 0.15s linear;
+}
+
+.obsidian-reader-progress-bar.is-indeterminate .obsidian-reader-progress-fill {
+	width: 40%;
+	animation: obsidian-reader-indeterminate 1.2s ease-in-out infinite;
+}
+
+@keyframes obsidian-reader-indeterminate {
+	0% {
+		transform: translateX(-100%);
+	}
+	100% {
+		transform: translateX(250%);
+	}
+}
+
+.obsidian-reader-controls {
+	display: flex;
+	gap: var(--size-2-2);
+	margin-bottom: var(--size-4-4);
+}
+
+.obsidian-reader-controls button {
+	flex: 1;
+}

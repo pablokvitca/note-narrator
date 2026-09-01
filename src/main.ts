@@ -1,4 +1,5 @@
-import { Plugin } from 'obsidian';
+import { MarkdownView, Plugin } from 'obsidian';
+import { PlayerView, READER_VIEW_TYPE } from './player-view';
 import { Reader } from './reader';
 import { DEFAULT_SETTINGS, ReaderSettings, ReaderSettingTab } from './settings';
 
@@ -6,18 +7,25 @@ export default class ObsidianReaderPlugin extends Plugin {
 	settings!: ReaderSettings;
 	reader!: Reader;
 
+	private patchedViews = new WeakSet<MarkdownView>();
+
 	async onload() {
 		await this.loadSettings();
 		this.reader = new Reader(this.app, this.settings);
 
-		this.addRibbonIcon('audio-lines', 'Read note aloud', () => {
-			void this.reader.readActiveNote();
-		});
+		this.registerView(READER_VIEW_TYPE, (leaf) => new PlayerView(leaf, this));
+
+		this.app.workspace.onLayoutReady(() => this.patchOpenMarkdownViews());
+		this.registerEvent(this.app.workspace.on('active-leaf-change', () => this.patchOpenMarkdownViews()));
+		this.registerEvent(this.app.workspace.on('layout-change', () => this.patchOpenMarkdownViews()));
 
 		this.addCommand({
 			id: 'read-note-aloud',
 			name: 'Read note aloud',
-			callback: () => void this.reader.readActiveNote(),
+			callback: () => {
+				void this.activateView();
+				void this.reader.readNote();
+			},
 		});
 
 		this.addCommand({
@@ -31,6 +39,35 @@ export default class ObsidianReaderPlugin extends Plugin {
 
 	onunload() {
 		this.reader?.stop();
+	}
+
+	async activateView(): Promise<void> {
+		const { workspace } = this.app;
+		const existing = workspace.getLeavesOfType(READER_VIEW_TYPE)[0];
+		if (existing) {
+			await workspace.revealLeaf(existing);
+			return;
+		}
+
+		const leaf = workspace.getRightLeaf(false);
+		if (!leaf) return;
+		await leaf.setViewState({ type: READER_VIEW_TYPE, active: true });
+		await workspace.revealLeaf(leaf);
+	}
+
+	private patchOpenMarkdownViews(): void {
+		for (const leaf of this.app.workspace.getLeavesOfType('markdown')) {
+			if (leaf.view instanceof MarkdownView) this.patchMarkdownView(leaf.view);
+		}
+	}
+
+	private patchMarkdownView(view: MarkdownView): void {
+		if (this.patchedViews.has(view)) return;
+		this.patchedViews.add(view);
+		view.addAction('audio-lines', 'Read note aloud', () => {
+			void this.activateView();
+			void this.reader.readNote(view);
+		});
 	}
 
 	async loadSettings() {
