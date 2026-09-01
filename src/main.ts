@@ -8,6 +8,9 @@ export default class ObsidianReaderPlugin extends Plugin {
 	reader!: Reader;
 
 	private patchedViews = new WeakSet<MarkdownView>();
+	// MarkdownView instances (and their DOM) survive a plugin reload/update; track the action
+	// buttons we add so onunload can remove them and a fresh load doesn't duplicate them.
+	private actionButtons: HTMLElement[] = [];
 
 	async onload() {
 		await this.loadSettings();
@@ -49,6 +52,10 @@ export default class ObsidianReaderPlugin extends Plugin {
 
 	onunload() {
 		this.reader?.stop();
+		for (const button of this.actionButtons) {
+			button.remove();
+		}
+		this.actionButtons = [];
 	}
 
 	async activateView(): Promise<void> {
@@ -74,10 +81,11 @@ export default class ObsidianReaderPlugin extends Plugin {
 	private patchMarkdownView(view: MarkdownView): void {
 		if (this.patchedViews.has(view)) return;
 		this.patchedViews.add(view);
-		view.addAction('audio-lines', 'Read note aloud', () => {
+		const button = view.addAction('audio-lines', 'Read note aloud', () => {
 			void this.activateView();
 			void this.reader.readNote(view);
 		});
+		this.actionButtons.push(button);
 	}
 
 	async loadSettings() {
