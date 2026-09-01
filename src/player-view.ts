@@ -1,6 +1,7 @@
 import { debounce, ItemView, MarkdownView, setIcon, Setting, WorkspaceLeaf } from 'obsidian';
 import ObsidianReaderPlugin from './main';
 import { AudioLinkStatus, ReaderState } from './reader';
+import { ElevenLabsVoice, listElevenLabsVoices } from './tts/elevenlabs-provider';
 
 export const READER_VIEW_TYPE = 'obsidian-reader-player';
 
@@ -25,6 +26,8 @@ function formatTime(totalSeconds: number): string {
 }
 
 export class PlayerView extends ItemView {
+	private voices: ElevenLabsVoice[] = [];
+
 	constructor(
 		leaf: WorkspaceLeaf,
 		private plugin: ObsidianReaderPlugin,
@@ -52,7 +55,20 @@ export class PlayerView extends ItemView {
 		const debouncedRender = debounce(() => this.render(), 1000, true);
 		this.registerEvent(this.app.workspace.on('editor-change', () => debouncedRender()));
 
+		void this.loadVoices();
 		this.render();
+	}
+
+	private async loadVoices(): Promise<void> {
+		const apiKey = this.app.secretStorage.getSecret(this.plugin.settings.apiKeySecretId);
+		if (!apiKey) return;
+
+		try {
+			this.voices = await listElevenLabsVoices(apiKey);
+			this.render();
+		} catch (error) {
+			console.error('Obsidian Reader: failed to fetch ElevenLabs voices', error);
+		}
 	}
 
 	private render(): void {
@@ -92,6 +108,18 @@ export class PlayerView extends ItemView {
 			});
 		}
 
+		this.renderVoiceSelector(contentEl);
+
+		if (!active) {
+			const readButton = contentEl.createEl('button', {
+				cls: 'mod-cta obsidian-reader-read-button',
+				text: 'Read',
+			});
+			readButton.onclick = () => {
+				void this.plugin.reader.readNote();
+			};
+		}
+
 		const controls = contentEl.createDiv({ cls: 'obsidian-reader-controls' });
 
 		this.createIconButton(controls, 'skip-back', `Rewind ${skipSeconds}s`, !active, () =>
@@ -125,6 +153,36 @@ export class PlayerView extends ItemView {
 		speedRange.createSpan({ text: '3x' });
 
 		this.renderAudioStatus(contentEl);
+	}
+
+	private renderVoiceSelector(container: HTMLElement): void {
+		const currentValue = this.plugin.settings.voiceId;
+
+		new Setting(container)
+			.setName('Voice')
+			.addDropdown((dropdown) => {
+				if (this.voices.length === 0) {
+					dropdown.addOption(currentValue, currentValue);
+				} else {
+					for (const voice of this.voices) {
+						dropdown.addOption(voice.voiceId, voice.name);
+					}
+					if (!this.voices.some((voice) => voice.voiceId === currentValue)) {
+						dropdown.addOption(currentValue, `${currentValue} (custom)`);
+					}
+				}
+				dropdown.setValue(currentValue);
+				dropdown.onChange(async (value) => {
+					this.plugin.settings.voiceId = value;
+					await this.plugin.saveSettings();
+				});
+			})
+			.addExtraButton((button) =>
+				button
+					.setIcon('refresh-cw')
+					.setTooltip('Refresh voice list from ElevenLabs')
+					.onClick(() => void this.loadVoices()),
+			);
 	}
 
 	private createIconButton(

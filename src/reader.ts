@@ -1,14 +1,19 @@
 import { App, Events, MarkdownView, moment, Notice, normalizePath, TFile } from 'obsidian';
-import { concatArrayBuffers } from './audio-utils';
+import { concatArrayBuffers, sanitizeFilenameComponent } from './audio-utils';
 import { DEFAULT_ELEVENLABS_CHAR_LIMIT, ELEVENLABS_MODEL_CHAR_LIMITS, ReaderSettings } from './settings';
 import { chunkText, hashText, stripMarkdown } from './text-utils';
-import { ElevenLabsProvider } from './tts/elevenlabs-provider';
+import { ElevenLabsProvider, getElevenLabsVoiceName } from './tts/elevenlabs-provider';
 
 export type ReaderStatus = 'idle' | 'generating' | 'playing' | 'paused';
 export type AudioLinkStatus = 'none' | 'up-to-date' | 'outdated';
 
 function hashPropertyName(property: string): string {
 	return `${property}-hash`;
+}
+
+/** Internal-only property tracking the exact saved audio file path, used to find it again for "replace" mode. */
+function pathPropertyName(property: string): string {
+	return `${property}-path`;
 }
 
 export interface ReaderState {
@@ -122,19 +127,30 @@ export class Reader extends Events {
 		this.setState({ status: 'generating', chunkIndex: 0, chunkCount: chunks.length, currentTime: 0, duration: 0 });
 
 		const generatedChunks: ArrayBuffer[] = [];
+		// One-chunk lookahead: the next chunk starts generating while the current one plays, so
+		// there's no gap waiting on the network between chunks unless generation is slower than playback.
+		let nextChunkPromise: Promise<ArrayBuffer> = provider.synthesize(chunks[0] ?? '');
 
-		for (const [i, chunk] of chunks.entries()) {
+		for (let i = 0; i < chunks.length; i++) {
 			if (session !== this.sessionId) return;
 			this.setState({ status: 'generating', chunkIndex: i });
 
 			let audioData: ArrayBuffer;
 			try {
-				audioData = await provider.synthesize(chunk);
+				audioData = await nextChunkPromise;
 			} catch (error) {
 				console.error('Obsidian Reader: failed to read note aloud', error);
 				new Notice(`Failed to read note aloud: ${error instanceof Error ? error.message : String(error)}`);
 				this.setState(IDLE_STATE);
 				return;
+			}
+
+			const next = chunks[i + 1];
+			if (next !== undefined) {
+				nextChunkPromise = provider.synthesize(next);
+				nextChunkPromise.catch(() => {
+					/* surfaced when awaited on the next iteration; swallowed here only to avoid an unhandled rejection if reading stops first */
+				});
 			}
 
 			generatedChunks.push(audioData);
@@ -152,12 +168,29 @@ export class Reader extends Events {
 
 	private async saveAudioFile(chunks: ArrayBuffer[], sourceFile: TFile | null): Promise<void> {
 		try {
-			const folderPath = this.resolveSaveFolder(sourceFile);
-			await this.ensureFolder(folderPath);
-			const baseName = sourceFile?.basename ?? `Reading ${moment().format('YYYY-MM-DD HHmmss')}`;
-			const path = await this.uniquePath(folderPath, baseName, 'mp3');
-			const audioFile = await this.app.vault.createBinary(path, concatArrayBuffers(chunks));
-			new Notice(`Saved audio to ${path}`);
+			const apiKey = this.app.secretStorage.getSecret(this.settings.apiKeySecretId);
+			const voiceName = apiKey ? await this.resolveVoiceName(apiKey) : this.settings.voiceId;
+			const data = concatArrayBuffers(chunks);
+
+			const existingAudioFile =
+				this.settings.saveVersioning === 'replace' && this.settings.linkAudioInNote && sourceFile
+					? this.findExistingAudioFile(sourceFile)
+					: null;
+
+			let audioFile: TFile;
+			if (existingAudioFile) {
+				await this.app.vault.modifyBinary(existingAudioFile, data);
+				audioFile = existingAudioFile;
+				new Notice(`Updated audio at ${audioFile.path}`);
+			} else {
+				const folderPath = this.resolveSaveFolder(sourceFile);
+				await this.ensureFolder(folderPath);
+				const noteName = sourceFile?.basename ?? `Reading ${moment().format('YYYY-MM-DD HHmmss')}`;
+				const baseName = sanitizeFilenameComponent(`${noteName} (${voiceName})`);
+				const path = await this.uniquePath(folderPath, baseName, 'mp3');
+				audioFile = await this.app.vault.createBinary(path, data);
+				new Notice(`Saved audio to ${path}`);
+			}
 
 			if (this.settings.linkAudioInNote && sourceFile) {
 				await this.linkAudioInNote(audioFile, sourceFile);
@@ -166,6 +199,24 @@ export class Reader extends Events {
 			console.error('Obsidian Reader: failed to save audio file', error);
 			new Notice(`Failed to save audio file: ${error instanceof Error ? error.message : String(error)}`);
 		}
+	}
+
+	private async resolveVoiceName(apiKey: string): Promise<string> {
+		try {
+			return await getElevenLabsVoiceName(apiKey, this.settings.voiceId);
+		} catch (error) {
+			console.error('Obsidian Reader: failed to resolve voice name for filename', error);
+			return this.settings.voiceId;
+		}
+	}
+
+	private findExistingAudioFile(sourceFile: TFile): TFile | null {
+		const property = this.settings.audioLinkProperty;
+		const frontmatter = this.app.metadataCache.getFileCache(sourceFile)?.frontmatter;
+		const storedPath = frontmatter?.[pathPropertyName(property)] as string | undefined;
+		if (!storedPath) return null;
+		const file = this.app.vault.getAbstractFileByPath(storedPath);
+		return file instanceof TFile ? file : null;
 	}
 
 	private async linkAudioInNote(audioFile: TFile, sourceFile: TFile): Promise<void> {
@@ -177,7 +228,42 @@ export class Reader extends Events {
 		await this.app.fileManager.processFrontMatter(sourceFile, (frontmatter: Record<string, unknown>) => {
 			frontmatter[property] = link;
 			frontmatter[hashPropertyName(property)] = hash;
+			frontmatter[pathPropertyName(property)] = audioFile.path;
 		});
+	}
+
+	/**
+	 * Silently (re)generates and saves a note's audio if it's missing or outdated, without touching
+	 * playback state — safe to call in the background (e.g. on file-open) even while something else is playing.
+	 */
+	async autoGenerateIfNeeded(file: TFile): Promise<void> {
+		if (!this.settings.autoGenerateOnOpen || !this.settings.saveAudioFile || !this.settings.linkAudioInNote) return;
+		if (file.extension !== 'md') return;
+
+		try {
+			const status = await this.getAudioStatus(file);
+			if (status === 'up-to-date') return;
+
+			const apiKey = this.app.secretStorage.getSecret(this.settings.apiKeySecretId);
+			if (!apiKey) return;
+
+			const rawText = await this.app.vault.cachedRead(file);
+			const text = stripMarkdown(rawText).trim();
+			if (!text) return;
+
+			const charLimit = ELEVENLABS_MODEL_CHAR_LIMITS[this.settings.modelId] ?? DEFAULT_ELEVENLABS_CHAR_LIMIT;
+			const chunks = chunkText(text, charLimit);
+			const provider = new ElevenLabsProvider(apiKey, this.settings);
+
+			const buffers: ArrayBuffer[] = [];
+			for (const chunk of chunks) {
+				buffers.push(await provider.synthesize(chunk));
+			}
+
+			await this.saveAudioFile(buffers, file);
+		} catch (error) {
+			console.error('Obsidian Reader: auto-generate on open failed', error);
+		}
 	}
 
 	/** Compares the note's current content against the hash stored when its linked audio was last generated. */

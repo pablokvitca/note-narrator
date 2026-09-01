@@ -3,6 +3,7 @@ import ObsidianReaderPlugin from './main';
 import { listElevenLabsVoices } from './tts/elevenlabs-provider';
 
 export type SaveAudioLocation = 'note-folder' | 'custom-folder';
+export type SaveVersioning = 'replace' | 'keep';
 
 export interface ReaderSettings {
 	/** Name of the secret in Obsidian's SecretStorage holding the ElevenLabs API key. */
@@ -25,6 +26,10 @@ export interface ReaderSettings {
 	linkAudioInNote: boolean;
 	/** Frontmatter property the audio link is written to; a companion "<name>-hash" property tracks staleness. */
 	audioLinkProperty: string;
+	/** Silently (re)generate and save a note's audio on open if missing or outdated. Requires saveAudioFile and linkAudioInNote. */
+	autoGenerateOnOpen: boolean;
+	/** Whether regenerating a note's audio replaces the previously linked file or keeps it and creates a new one. Only applies when linkAudioInNote is on. */
+	saveVersioning: SaveVersioning;
 }
 
 export const DEFAULT_SETTINGS: ReaderSettings = {
@@ -41,6 +46,8 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
 	saveAudioFolderPath: 'Reader Audio',
 	linkAudioInNote: false,
 	audioLinkProperty: 'reader-audio',
+	autoGenerateOnOpen: false,
+	saveVersioning: 'replace',
 };
 
 export const ELEVENLABS_MODELS: Record<string, string> = {
@@ -256,6 +263,33 @@ export class ReaderSettingTab extends PluginSettingTab {
 								await this.plugin.saveSettings();
 								this.display();
 							}),
+					);
+
+				new Setting(containerEl)
+					.setName('On regenerate')
+					.setDesc(
+						'What to do when a note\'s audio already exists and is regenerated: replace the previously linked file, or keep it and create a new one.',
+					)
+					.addDropdown((dropdown) =>
+						dropdown
+							.addOptions({ replace: 'Replace existing file', keep: 'Keep old versions' })
+							.setValue(this.plugin.settings.saveVersioning)
+							.onChange(async (value) => {
+								this.plugin.settings.saveVersioning = value as SaveVersioning;
+								await this.plugin.saveSettings();
+							}),
+					);
+
+				new Setting(containerEl)
+					.setName('Auto-generate on open')
+					.setDesc(
+						'When enabled, opening a note silently (re)generates and saves its audio in the background if missing or outdated — without playing it or interrupting anything currently playing.',
+					)
+					.addToggle((toggle) =>
+						toggle.setValue(this.plugin.settings.autoGenerateOnOpen).onChange(async (value) => {
+							this.plugin.settings.autoGenerateOnOpen = value;
+							await this.plugin.saveSettings();
+						}),
 					);
 			}
 		}

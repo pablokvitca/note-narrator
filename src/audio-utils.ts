@@ -9,3 +9,8 @@ export function concatArrayBuffers(buffers: ArrayBuffer[]): ArrayBuffer {
 	}
 	return result.buffer;
 }
+
+/** Strips characters invalid in filenames on common filesystems. */
+export function sanitizeFilenameComponent(text: string): string {
+	return text.replace(/[\\/:*?"<>|]/g, '').trim();
+}

@@ -1,4 +1,4 @@
-import { MarkdownView, Plugin } from 'obsidian';
+import { MarkdownView, Plugin, TFile } from 'obsidian';
 import { PlayerView, READER_VIEW_TYPE } from './player-view';
 import { Reader } from './reader';
 import { DEFAULT_SETTINGS, ReaderSettings, ReaderSettingTab } from './settings';
@@ -23,6 +23,11 @@ export default class ObsidianReaderPlugin extends Plugin {
 		this.app.workspace.onLayoutReady(() => this.patchOpenMarkdownViews());
 		this.registerEvent(this.app.workspace.on('active-leaf-change', () => this.patchOpenMarkdownViews()));
 		this.registerEvent(this.app.workspace.on('layout-change', () => this.patchOpenMarkdownViews()));
+		this.registerEvent(
+			this.app.workspace.on('file-open', (file) => {
+				if (file instanceof TFile) void this.reader.autoGenerateIfNeeded(file);
+			}),
+		);
 
 		this.addCommand({
 			id: 'read-note-aloud',
