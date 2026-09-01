@@ -18,12 +18,13 @@ An Obsidian plugin that reads your notes aloud using text-to-speech. MVP ships w
 
 1. Install the plugin (see below).
 2. Open **Settings → Obsidian Reader** and add your ElevenLabs API key. It's stored via Obsidian's built-in [SecretStorage](https://docs.obsidian.md/plugins/guides/secret-storage), not in this plugin's own settings file — the setting only remembers which secret to look up, so the key can be shared with other plugins that use the same secret and never appears in `data.json`.
-3. Set a **Voice ID** (find one in your ElevenLabs voice library) and pick a **Model**.
+3. Set a **Voice ID** (find one in your ElevenLabs voice library) and pick a **Model** — Eleven v3 (research preview), Eleven Multilingual v2, or Eleven Flash v2.5.
 4. Click the ribbon icon, or run **Read note aloud** from the command palette.
 
 ## Known limitations (MVP)
 
-- No chunking: very long notes may exceed ElevenLabs' per-request character limits for your plan/model.
+- No chunking: very long notes may exceed ElevenLabs' per-request character limits for your plan/model (e.g. Eleven v3 caps requests at 5,000 characters, versus 10,000 for Eleven Multilingual v2).
+- Eleven v3 is ElevenLabs' own "research preview" model — it can be more expressive but also more prone to hallucinated/mispronounced output than Multilingual v2, and their Professional Voice Clones aren't fully optimized for it yet.
 - No playback controls beyond stop (no pause/resume, no scrubbing).
 - Requires an ElevenLabs account and API key; this plugin makes network requests to `api.elevenlabs.io` only when you trigger a read.
 - Settings use the classic `display()`-based settings tab, not Obsidian 1.13's declarative settings API, so this plugin's settings won't appear in Obsidian's in-app settings search on 1.13.0+ (you can still find them normally under **Settings → Obsidian Reader**).
