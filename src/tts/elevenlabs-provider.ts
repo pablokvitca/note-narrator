@@ -24,6 +24,23 @@ export async function listElevenLabsVoices(apiKey: string): Promise<ElevenLabsVo
 	return (body.voices ?? []).map((voice) => ({ voiceId: voice.voice_id, name: voice.name }));
 }
 
+/** Fetches a single voice's display name by ID, e.g. to label a saved audio filename. */
+export async function getElevenLabsVoiceName(apiKey: string, voiceId: string): Promise<string> {
+	const response = await requestUrl({
+		url: `https://api.elevenlabs.io/v1/voices/${voiceId}`,
+		method: 'GET',
+		headers: { 'xi-api-key': apiKey },
+		throw: false,
+	});
+
+	if (response.status !== 200) {
+		throw new Error(`ElevenLabs request failed (${response.status}): ${response.text}`);
+	}
+
+	const body = response.json as { name?: string };
+	return body.name ?? voiceId;
+}
+
 export class ElevenLabsProvider implements TTSProvider {
 	constructor(
 		private apiKey: string,

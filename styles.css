@@ -50,6 +50,12 @@
 	margin-bottom: var(--size-4-3);
 }
 
+.obsidian-reader-read-button {
+	display: block;
+	width: 100%;
+	margin-bottom: var(--size-4-4);
+}
+
 .obsidian-reader-controls {
 	display: flex;
 	align-items: center;
