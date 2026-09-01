@@ -82,13 +82,6 @@
 	outline-offset: 1px;
 }
 
-.obsidian-reader-clear-files-button {
-	display: block;
-	width: 100%;
-	margin-top: var(--size-4-4);
-	color: var(--text-error);
-}
-
 .obsidian-reader-controls {
 	display: flex;
 	align-items: center;
@@ -130,9 +123,16 @@
 .obsidian-reader-speed-range {
 	display: flex;
 	justify-content: space-between;
+	margin-top: var(--size-2-2);
+}
+
+.obsidian-reader-speed-bound {
 	color: var(--text-faint);
 	font-size: var(--font-ui-smaller);
-	margin-top: var(--size-2-1);
+	font-variant-numeric: tabular-nums;
+	background-color: var(--background-modifier-hover);
+	border-radius: var(--radius-s);
+	padding: 1px var(--size-2-2);
 }
 
 .obsidian-reader-audio-status {

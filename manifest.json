@@ -1,7 +1,7 @@
 {
 	"id": "obsidian-reader",
 	"name": "Obsidian Reader",
-	"version": "0.9.0",
+	"version": "0.9.1",
 	"minAppVersion": "1.11.4",
 	"description": "Read the current note aloud with text-to-speech, starting with ElevenLabs.",
 	"author": "Pablo Kvitca",

@@ -1,7 +1,7 @@
 import { App, Events, MarkdownView, moment, Notice, normalizePath, TFile } from 'obsidian';
 import { concatArrayBuffers, sanitizeFilenameComponent } from './audio-utils';
-import { DEFAULT_ELEVENLABS_CHAR_LIMIT, ELEVENLABS_MODEL_CHAR_LIMITS, QUICK_START_CHUNK_CHARS, ReaderSettings } from './settings';
-import { buildReadingPreamble, chunkBySentence, chunkNote, hashText, stripFrontmatter } from './text-utils';
+import { DEFAULT_ELEVENLABS_CHAR_LIMIT, ELEVENLABS_MODEL_CHAR_LIMITS, ReaderSettings } from './settings';
+import { buildReadingPreamble, chunkByWordCount, chunkBySentence, chunkNote, hashText, stripFrontmatter } from './text-utils';
 import { ElevenLabsProvider, getElevenLabsVoiceName } from './tts/elevenlabs-provider';
 
 export type ReaderStatus = 'idle' | 'generating' | 'playing' | 'paused';
@@ -37,6 +37,8 @@ export class Reader extends Events {
 	private sourceFileForSave: TFile | null = null;
 	/** Whether the current read's audio has already been saved (triggered once generation of every chunk completes). */
 	private savedForSession = false;
+	/** Set once a 429 is seen this session; falls back parallel generation to sequential (1 at a time) to avoid repeating it. */
+	private rateLimited = false;
 
 	constructor(
 		private app: App,
@@ -157,12 +159,16 @@ export class Reader extends Events {
 			return;
 		}
 
-		// Quick start: split the first chunk into a short lead-in plus the remainder, so the first
-		// TTS request returns sooner and playback can begin without waiting for a full-sized chunk.
+		// Quick start: split the first chunk into a short lead-in plus the remainder (including the
+		// preamble, since it's already part of chunks[0]), so the first TTS request returns sooner.
 		if (this.settings.startPlaybackImmediately && this.settings.quickStart) {
 			const [firstChunk, ...rest] = chunks;
-			if (firstChunk && firstChunk.length > QUICK_START_CHUNK_CHARS) {
-				chunks = [...chunkBySentence(firstChunk, QUICK_START_CHUNK_CHARS), ...rest];
+			if (firstChunk !== undefined) {
+				const leadPieces =
+					this.settings.quickStartUnit === 'words'
+						? chunkByWordCount(firstChunk, this.settings.quickStartWordCount)
+						: chunkBySentence(firstChunk, this.settings.quickStartCharCount);
+				chunks = [...leadPieces, ...rest];
 			}
 		}
 
@@ -172,7 +178,8 @@ export class Reader extends Events {
 		this.chunks = chunks;
 		this.chunkBuffers = new Array<ArrayBuffer | undefined>(chunks.length);
 		this.chunkPromises = new Array<Promise<ArrayBuffer> | undefined>(chunks.length);
-		this.provider = new ElevenLabsProvider(apiKey, this.settings);
+		this.rateLimited = false;
+		this.provider = new ElevenLabsProvider(apiKey, this.settings, () => this.handleRateLimited());
 		this.sourceFileForSave = options.allowSave ? sourceFile : null;
 		this.savedForSession = false;
 		this.setState({
@@ -192,14 +199,23 @@ export class Reader extends Events {
 		await this.playFromIndex(session, 0);
 	}
 
+	/** Called (possibly repeatedly) the moment a 429 is seen; falls back to sequential generation for the rest of this read. */
+	private handleRateLimited(): void {
+		if (this.rateLimited) return;
+		this.rateLimited = true;
+		new Notice('ElevenLabs rate limit hit — retrying with backoff and switching to sequential chunk generation.');
+	}
+
 	/** Generates every chunk (respecting the parallel-generation setting) before any playback starts. Returns false on failure. */
 	private async generateAllChunks(session: number): Promise<boolean> {
 		const windowSize = this.settings.parallelGenerationEnabled ? Math.max(1, this.settings.maxParallelGeneration) : 1;
 		let nextIndex = 0;
 
-		const worker = async () => {
+		const worker = async (workerId: number) => {
 			while (nextIndex < this.chunks.length) {
 				if (session !== this.sessionId) return;
+				// Once rate-limited, only the primary worker keeps going; the rest stop claiming new work.
+				if (this.rateLimited && workerId > 0) return;
 				const index = nextIndex++;
 				this.setState({ status: 'generating', chunkIndex: index });
 				await this.ensureChunkBuffer(index);
@@ -207,7 +223,7 @@ export class Reader extends Events {
 		};
 
 		try {
-			await Promise.all(Array.from({ length: windowSize }, () => worker()));
+			await Promise.all(Array.from({ length: windowSize }, (_, workerId) => worker(workerId)));
 			return true;
 		} catch (error) {
 			if (session !== this.sessionId) return false;
@@ -251,7 +267,7 @@ export class Reader extends Events {
 
 	/** Kicks off generation for the next chunks within the configured parallel-generation window (a no-op if disabled). */
 	private prefetchAhead(fromIndex: number): void {
-		if (!this.settings.parallelGenerationEnabled) return;
+		if (!this.settings.parallelGenerationEnabled || this.rateLimited) return;
 		const windowSize = Math.max(1, this.settings.maxParallelGeneration);
 		for (let offset = 1; offset < windowSize; offset++) {
 			this.prefetchChunkBuffer(fromIndex + offset);
