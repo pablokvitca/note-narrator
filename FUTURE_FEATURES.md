@@ -13,3 +13,5 @@ Ideas not yet implemented, roughly in the order they came up.
 5. **Auto-caption images** in a note (via a different, vision-capable model) so image content gets a short spoken description instead of being silently skipped.
 
 6. **Better per-chunk saving for intermediate generations.** The current MP3 save concatenates raw chunk bytes (documented as a known limitation); worth revisiting once there's a reason to save/resume partial reads more robustly — e.g. proper re-muxing, or saving chunks individually with a manifest instead of one flat file.
+
+7. **Show the current reading/generating note's title in the panel.** Right now the panel shows status ("Reading…", "Generating speech…") but not which note that status is about — useful once background generation (#3) or auto-following the active note (#4) means the panel isn't always obviously about "whatever note is open right now".
