@@ -1,10 +1,13 @@
-import { debounce, ItemView, MarkdownView, setIcon, Setting, WorkspaceLeaf } from 'obsidian';
+import { debounce, ItemView, MarkdownView, Menu, setIcon, Setting, WorkspaceLeaf } from 'obsidian';
 import { ConfirmModal } from './confirm-modal';
 import ObsidianReaderPlugin from './main';
 import { AudioLinkStatus, ReaderState } from './reader';
 import { ElevenLabsVoice, listElevenLabsVoices } from './tts/elevenlabs-provider';
 
 export const READER_VIEW_TYPE = 'obsidian-reader-player';
+
+const SPEED_MIN = 0.5;
+const SPEED_MAX = 3;
 
 const STATUS_LABELS: Record<ReaderState['status'], string> = {
 	idle: 'Nothing playing',
@@ -28,6 +31,7 @@ function formatTime(totalSeconds: number): string {
 
 export class PlayerView extends ItemView {
 	private voices: ElevenLabsVoice[] = [];
+	private lastActiveFilePath: string | null = null;
 
 	constructor(
 		leaf: WorkspaceLeaf,
@@ -49,14 +53,35 @@ export class PlayerView extends ItemView {
 	}
 
 	async onOpen(): Promise<void> {
+		this.addAction('more-vertical', 'More options', (evt) => this.showOptionsMenu(evt));
+
+		this.lastActiveFilePath = this.app.workspace.getActiveViewOfType(MarkdownView)?.file?.path ?? null;
+
 		this.registerEvent(this.plugin.reader.on('change', () => this.render()));
-		this.registerEvent(this.app.workspace.on('active-leaf-change', () => this.render()));
-		this.registerEvent(this.app.metadataCache.on('changed', () => this.render()));
+		this.registerEvent(this.app.workspace.on('active-leaf-change', () => this.handleActiveFileMaybeChanged()));
+		this.registerEvent(
+			this.app.metadataCache.on('changed', (file) => {
+				if (file.path === this.lastActiveFilePath) this.render();
+			}),
+		);
 
 		const debouncedRender = debounce(() => this.render(), 1000, true);
 		this.registerEvent(this.app.workspace.on('editor-change', () => debouncedRender()));
 
 		void this.loadVoices();
+		this.render();
+	}
+
+	/**
+	 * Only re-renders when the active *markdown note* actually changes — not on every active-leaf-change,
+	 * which also fires when focus moves into this panel itself (e.g. opening the Voice dropdown), which
+	 * would otherwise destroy and immediately close any open native dropdown.
+	 */
+	private handleActiveFileMaybeChanged(): void {
+		const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+		if (!view) return;
+		if (view.file?.path === this.lastActiveFilePath) return;
+		this.lastActiveFilePath = view.file?.path ?? null;
 		this.render();
 	}
 
@@ -120,15 +145,18 @@ export class PlayerView extends ItemView {
 
 		this.renderVoiceSelector(contentEl);
 
-		if (!active) {
-			this.renderPrimaryActions(contentEl);
-		}
+		this.renderPrimaryActions(contentEl, active);
 
-		if (state.chunkCount > 1) {
+		{
+			const partsDisabled = !active || state.chunkCount <= 1;
 			const partControls = contentEl.createDiv({ cls: 'obsidian-reader-controls' });
-			this.createIconButton(partControls, 'step-back', 'Previous part', !active, () => this.plugin.reader.previousPart());
-			this.createIconButton(partControls, 'step-forward', 'Next part', !active || state.chunkIndex >= state.chunkCount - 1, () =>
-				this.plugin.reader.nextPart(),
+			this.createIconButton(partControls, 'step-back', 'Previous part', partsDisabled, () => this.plugin.reader.previousPart());
+			this.createIconButton(
+				partControls,
+				'step-forward',
+				'Next part',
+				partsDisabled || state.chunkIndex >= state.chunkCount - 1,
+				() => this.plugin.reader.nextPart(),
 			);
 		}
 
@@ -153,7 +181,7 @@ export class PlayerView extends ItemView {
 		const speedSetting = new Setting(contentEl).setName(`Playback speed: ${currentRate.toFixed(2)}x`);
 		speedSetting.addSlider((slider) =>
 			slider
-				.setLimits(0.5, 3, 0.05)
+				.setLimits(SPEED_MIN, SPEED_MAX, 0.05)
 				.setValue(currentRate)
 				.onChange((value) => {
 					this.plugin.reader.setPlaybackRate(value);
@@ -161,11 +189,10 @@ export class PlayerView extends ItemView {
 				}),
 		);
 		const speedRange = speedSetting.controlEl.createDiv({ cls: 'obsidian-reader-speed-range' });
-		speedRange.createSpan({ text: '0.5x' });
-		speedRange.createSpan({ text: '3x' });
+		speedRange.createSpan({ cls: 'obsidian-reader-speed-bound', text: `${SPEED_MIN.toFixed(2)}x` });
+		speedRange.createSpan({ cls: 'obsidian-reader-speed-bound', text: `${SPEED_MAX.toFixed(2)}x` });
 
 		this.renderAudioStatus(contentEl);
-		this.renderClearFilesButton(contentEl);
 	}
 
 	private renderVoiceSelector(container: HTMLElement): void {
@@ -230,12 +257,17 @@ export class PlayerView extends ItemView {
 		});
 	}
 
-	private renderPrimaryActions(container: HTMLElement): void {
+	private renderPrimaryActions(container: HTMLElement, active: boolean): void {
 		const actionsRow = container.createDiv({ cls: 'obsidian-reader-primary-actions' });
+
+		const playSavedButton = actionsRow.createEl('button', { cls: 'obsidian-reader-play-saved-button', text: 'Play saved' });
+		playSavedButton.disabled = true;
+
 		const readButton = actionsRow.createEl('button', {
 			cls: 'mod-cta obsidian-reader-read-button',
 			text: 'Read',
 		});
+		readButton.disabled = active;
 		readButton.onclick = () => void this.plugin.reader.readNote();
 
 		const activeFile = this.app.workspace.getActiveViewOfType(MarkdownView)?.file;
@@ -251,30 +283,32 @@ export class PlayerView extends ItemView {
 				readButton.setText('Regenerate with new voice');
 			}
 
-			const playSavedButton = actionsRow.createEl('button', { cls: 'obsidian-reader-play-saved-button', text: 'Play saved' });
-			actionsRow.insertBefore(playSavedButton, readButton);
+			playSavedButton.disabled = active;
 			playSavedButton.onclick = () => void this.plugin.reader.playSavedFile(info.audioFile);
 		});
 	}
 
-	private renderClearFilesButton(container: HTMLElement): void {
-		if (!this.plugin.settings.showClearFilesButton || !this.plugin.settings.linkAudioInNote) return;
-
+	private showOptionsMenu(evt: MouseEvent): void {
 		const activeFile = this.app.workspace.getActiveViewOfType(MarkdownView)?.file;
-		if (!activeFile) return;
+		const clearEnabled = this.plugin.settings.showClearFilesButton && this.plugin.settings.linkAudioInNote && !!activeFile;
 
-		const button = container.createEl('button', {
-			cls: 'obsidian-reader-clear-files-button',
-			text: 'Clear reader files',
-		});
-		button.onclick = () => {
-			new ConfirmModal(
-				this.app,
-				'Clear reader files?',
-				`This deletes ${activeFile.basename}'s linked audio file and removes the reader-audio properties from its frontmatter. This can't be undone from within Obsidian Reader.`,
-				'Clear',
-				() => void this.plugin.reader.clearReaderFiles(activeFile),
-			).open();
-		};
+		const menu = new Menu();
+		menu.addItem((item) =>
+			item
+				.setTitle('Clear reader files')
+				.setIcon('trash-2')
+				.setDisabled(!clearEnabled)
+				.onClick(() => {
+					if (!activeFile) return;
+					new ConfirmModal(
+						this.app,
+						'Clear reader files?',
+						`This deletes ${activeFile.basename}'s linked audio file and removes the reader-audio properties from its frontmatter. This can't be undone from within Obsidian Reader.`,
+						'Clear',
+						() => void this.plugin.reader.clearReaderFiles(activeFile),
+					).open();
+				}),
+		);
+		menu.showAtMouseEvent(evt);
 	}
 }

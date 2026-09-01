@@ -5,6 +5,7 @@ import { ElevenLabsVoice, listElevenLabsVoices } from './tts/elevenlabs-provider
 
 export type SaveAudioLocation = 'note-folder' | 'custom-folder';
 export type SaveVersioning = 'replace' | 'keep';
+export type QuickStartUnit = 'words' | 'characters';
 
 export interface ReaderSettings {
 	/** Name of the secret in Obsidian's SecretStorage holding the ElevenLabs API key. */
@@ -55,6 +56,12 @@ export interface ReaderSettings {
 	startPlaybackImmediately: boolean;
 	/** Generate an artificially short first chunk so playback can start sooner. Only applies when startPlaybackImmediately is on. */
 	quickStart: boolean;
+	/** Whether the quick-start first chunk is sized by word count or character count. */
+	quickStartUnit: QuickStartUnit;
+	/** Target word count for the quick-start first chunk when quickStartUnit is 'words'. */
+	quickStartWordCount: number;
+	/** Target character count for the quick-start first chunk when quickStartUnit is 'characters'. */
+	quickStartCharCount: number;
 	/** Whether to generate more than one chunk at a time ahead of playback. */
 	parallelGenerationEnabled: boolean;
 	/** How many chunks may be generating at once when parallelGenerationEnabled is on. */
@@ -89,12 +96,12 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
 	panelVoiceIds: [],
 	startPlaybackImmediately: true,
 	quickStart: true,
+	quickStartUnit: 'words',
+	quickStartWordCount: 150,
+	quickStartCharCount: 750,
 	parallelGenerationEnabled: true,
 	maxParallelGeneration: 2,
 };
-
-/** Target size for the artificially short first chunk when quickStart is on. */
-export const QUICK_START_CHUNK_CHARS = 400;
 
 export const ELEVENLABS_MODELS: Record<string, string> = {
 	eleven_v3: 'Eleven v3 (research preview)',
@@ -304,14 +311,59 @@ export class ReaderSettingTab extends PluginSettingTab {
 			new Setting(containerEl)
 				.setName('Quick start')
 				.setDesc(
-					`Generate an artificially short first chunk (~${QUICK_START_CHUNK_CHARS} characters) so playback can start sooner, especially on long notes.`,
+					'Generate an artificially short first chunk (including the title/properties preamble, if enabled) so playback can start sooner, especially on long notes.',
 				)
 				.addToggle((toggle) =>
 					toggle.setValue(this.plugin.settings.quickStart).onChange(async (value) => {
 						this.plugin.settings.quickStart = value;
 						await this.plugin.saveSettings();
+						this.display();
 					}),
 				);
+
+			if (this.plugin.settings.quickStart) {
+				new Setting(containerEl)
+					.setName('Quick start unit')
+					.setDesc('Whether the quick-start first chunk is sized by word count or character count.')
+					.addDropdown((dropdown) =>
+						dropdown
+							.addOptions({ words: 'Words', characters: 'Characters' })
+							.setValue(this.plugin.settings.quickStartUnit)
+							.onChange(async (value) => {
+								this.plugin.settings.quickStartUnit = value as QuickStartUnit;
+								await this.plugin.saveSettings();
+								this.display();
+							}),
+					);
+
+				if (this.plugin.settings.quickStartUnit === 'words') {
+					new Setting(containerEl)
+						.setName('Quick start word count')
+						.setDesc('Target size of the quick-start first chunk, in words.')
+						.addSlider((slider) =>
+							slider
+								.setLimits(20, 500, 10)
+								.setValue(this.plugin.settings.quickStartWordCount)
+								.onChange(async (value) => {
+									this.plugin.settings.quickStartWordCount = value;
+									await this.plugin.saveSettings();
+								}),
+						);
+				} else {
+					new Setting(containerEl)
+						.setName('Quick start character count')
+						.setDesc('Target size of the quick-start first chunk, in characters.')
+						.addSlider((slider) =>
+							slider
+								.setLimits(100, 2000, 50)
+								.setValue(this.plugin.settings.quickStartCharCount)
+								.onChange(async (value) => {
+									this.plugin.settings.quickStartCharCount = value;
+									await this.plugin.saveSettings();
+								}),
+						);
+				}
+			}
 		}
 
 		new Setting(containerEl)
@@ -489,8 +541,10 @@ export class ReaderSettingTab extends PluginSettingTab {
 					);
 
 				new Setting(containerEl)
-					.setName('Show "Clear reader files" button')
-					.setDesc('Show a button in the player view that deletes a note\'s linked audio file and removes the properties above, after confirming.')
+					.setName('Show "Clear reader files" menu item')
+					.setDesc(
+						'Enable the "Clear reader files" item in the player view\'s ⋮ menu (top-right), which deletes a note\'s linked audio file and removes the properties above, after confirming.',
+					)
 					.addToggle((toggle) =>
 						toggle.setValue(this.plugin.settings.showClearFilesButton).onChange(async (value) => {
 							this.plugin.settings.showClearFilesButton = value;

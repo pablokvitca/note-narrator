@@ -21,8 +21,8 @@ An Obsidian plugin that reads your notes aloud using text-to-speech. MVP ships w
 ### Long notes and chunking
 
 - Notes are split into TTS-request-sized chunks according to the **Text chunker** setting: **Markdown-aware** (default) splits by heading section first (up to a configurable **max heading depth**), then by sentence within each section; **Sentence-only** ignores headings and just packs sentences up to the character limit.
-- **Start playback immediately** (on by default) begins playing as soon as the first chunk is ready instead of waiting for the whole note; **Quick start** (on by default, requires the above) makes that first chunk artificially short so it returns faster.
-- **Generate chunks in parallel** (on by default, window of 2) lets more than one chunk generate at once instead of strictly one at a time; **Max parallel chunk generation** controls the window size.
+- **Start playback immediately** (on by default) begins playing as soon as the first chunk is ready instead of waiting for the whole note; **Quick start** (on by default, requires the above) makes that first chunk artificially short — including the title/properties preamble, if enabled — so it returns faster. **Quick start unit** picks whether that target size is in **Words** (default, 150) or **Characters** (default 750), each with its own size slider.
+- **Generate chunks in parallel** (on by default, window of 2) lets more than one chunk generate at once instead of strictly one at a time; **Max parallel chunk generation** controls the window size. If ElevenLabs returns a 429 (rate limited), requests retry automatically with exponential backoff (up to 3 attempts), and generation falls back to sequential (one at a time) for the rest of that read to avoid repeating it.
 
 ### Saving audio to a file
 
@@ -31,7 +31,7 @@ An Obsidian plugin that reads your notes aloud using text-to-speech. MVP ships w
 - **On regenerate**: **Replace existing file** (default) overwrites the previously linked file in place; **Keep old versions** creates a new file each time instead.
 - **Auto-generate on open** (off by default, requires saving + linking) silently (re)generates and saves a note's audio in the background when you open it, if missing or outdated — without playing it or touching anything currently playing.
 - Saved filenames include the voice used, e.g. `My Note (Rachel).mp3`.
-- A **Clear reader files** button in the panel (on by default, toggle to hide it) deletes a note's linked audio file and removes all of the properties above, after a confirmation dialog.
+- A **⋮ menu** in the panel's own title bar (top-right) has a **Clear reader files** item (on by default, toggle to hide it) that deletes a note's linked audio file and removes all of the properties above, after a confirmation dialog.
 
 ### Voices
 
@@ -41,11 +41,11 @@ An Obsidian plugin that reads your notes aloud using text-to-speech. MVP ships w
 ### Other
 
 - Markdown syntax (links, emphasis, code blocks, frontmatter, etc.) is stripped before sending text to the TTS provider so it isn't read aloud literally.
+- Buttons that don't currently apply (e.g. Previous/Next part with a single-chunk read, Play saved with no saved audio) are shown disabled rather than disappearing, so the panel's layout stays stable.
 
 ### Planned
 
-- Highlighting/underlining the text in the note as it's read aloud.
-- Additional TTS providers beyond ElevenLabs.
+See [FUTURE_FEATURES.md](FUTURE_FEATURES.md) for ideas not yet implemented (other TTS providers, local/offline generation, background generation, auto-following the active note, image captioning, and more).
 
 ## Setup
 
@@ -63,6 +63,7 @@ An Obsidian plugin that reads your notes aloud using text-to-speech. MVP ships w
 - "Clear reader files" moves the audio file to trash (respecting your vault's file-deletion preference) and removes the properties; there's no undo for the properties themselves.
 - The voice dropdown fetches only the first 100 voices from your ElevenLabs account (no pagination past that).
 - Saving audio concatenates raw chunk bytes for multi-part reads rather than properly re-muxing the MP3 stream; this works in practice for ElevenLabs' output but isn't a fully spec-correct MP3 concatenation.
+- The rate-limit fallback to sequential generation applies only to the read in progress; each new read starts again at your configured parallel-generation setting.
 - Eleven v3 is ElevenLabs' own "research preview" model — it can be more expressive but also more prone to hallucinated/mispronounced output than Multilingual v2, and their Professional Voice Clones aren't fully optimized for it yet.
 - No scrubbing to an arbitrary point — only relative rewind/skip by the configured skip amount.
 - Requires an ElevenLabs account and API key; this plugin makes network requests to `api.elevenlabs.io` only when you trigger a read.
