@@ -60,3 +60,13 @@ export function chunkText(text: string, maxLength: number): string[] {
 	if (current) chunks.push(current);
 	return chunks;
 }
+
+/** Deterministic, non-cryptographic hash (FNV-1a) used to detect whether a note's content has changed. */
+export function hashText(text: string): string {
+	let hash = 0x811c9dc5;
+	for (let i = 0; i < text.length; i++) {
+		hash ^= text.charCodeAt(i);
+		hash = Math.imul(hash, 0x01000193);
+	}
+	return (hash >>> 0).toString(16);
+}
