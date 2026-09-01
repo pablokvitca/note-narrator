@@ -1,4 +1,5 @@
 import { debounce, ItemView, MarkdownView, setIcon, Setting, WorkspaceLeaf } from 'obsidian';
+import { ConfirmModal } from './confirm-modal';
 import ObsidianReaderPlugin from './main';
 import { AudioLinkStatus, ReaderState } from './reader';
 import { ElevenLabsVoice, listElevenLabsVoices } from './tts/elevenlabs-provider';
@@ -83,10 +84,19 @@ export class PlayerView extends ItemView {
 		contentEl.createDiv({ cls: 'obsidian-reader-status', text: STATUS_LABELS[state.status] });
 
 		if (state.chunkCount > 1) {
+			const chunkFraction = state.duration > 0 ? state.currentTime / state.duration : 0;
+			const overallPercent = Math.round(Math.min(1, (state.chunkIndex + chunkFraction) / state.chunkCount) * 100);
 			contentEl.createDiv({
 				cls: 'obsidian-reader-chunk-progress',
-				text: `Part ${state.chunkIndex + 1} of ${state.chunkCount}`,
+				text: `Part ${state.chunkIndex + 1} of ${state.chunkCount} · ${overallPercent}% complete`,
 			});
+
+			const generationBar = contentEl.createDiv({ cls: 'obsidian-reader-generation-bar' });
+			for (let i = 0; i < state.chunkCount; i++) {
+				const segment = generationBar.createDiv({ cls: 'obsidian-reader-generation-segment' });
+				if (state.chunkReady[i]) segment.addClass('is-ready');
+				if (i === state.chunkIndex) segment.addClass('is-current');
+			}
 		}
 
 		const bar = contentEl.createDiv({ cls: 'obsidian-reader-progress-bar' });
@@ -100,7 +110,7 @@ export class PlayerView extends ItemView {
 		}
 
 		if (state.duration > 0) {
-			const rate = this.plugin.settings.playbackRate;
+			const rate = this.plugin.reader.getPlaybackRate();
 			const remaining = (state.duration - state.currentTime) / rate;
 			contentEl.createDiv({
 				cls: 'obsidian-reader-time',
@@ -111,13 +121,15 @@ export class PlayerView extends ItemView {
 		this.renderVoiceSelector(contentEl);
 
 		if (!active) {
-			const readButton = contentEl.createEl('button', {
-				cls: 'mod-cta obsidian-reader-read-button',
-				text: 'Read',
-			});
-			readButton.onclick = () => {
-				void this.plugin.reader.readNote();
-			};
+			this.renderPrimaryActions(contentEl);
+		}
+
+		if (state.chunkCount > 1) {
+			const partControls = contentEl.createDiv({ cls: 'obsidian-reader-controls' });
+			this.createIconButton(partControls, 'step-back', 'Previous part', !active, () => this.plugin.reader.previousPart());
+			this.createIconButton(partControls, 'step-forward', 'Next part', !active || state.chunkIndex >= state.chunkCount - 1, () =>
+				this.plugin.reader.nextPart(),
+			);
 		}
 
 		const controls = contentEl.createDiv({ cls: 'obsidian-reader-controls' });
@@ -137,15 +149,15 @@ export class PlayerView extends ItemView {
 
 		this.createIconButton(controls, 'square-stop', 'Stop', !active, () => this.plugin.reader.stop());
 
-		const speedSetting = new Setting(contentEl).setName(`Playback speed: ${this.plugin.settings.playbackRate.toFixed(2)}x`);
+		const currentRate = this.plugin.reader.getPlaybackRate();
+		const speedSetting = new Setting(contentEl).setName(`Playback speed: ${currentRate.toFixed(2)}x`);
 		speedSetting.addSlider((slider) =>
 			slider
 				.setLimits(0.5, 3, 0.05)
-				.setValue(this.plugin.settings.playbackRate)
-				.onChange(async (value) => {
+				.setValue(currentRate)
+				.onChange((value) => {
 					this.plugin.reader.setPlaybackRate(value);
 					speedSetting.setName(`Playback speed: ${value.toFixed(2)}x`);
-					await this.plugin.saveSettings();
 				}),
 		);
 		const speedRange = speedSetting.controlEl.createDiv({ cls: 'obsidian-reader-speed-range' });
@@ -153,21 +165,24 @@ export class PlayerView extends ItemView {
 		speedRange.createSpan({ text: '3x' });
 
 		this.renderAudioStatus(contentEl);
+		this.renderClearFilesButton(contentEl);
 	}
 
 	private renderVoiceSelector(container: HTMLElement): void {
 		const currentValue = this.plugin.settings.voiceId;
+		const shortlist = this.plugin.settings.panelVoiceIds;
+		const availableVoices = shortlist.length > 0 ? this.voices.filter((voice) => shortlist.includes(voice.voiceId)) : this.voices;
 
 		new Setting(container)
 			.setName('Voice')
 			.addDropdown((dropdown) => {
-				if (this.voices.length === 0) {
+				if (availableVoices.length === 0) {
 					dropdown.addOption(currentValue, currentValue);
 				} else {
-					for (const voice of this.voices) {
+					for (const voice of availableVoices) {
 						dropdown.addOption(voice.voiceId, voice.name);
 					}
-					if (!this.voices.some((voice) => voice.voiceId === currentValue)) {
+					if (!availableVoices.some((voice) => voice.voiceId === currentValue)) {
 						dropdown.addOption(currentValue, `${currentValue} (custom)`);
 					}
 				}
@@ -213,5 +228,53 @@ export class PlayerView extends ItemView {
 			statusEl.setText(AUDIO_STATUS_LABELS[status]);
 			statusEl.addClass(status === 'outdated' ? 'is-outdated' : 'is-up-to-date');
 		});
+	}
+
+	private renderPrimaryActions(container: HTMLElement): void {
+		const actionsRow = container.createDiv({ cls: 'obsidian-reader-primary-actions' });
+		const readButton = actionsRow.createEl('button', {
+			cls: 'mod-cta obsidian-reader-read-button',
+			text: 'Read',
+		});
+		readButton.onclick = () => void this.plugin.reader.readNote();
+
+		const activeFile = this.app.workspace.getActiveViewOfType(MarkdownView)?.file;
+		if (!activeFile || !this.plugin.settings.linkAudioInNote) return;
+
+		void this.plugin.reader.getAudioInfo(activeFile).then((info) => {
+			if (!info) return;
+
+			const voiceMismatch = info.voiceId !== undefined && info.voiceId !== this.plugin.settings.voiceId;
+			if (info.status === 'outdated') {
+				readButton.setText('Regenerate');
+			} else if (voiceMismatch) {
+				readButton.setText('Regenerate with new voice');
+			}
+
+			const playSavedButton = actionsRow.createEl('button', { cls: 'obsidian-reader-play-saved-button', text: 'Play saved' });
+			actionsRow.insertBefore(playSavedButton, readButton);
+			playSavedButton.onclick = () => void this.plugin.reader.playSavedFile(info.audioFile);
+		});
+	}
+
+	private renderClearFilesButton(container: HTMLElement): void {
+		if (!this.plugin.settings.showClearFilesButton || !this.plugin.settings.linkAudioInNote) return;
+
+		const activeFile = this.app.workspace.getActiveViewOfType(MarkdownView)?.file;
+		if (!activeFile) return;
+
+		const button = container.createEl('button', {
+			cls: 'obsidian-reader-clear-files-button',
+			text: 'Clear reader files',
+		});
+		button.onclick = () => {
+			new ConfirmModal(
+				this.app,
+				'Clear reader files?',
+				`This deletes ${activeFile.basename}'s linked audio file and removes the reader-audio properties from its frontmatter. This can't be undone from within Obsidian Reader.`,
+				'Clear',
+				() => void this.plugin.reader.clearReaderFiles(activeFile),
+			).open();
+		};
 	}
 }

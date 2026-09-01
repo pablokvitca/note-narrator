@@ -1,20 +1,11 @@
 import { App, Events, MarkdownView, moment, Notice, normalizePath, TFile } from 'obsidian';
 import { concatArrayBuffers, sanitizeFilenameComponent } from './audio-utils';
-import { DEFAULT_ELEVENLABS_CHAR_LIMIT, ELEVENLABS_MODEL_CHAR_LIMITS, ReaderSettings } from './settings';
-import { chunkText, hashText, stripMarkdown } from './text-utils';
+import { DEFAULT_ELEVENLABS_CHAR_LIMIT, ELEVENLABS_MODEL_CHAR_LIMITS, QUICK_START_CHUNK_CHARS, ReaderSettings } from './settings';
+import { buildReadingPreamble, chunkBySentence, chunkNote, hashText, stripFrontmatter } from './text-utils';
 import { ElevenLabsProvider, getElevenLabsVoiceName } from './tts/elevenlabs-provider';
 
 export type ReaderStatus = 'idle' | 'generating' | 'playing' | 'paused';
 export type AudioLinkStatus = 'none' | 'up-to-date' | 'outdated';
-
-function hashPropertyName(property: string): string {
-	return `${property}-hash`;
-}
-
-/** Internal-only property tracking the exact saved audio file path, used to find it again for "replace" mode. */
-function pathPropertyName(property: string): string {
-	return `${property}-path`;
-}
 
 export interface ReaderState {
 	status: ReaderStatus;
@@ -22,21 +13,37 @@ export interface ReaderState {
 	chunkCount: number;
 	currentTime: number;
 	duration: number;
+	/** Whether each chunk's audio has finished generating, for the segmented generation-progress bar. */
+	chunkReady: boolean[];
 }
 
-const IDLE_STATE: ReaderState = { status: 'idle', chunkIndex: 0, chunkCount: 0, currentTime: 0, duration: 0 };
+const IDLE_STATE: ReaderState = { status: 'idle', chunkIndex: 0, chunkCount: 0, currentTime: 0, duration: 0, chunkReady: [] };
+
+type ChunkOutcome = 'ended' | 'next' | 'previous';
 
 export class Reader extends Events {
 	private audio: HTMLAudioElement | null = null;
 	private sessionId = 0;
-	private resolveCurrentChunk: (() => void) | null = null;
+	private resolveCurrentChunk: ((outcome: ChunkOutcome) => void) | null = null;
 	private state: ReaderState = { ...IDLE_STATE };
+	/** Live playback rate for the current/next read. Starts from settings.playbackRate but is never persisted back to it. */
+	private currentPlaybackRate: number;
+
+	/** Chunk texts and their generated audio for the active read, addressable so Previous/Next part can jump around. */
+	private chunks: string[] = [];
+	private chunkBuffers: (ArrayBuffer | undefined)[] = [];
+	private chunkPromises: (Promise<ArrayBuffer> | undefined)[] = [];
+	private provider: ElevenLabsProvider | null = null;
+	private sourceFileForSave: TFile | null = null;
+	/** Whether the current read's audio has already been saved (triggered once generation of every chunk completes). */
+	private savedForSession = false;
 
 	constructor(
 		private app: App,
 		private settings: ReaderSettings,
 	) {
 		super();
+		this.currentPlaybackRate = settings.playbackRate;
 	}
 
 	getState(): ReaderState {
@@ -62,9 +69,25 @@ export class Reader extends Events {
 		if (this.resolveCurrentChunk) {
 			const resolve = this.resolveCurrentChunk;
 			this.resolveCurrentChunk = null;
-			resolve();
+			resolve('ended');
 		}
 		this.setState(IDLE_STATE);
+	}
+
+	/** Jumps to the next chunk without waiting for the current one to finish playing. No-op past the last chunk. */
+	nextPart(): void {
+		if (!this.resolveCurrentChunk) return;
+		const resolve = this.resolveCurrentChunk;
+		this.resolveCurrentChunk = null;
+		resolve('next');
+	}
+
+	/** Jumps to the previous chunk (or restarts the current one if already on the first). */
+	previousPart(): void {
+		if (!this.resolveCurrentChunk) return;
+		const resolve = this.resolveCurrentChunk;
+		this.resolveCurrentChunk = null;
+		resolve('previous');
 	}
 
 	pause(): void {
@@ -87,8 +110,13 @@ export class Reader extends Events {
 		this.audio.currentTime = Math.min(Math.max(this.audio.currentTime + seconds, 0), duration);
 	}
 
+	/** Live-only: applies to the current/next read but is never written back to settings.playbackRate. */
+	getPlaybackRate(): number {
+		return this.currentPlaybackRate;
+	}
+
 	setPlaybackRate(rate: number): void {
-		this.settings.playbackRate = rate;
+		this.currentPlaybackRate = rate;
 		if (this.audio) this.audio.playbackRate = rate;
 	}
 
@@ -100,44 +128,107 @@ export class Reader extends Events {
 		}
 
 		const selection = target.editor.getSelection();
-		const useSelection = this.settings.readSelectionIfPresent && selection.length > 0;
-		await this.readText(useSelection ? selection : target.editor.getValue(), target.file);
-	}
-
-	private async readText(rawText: string, sourceFile: TFile | null): Promise<void> {
-		const text = stripMarkdown(rawText).trim();
-		if (!text) {
-			new Notice('Nothing to read.');
+		if (this.settings.readSelectionIfPresent && selection.length > 0) {
+			await this.readText(selection, target.file, { allowSave: false });
 			return;
 		}
 
+		const body = stripFrontmatter(target.editor.getValue());
+		const frontmatter = target.file ? this.app.metadataCache.getFileCache(target.file)?.frontmatter : undefined;
+		const preamble = buildReadingPreamble(target.file?.basename ?? null, frontmatter, {
+			readTitle: this.settings.readTitle,
+			readProperties: this.settings.readProperties,
+		});
+
+		await this.readText(preamble ? `${preamble}\n\n${body}` : body, target.file, { allowSave: true });
+	}
+
+	private async readText(rawText: string, sourceFile: TFile | null, options: { allowSave: boolean }): Promise<void> {
 		const apiKey = this.app.secretStorage.getSecret(this.settings.apiKeySecretId);
 		if (!apiKey) {
 			new Notice('Set an ElevenLabs API key in the Obsidian Reader settings.');
 			return;
 		}
 
+		const charLimit = ELEVENLABS_MODEL_CHAR_LIMITS[this.settings.modelId] ?? DEFAULT_ELEVENLABS_CHAR_LIMIT;
+		let chunks = chunkNote(rawText, charLimit, this.settings.chunkerStyle, this.settings.maxHeadingDepth);
+		if (chunks.length === 0) {
+			new Notice('Nothing to read.');
+			return;
+		}
+
+		// Quick start: split the first chunk into a short lead-in plus the remainder, so the first
+		// TTS request returns sooner and playback can begin without waiting for a full-sized chunk.
+		if (this.settings.startPlaybackImmediately && this.settings.quickStart) {
+			const [firstChunk, ...rest] = chunks;
+			if (firstChunk && firstChunk.length > QUICK_START_CHUNK_CHARS) {
+				chunks = [...chunkBySentence(firstChunk, QUICK_START_CHUNK_CHARS), ...rest];
+			}
+		}
+
 		this.stop();
 		const session = this.sessionId;
+		this.currentPlaybackRate = this.settings.playbackRate;
+		this.chunks = chunks;
+		this.chunkBuffers = new Array<ArrayBuffer | undefined>(chunks.length);
+		this.chunkPromises = new Array<Promise<ArrayBuffer> | undefined>(chunks.length);
+		this.provider = new ElevenLabsProvider(apiKey, this.settings);
+		this.sourceFileForSave = options.allowSave ? sourceFile : null;
+		this.savedForSession = false;
+		this.setState({
+			status: 'generating',
+			chunkIndex: 0,
+			chunkCount: chunks.length,
+			currentTime: 0,
+			duration: 0,
+			chunkReady: new Array<boolean>(chunks.length).fill(false),
+		});
 
-		const charLimit = ELEVENLABS_MODEL_CHAR_LIMITS[this.settings.modelId] ?? DEFAULT_ELEVENLABS_CHAR_LIMIT;
-		const chunks = chunkText(text, charLimit);
-		const provider = new ElevenLabsProvider(apiKey, this.settings);
+		if (!this.settings.startPlaybackImmediately) {
+			const ok = await this.generateAllChunks(session);
+			if (!ok || session !== this.sessionId) return;
+		}
 
-		this.setState({ status: 'generating', chunkIndex: 0, chunkCount: chunks.length, currentTime: 0, duration: 0 });
+		await this.playFromIndex(session, 0);
+	}
 
-		const generatedChunks: ArrayBuffer[] = [];
-		// One-chunk lookahead: the next chunk starts generating while the current one plays, so
-		// there's no gap waiting on the network between chunks unless generation is slower than playback.
-		let nextChunkPromise: Promise<ArrayBuffer> = provider.synthesize(chunks[0] ?? '');
+	/** Generates every chunk (respecting the parallel-generation setting) before any playback starts. Returns false on failure. */
+	private async generateAllChunks(session: number): Promise<boolean> {
+		const windowSize = this.settings.parallelGenerationEnabled ? Math.max(1, this.settings.maxParallelGeneration) : 1;
+		let nextIndex = 0;
 
-		for (let i = 0; i < chunks.length; i++) {
+		const worker = async () => {
+			while (nextIndex < this.chunks.length) {
+				if (session !== this.sessionId) return;
+				const index = nextIndex++;
+				this.setState({ status: 'generating', chunkIndex: index });
+				await this.ensureChunkBuffer(index);
+			}
+		};
+
+		try {
+			await Promise.all(Array.from({ length: windowSize }, () => worker()));
+			return true;
+		} catch (error) {
+			if (session !== this.sessionId) return false;
+			console.error('Obsidian Reader: failed to read note aloud', error);
+			new Notice(`Failed to read note aloud: ${error instanceof Error ? error.message : String(error)}`);
+			this.setState(IDLE_STATE);
+			return false;
+		}
+	}
+
+	/** Generates (if needed) and plays chunks starting at index, honoring Previous/Next-part jumps. */
+	private async playFromIndex(session: number, startIndex: number): Promise<void> {
+		let index = startIndex;
+
+		while (index >= 0 && index < this.chunks.length) {
 			if (session !== this.sessionId) return;
-			this.setState({ status: 'generating', chunkIndex: i });
+			this.setState({ status: 'generating', chunkIndex: index });
 
 			let audioData: ArrayBuffer;
 			try {
-				audioData = await nextChunkPromise;
+				audioData = await this.ensureChunkBuffer(index);
 			} catch (error) {
 				console.error('Obsidian Reader: failed to read note aloud', error);
 				new Notice(`Failed to read note aloud: ${error instanceof Error ? error.message : String(error)}`);
@@ -145,25 +236,63 @@ export class Reader extends Events {
 				return;
 			}
 
-			const next = chunks[i + 1];
-			if (next !== undefined) {
-				nextChunkPromise = provider.synthesize(next);
-				nextChunkPromise.catch(() => {
-					/* surfaced when awaited on the next iteration; swallowed here only to avoid an unhandled rejection if reading stops first */
-				});
-			}
+			this.prefetchAhead(index);
 
-			generatedChunks.push(audioData);
 			if (session !== this.sessionId) return;
-			await this.playChunk(audioData, i, chunks.length);
+			const outcome = await this.playChunk(audioData, index, this.chunks.length);
+			if (session !== this.sessionId) return;
+
+			index = outcome === 'previous' ? Math.max(0, index - 1) : index + 1;
 		}
 
 		if (session !== this.sessionId) return;
 		this.setState(IDLE_STATE);
+	}
 
-		if (this.settings.saveAudioFile) {
-			await this.saveAudioFile(generatedChunks, sourceFile);
+	/** Kicks off generation for the next chunks within the configured parallel-generation window (a no-op if disabled). */
+	private prefetchAhead(fromIndex: number): void {
+		if (!this.settings.parallelGenerationEnabled) return;
+		const windowSize = Math.max(1, this.settings.maxParallelGeneration);
+		for (let offset = 1; offset < windowSize; offset++) {
+			this.prefetchChunkBuffer(fromIndex + offset);
 		}
+	}
+
+	private ensureChunkBuffer(index: number): Promise<ArrayBuffer> {
+		const cached = this.chunkBuffers[index];
+		if (cached) return Promise.resolve(cached);
+
+		const inFlight = this.chunkPromises[index];
+		if (inFlight) return inFlight;
+
+		const promise = this.provider!.synthesize(this.chunks[index] ?? '').then((buffer) => {
+			this.chunkBuffers[index] = buffer;
+			const chunkReady = [...this.state.chunkReady];
+			chunkReady[index] = true;
+			this.setState({ chunkReady });
+			this.maybeSaveOnGenerationComplete(chunkReady);
+			return buffer;
+		});
+		this.chunkPromises[index] = promise;
+		return promise;
+	}
+
+	/** Saves (once) as soon as every chunk has finished generating, regardless of playback progress. */
+	private maybeSaveOnGenerationComplete(chunkReady: boolean[]): void {
+		if (this.savedForSession) return;
+		if (chunkReady.length === 0 || !chunkReady.every(Boolean)) return;
+		if (!this.settings.saveAudioFile || !this.sourceFileForSave) return;
+
+		this.savedForSession = true;
+		const buffers = this.chunkBuffers.filter((buffer): buffer is ArrayBuffer => buffer !== undefined);
+		void this.saveAudioFile(buffers, this.sourceFileForSave);
+	}
+
+	private prefetchChunkBuffer(index: number): void {
+		if (index < 0 || index >= this.chunks.length || this.chunkBuffers[index] || this.chunkPromises[index]) return;
+		void this.ensureChunkBuffer(index).catch((error: unknown) => {
+			console.error('Obsidian Reader: failed to prefetch chunk', error);
+		});
 	}
 
 	private async saveAudioFile(chunks: ArrayBuffer[], sourceFile: TFile | null): Promise<void> {
@@ -211,25 +340,43 @@ export class Reader extends Events {
 	}
 
 	private findExistingAudioFile(sourceFile: TFile): TFile | null {
-		const property = this.settings.audioLinkProperty;
 		const frontmatter = this.app.metadataCache.getFileCache(sourceFile)?.frontmatter;
-		const storedPath = frontmatter?.[pathPropertyName(property)] as string | undefined;
+		const storedPath = frontmatter?.[this.settings.audioPathProperty] as string | undefined;
 		if (!storedPath) return null;
 		const file = this.app.vault.getAbstractFileByPath(storedPath);
 		return file instanceof TFile ? file : null;
 	}
 
 	private async linkAudioInNote(audioFile: TFile, sourceFile: TFile): Promise<void> {
-		const property = this.settings.audioLinkProperty;
 		const link = this.app.fileManager.generateMarkdownLink(audioFile, sourceFile.path);
 		const currentContent = await this.app.vault.cachedRead(sourceFile);
 		const hash = hashText(currentContent);
 
 		await this.app.fileManager.processFrontMatter(sourceFile, (frontmatter: Record<string, unknown>) => {
-			frontmatter[property] = link;
-			frontmatter[hashPropertyName(property)] = hash;
-			frontmatter[pathPropertyName(property)] = audioFile.path;
+			frontmatter[this.settings.audioLinkProperty] = link;
+			frontmatter[this.settings.audioHashProperty] = hash;
+			frontmatter[this.settings.audioPathProperty] = audioFile.path;
+			frontmatter[this.settings.audioTimestampProperty] = moment().toISOString(true);
+			frontmatter[this.settings.audioVoiceProperty] = this.settings.voiceId;
 		});
+	}
+
+	/** Deletes a note's linked audio file (if any) and removes the reader-audio properties from its frontmatter. */
+	async clearReaderFiles(sourceFile: TFile): Promise<void> {
+		const audioFile = this.findExistingAudioFile(sourceFile);
+		if (audioFile) {
+			await this.app.fileManager.trashFile(audioFile);
+		}
+
+		await this.app.fileManager.processFrontMatter(sourceFile, (frontmatter: Record<string, unknown>) => {
+			delete frontmatter[this.settings.audioLinkProperty];
+			delete frontmatter[this.settings.audioHashProperty];
+			delete frontmatter[this.settings.audioPathProperty];
+			delete frontmatter[this.settings.audioTimestampProperty];
+			delete frontmatter[this.settings.audioVoiceProperty];
+		});
+
+		new Notice(audioFile ? 'Cleared reader audio file and properties.' : 'Cleared reader properties (no audio file was linked).');
 	}
 
 	/**
@@ -248,11 +395,18 @@ export class Reader extends Events {
 			if (!apiKey) return;
 
 			const rawText = await this.app.vault.cachedRead(file);
-			const text = stripMarkdown(rawText).trim();
-			if (!text) return;
+			const body = stripFrontmatter(rawText);
+			const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
+			const preamble = buildReadingPreamble(file.basename, frontmatter, {
+				readTitle: this.settings.readTitle,
+				readProperties: this.settings.readProperties,
+			});
+			const textToRead = preamble ? `${preamble}\n\n${body}` : body;
 
 			const charLimit = ELEVENLABS_MODEL_CHAR_LIMITS[this.settings.modelId] ?? DEFAULT_ELEVENLABS_CHAR_LIMIT;
-			const chunks = chunkText(text, charLimit);
+			const chunks = chunkNote(textToRead, charLimit, this.settings.chunkerStyle, this.settings.maxHeadingDepth);
+			if (chunks.length === 0) return;
+
 			const provider = new ElevenLabsProvider(apiKey, this.settings);
 
 			const buffers: ArrayBuffer[] = [];
@@ -268,14 +422,53 @@ export class Reader extends Events {
 
 	/** Compares the note's current content against the hash stored when its linked audio was last generated. */
 	async getAudioStatus(file: TFile): Promise<AudioLinkStatus> {
-		const property = this.settings.audioLinkProperty;
 		const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
-		const link = frontmatter?.[property] as string | undefined;
-		const storedHash = frontmatter?.[hashPropertyName(property)] as string | undefined;
+		const link = frontmatter?.[this.settings.audioLinkProperty] as string | undefined;
+		const storedHash = frontmatter?.[this.settings.audioHashProperty] as string | undefined;
 		if (!link || !storedHash) return 'none';
 
 		const currentContent = await this.app.vault.cachedRead(file);
 		return hashText(currentContent) === storedHash ? 'up-to-date' : 'outdated';
+	}
+
+	/** Info about a note's linked saved audio, for the player view's "Play saved"/"Regenerate" buttons. Null if none exists. */
+	async getAudioInfo(file: TFile): Promise<{ audioFile: TFile; status: AudioLinkStatus; voiceId: string | undefined } | null> {
+		const audioFile = this.findExistingAudioFile(file);
+		if (!audioFile) return null;
+
+		const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
+		const voiceId = frontmatter?.[this.settings.audioVoiceProperty] as string | undefined;
+		const status = await this.getAudioStatus(file);
+		return { audioFile, status, voiceId };
+	}
+
+	/** Plays a previously saved audio file directly, without generating anything. */
+	async playSavedFile(audioFile: TFile): Promise<void> {
+		this.stop();
+		const session = this.sessionId;
+
+		try {
+			const data = await this.app.vault.readBinary(audioFile);
+			if (session !== this.sessionId) return;
+
+			this.chunks = [];
+			this.chunkBuffers = [data];
+			this.chunkPromises = [];
+			this.provider = null;
+			this.sourceFileForSave = null;
+			this.savedForSession = true;
+			this.currentPlaybackRate = this.settings.playbackRate;
+			this.setState({ status: 'playing', chunkIndex: 0, chunkCount: 1, currentTime: 0, duration: 0, chunkReady: [true] });
+
+			if (session !== this.sessionId) return;
+			await this.playChunk(data, 0, 1);
+			if (session !== this.sessionId) return;
+			this.setState(IDLE_STATE);
+		} catch (error) {
+			console.error('Obsidian Reader: failed to play saved audio', error);
+			new Notice(`Failed to play saved audio: ${error instanceof Error ? error.message : String(error)}`);
+			this.setState(IDLE_STATE);
+		}
 	}
 
 	private resolveSaveFolder(sourceFile: TFile | null): string {
@@ -303,29 +496,33 @@ export class Reader extends Events {
 		return candidate;
 	}
 
-	private playChunk(audioData: ArrayBuffer, index: number, count: number): Promise<void> {
+	private playChunk(audioData: ArrayBuffer, index: number, count: number): Promise<ChunkOutcome> {
 		return new Promise((resolve) => {
 			const blob = new Blob([audioData], { type: 'audio/mpeg' });
 			const url = URL.createObjectURL(blob);
 			const audio = new Audio(url);
-			audio.playbackRate = this.settings.playbackRate;
+			audio.playbackRate = this.currentPlaybackRate;
 			this.audio = audio;
 
 			const onTimeUpdate = () => this.setState({ currentTime: audio.currentTime, duration: audio.duration || 0 });
 
-			const finish = () => {
+			const cleanup = () => {
 				audio.removeEventListener('timeupdate', onTimeUpdate);
 				URL.revokeObjectURL(url);
 				if (this.audio === audio) this.audio = null;
 				this.resolveCurrentChunk = null;
-				resolve();
+			};
+
+			const finish = (outcome: ChunkOutcome) => {
+				cleanup();
+				resolve(outcome);
 			};
 
 			this.resolveCurrentChunk = finish;
 			audio.addEventListener('loadedmetadata', () => this.setState({ duration: audio.duration || 0 }));
 			audio.addEventListener('timeupdate', onTimeUpdate);
-			audio.addEventListener('ended', finish);
-			audio.addEventListener('error', finish);
+			audio.addEventListener('ended', () => finish('ended'));
+			audio.addEventListener('error', () => finish('ended'));
 
 			this.setState({ status: 'playing', chunkIndex: index, chunkCount: count, currentTime: 0, duration: audio.duration || 0 });
 			void audio.play();

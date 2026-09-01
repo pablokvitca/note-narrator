@@ -1,6 +1,7 @@
-import { App, DropdownComponent, Notice, PluginSettingTab, SecretComponent, Setting } from 'obsidian';
+import { App, Notice, PluginSettingTab, SecretComponent, Setting } from 'obsidian';
 import ObsidianReaderPlugin from './main';
-import { listElevenLabsVoices } from './tts/elevenlabs-provider';
+import { ChunkerStyle } from './text-utils';
+import { ElevenLabsVoice, listElevenLabsVoices } from './tts/elevenlabs-provider';
 
 export type SaveAudioLocation = 'note-folder' | 'custom-folder';
 export type SaveVersioning = 'replace' | 'keep';
@@ -24,12 +25,40 @@ export interface ReaderSettings {
 	saveAudioFolderPath: string;
 	/** Whether to write a link to the saved audio file into the note's frontmatter. */
 	linkAudioInNote: boolean;
-	/** Frontmatter property the audio link is written to; a companion "<name>-hash" property tracks staleness. */
+	/** Frontmatter property the audio link is written to. */
 	audioLinkProperty: string;
+	/** Frontmatter property the content hash is written to, used to detect staleness. */
+	audioHashProperty: string;
+	/** Frontmatter property the raw vault path to the audio file is written to, used internally to find it again. */
+	audioPathProperty: string;
+	/** Frontmatter property the generation timestamp is written to. */
+	audioTimestampProperty: string;
+	/** Frontmatter property the voice ID used to generate the audio is written to. */
+	audioVoiceProperty: string;
+	/** Show a "Clear reader files" button in the player view. */
+	showClearFilesButton: boolean;
 	/** Silently (re)generate and save a note's audio on open if missing or outdated. Requires saveAudioFile and linkAudioInNote. */
 	autoGenerateOnOpen: boolean;
 	/** Whether regenerating a note's audio replaces the previously linked file or keeps it and creates a new one. Only applies when linkAudioInNote is on. */
 	saveVersioning: SaveVersioning;
+	/** How to split note text into TTS requests. */
+	chunkerStyle: ChunkerStyle;
+	/** Headings at or shallower than this depth (1 = H1) start a new section when chunkerStyle is 'markdown-aware'. */
+	maxHeadingDepth: number;
+	/** Speak the note's title before its content. */
+	readTitle: boolean;
+	/** Speak "Properties", each frontmatter property and value, then "Content", before the note's content. */
+	readProperties: boolean;
+	/** Voice IDs shown in the player view's Voice dropdown. Empty means show all fetched voices there. */
+	panelVoiceIds: string[];
+	/** Start playback as soon as the first chunk is ready, rather than waiting for the whole note to generate. */
+	startPlaybackImmediately: boolean;
+	/** Generate an artificially short first chunk so playback can start sooner. Only applies when startPlaybackImmediately is on. */
+	quickStart: boolean;
+	/** Whether to generate more than one chunk at a time ahead of playback. */
+	parallelGenerationEnabled: boolean;
+	/** How many chunks may be generating at once when parallelGenerationEnabled is on. */
+	maxParallelGeneration: number;
 }
 
 export const DEFAULT_SETTINGS: ReaderSettings = {
@@ -45,10 +74,27 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
 	saveAudioLocation: 'note-folder',
 	saveAudioFolderPath: 'Reader Audio',
 	linkAudioInNote: false,
-	audioLinkProperty: 'reader-audio',
+	audioLinkProperty: 'reader_audio',
+	audioHashProperty: 'reader_audio_hash',
+	audioPathProperty: 'reader_audio_path',
+	audioTimestampProperty: 'reader_audio_timestamp',
+	audioVoiceProperty: 'reader_audio_voice',
+	showClearFilesButton: true,
 	autoGenerateOnOpen: false,
 	saveVersioning: 'replace',
+	chunkerStyle: 'markdown-aware',
+	maxHeadingDepth: 2,
+	readTitle: true,
+	readProperties: false,
+	panelVoiceIds: [],
+	startPlaybackImmediately: true,
+	quickStart: true,
+	parallelGenerationEnabled: true,
+	maxParallelGeneration: 2,
 };
+
+/** Target size for the artificially short first chunk when quickStart is on. */
+export const QUICK_START_CHUNK_CHARS = 400;
 
 export const ELEVENLABS_MODELS: Record<string, string> = {
 	eleven_v3: 'Eleven v3 (research preview)',
@@ -67,6 +113,8 @@ export const DEFAULT_ELEVENLABS_CHAR_LIMIT = 5000;
 
 export class ReaderSettingTab extends PluginSettingTab {
 	plugin: ObsidianReaderPlugin;
+	private voices: ElevenLabsVoice[] = [];
+	private voicesLoaded = false;
 
 	constructor(app: App, plugin: ObsidianReaderPlugin) {
 		super(app, plugin);
@@ -76,6 +124,11 @@ export class ReaderSettingTab extends PluginSettingTab {
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
+
+		if (!this.voicesLoaded) {
+			this.voicesLoaded = true;
+			void this.loadVoices();
+		}
 
 		new Setting(containerEl).setName('ElevenLabs').setHeading();
 
@@ -89,14 +142,22 @@ export class ReaderSettingTab extends PluginSettingTab {
 				}),
 			);
 
-		let voiceDropdown: DropdownComponent | undefined;
+		const currentVoiceId = this.plugin.settings.voiceId;
 		new Setting(containerEl)
 			.setName('Voice')
 			.setDesc('Voices fetched from your ElevenLabs account (first 100). Use the refresh button after adding an API key or creating new voices.')
 			.addDropdown((dropdown) => {
-				voiceDropdown = dropdown;
-				dropdown.addOption(this.plugin.settings.voiceId, this.plugin.settings.voiceId);
-				dropdown.setValue(this.plugin.settings.voiceId);
+				if (this.voices.length === 0) {
+					dropdown.addOption(currentVoiceId, currentVoiceId);
+				} else {
+					for (const voice of this.voices) {
+						dropdown.addOption(voice.voiceId, voice.name);
+					}
+					if (!this.voices.some((voice) => voice.voiceId === currentVoiceId)) {
+						dropdown.addOption(currentVoiceId, `${currentVoiceId} (custom)`);
+					}
+				}
+				dropdown.setValue(currentVoiceId);
 				dropdown.onChange(async (value) => {
 					this.plugin.settings.voiceId = value;
 					await this.plugin.saveSettings();
@@ -106,9 +167,8 @@ export class ReaderSettingTab extends PluginSettingTab {
 				button
 					.setIcon('refresh-cw')
 					.setTooltip('Refresh voice list from ElevenLabs')
-					.onClick(() => this.refreshVoices(voiceDropdown)),
+					.onClick(() => this.loadVoices()),
 			);
-		void this.refreshVoices(voiceDropdown);
 
 		new Setting(containerEl)
 			.setName('Model')
@@ -152,7 +212,133 @@ export class ReaderSettingTab extends PluginSettingTab {
 					}),
 			);
 
+		new Setting(containerEl).setName('Panel voices').setHeading();
+		containerEl.createEl('p', {
+			cls: 'setting-item-description',
+			text: "Choose a short list of voices to show in the player view's Voice dropdown, instead of your whole account list. Leave none selected to show all voices there.",
+		});
+
+		if (this.voices.length === 0) {
+			containerEl.createEl('p', { cls: 'setting-item-description', text: 'Voices not loaded yet — set an API key and use the refresh button above.' });
+		} else {
+			for (const voice of this.voices) {
+				new Setting(containerEl).setName(voice.name).addToggle((toggle) =>
+					toggle.setValue(this.plugin.settings.panelVoiceIds.includes(voice.voiceId)).onChange(async (value) => {
+						const ids = new Set(this.plugin.settings.panelVoiceIds);
+						if (value) ids.add(voice.voiceId);
+						else ids.delete(voice.voiceId);
+						this.plugin.settings.panelVoiceIds = Array.from(ids);
+						await this.plugin.saveSettings();
+					}),
+				);
+			}
+		}
+
 		new Setting(containerEl).setName('Reading').setHeading();
+
+		new Setting(containerEl)
+			.setName('Read note title')
+			.setDesc('Speak the note\'s title before its content.')
+			.addToggle((toggle) =>
+				toggle.setValue(this.plugin.settings.readTitle).onChange(async (value) => {
+					this.plugin.settings.readTitle = value;
+					await this.plugin.saveSettings();
+				}),
+			);
+
+		new Setting(containerEl)
+			.setName('Read note properties')
+			.setDesc('Speak "Properties", each frontmatter property and value, then "Content", before the note\'s content. Does not apply when reading a selection.')
+			.addToggle((toggle) =>
+				toggle.setValue(this.plugin.settings.readProperties).onChange(async (value) => {
+					this.plugin.settings.readProperties = value;
+					await this.plugin.saveSettings();
+				}),
+			);
+
+		new Setting(containerEl)
+			.setName('Text chunker')
+			.setDesc(
+				'How to split note text into TTS requests. Markdown-aware splits by heading section first, then by sentence within each section. Sentence-only ignores headings and packs sentences up to the character limit.',
+			)
+			.addDropdown((dropdown) =>
+				dropdown
+					.addOptions({ 'markdown-aware': 'Markdown-aware (default)', sentence: 'Sentence-only' })
+					.setValue(this.plugin.settings.chunkerStyle)
+					.onChange(async (value) => {
+						this.plugin.settings.chunkerStyle = value as ChunkerStyle;
+						await this.plugin.saveSettings();
+						this.display();
+					}),
+			);
+
+		if (this.plugin.settings.chunkerStyle === 'markdown-aware') {
+			new Setting(containerEl)
+				.setName('Max heading depth for sections')
+				.setDesc('Headings at or shallower than this depth (1 = #, 2 = ## and shallower, etc.) start a new section. Deeper headings stay within their enclosing section.')
+				.addSlider((slider) =>
+					slider
+						.setLimits(1, 6, 1)
+						.setValue(this.plugin.settings.maxHeadingDepth)
+						.onChange(async (value) => {
+							this.plugin.settings.maxHeadingDepth = value;
+							await this.plugin.saveSettings();
+						}),
+				);
+		}
+
+		new Setting(containerEl).setName('Performance').setHeading();
+
+		new Setting(containerEl)
+			.setName('Start playback immediately')
+			.setDesc('Start playing as soon as the first chunk is ready, instead of waiting for the whole note to finish generating first.')
+			.addToggle((toggle) =>
+				toggle.setValue(this.plugin.settings.startPlaybackImmediately).onChange(async (value) => {
+					this.plugin.settings.startPlaybackImmediately = value;
+					await this.plugin.saveSettings();
+					this.display();
+				}),
+			);
+
+		if (this.plugin.settings.startPlaybackImmediately) {
+			new Setting(containerEl)
+				.setName('Quick start')
+				.setDesc(
+					`Generate an artificially short first chunk (~${QUICK_START_CHUNK_CHARS} characters) so playback can start sooner, especially on long notes.`,
+				)
+				.addToggle((toggle) =>
+					toggle.setValue(this.plugin.settings.quickStart).onChange(async (value) => {
+						this.plugin.settings.quickStart = value;
+						await this.plugin.saveSettings();
+					}),
+				);
+		}
+
+		new Setting(containerEl)
+			.setName('Generate chunks in parallel')
+			.setDesc('Generate more than one chunk ahead of playback at once, instead of strictly one at a time.')
+			.addToggle((toggle) =>
+				toggle.setValue(this.plugin.settings.parallelGenerationEnabled).onChange(async (value) => {
+					this.plugin.settings.parallelGenerationEnabled = value;
+					await this.plugin.saveSettings();
+					this.display();
+				}),
+			);
+
+		if (this.plugin.settings.parallelGenerationEnabled) {
+			new Setting(containerEl)
+				.setName('Max parallel chunk generation')
+				.setDesc('How many chunks may be generating at the same time. Higher can finish long notes faster but makes more simultaneous ElevenLabs requests.')
+				.addSlider((slider) =>
+					slider
+						.setLimits(2, 5, 1)
+						.setValue(this.plugin.settings.maxParallelGeneration)
+						.onChange(async (value) => {
+							this.plugin.settings.maxParallelGeneration = value;
+							await this.plugin.saveSettings();
+						}),
+				);
+		}
 
 		new Setting(containerEl)
 			.setName('Read selection instead of whole note')
@@ -165,16 +351,16 @@ export class ReaderSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName('Playback speed')
+			.setName('Default playback speed')
 			.setDesc(
-				'Speed of the generated audio during playback. Applied on the audio player, so it works regardless of TTS provider or voice. Also adjustable live from the player view.',
+				'Starting speed for each read. The player view has its own speed slider to adjust playback live without changing this default.',
 			)
 			.addSlider((slider) =>
 				slider
 					.setLimits(0.5, 3, 0.05)
 					.setValue(this.plugin.settings.playbackRate)
 					.onChange(async (value) => {
-						this.plugin.reader.setPlaybackRate(value);
+						this.plugin.settings.playbackRate = value;
 						await this.plugin.saveSettings();
 					}),
 			);
@@ -249,21 +435,31 @@ export class ReaderSettingTab extends PluginSettingTab {
 				);
 
 			if (this.plugin.settings.linkAudioInNote) {
-				new Setting(containerEl)
-					.setName('Audio link property')
-					.setDesc(
-						`Frontmatter property the audio link is written to. A companion "${this.plugin.settings.audioLinkProperty}-hash" property tracks whether the note has changed since.`,
-					)
-					.addText((text) =>
-						text
-							.setPlaceholder(DEFAULT_SETTINGS.audioLinkProperty)
-							.setValue(this.plugin.settings.audioLinkProperty)
-							.onChange(async (value) => {
-								this.plugin.settings.audioLinkProperty = value.trim() || DEFAULT_SETTINGS.audioLinkProperty;
-								await this.plugin.saveSettings();
-								this.display();
-							}),
-					);
+				this.renderPropertyField(containerEl, 'Link property', 'Frontmatter property the audio link is written to.', 'audioLinkProperty');
+				this.renderPropertyField(
+					containerEl,
+					'Hash property',
+					'Frontmatter property the content hash is written to, used to detect staleness.',
+					'audioHashProperty',
+				);
+				this.renderPropertyField(
+					containerEl,
+					'Path property',
+					'Frontmatter property the raw vault path to the audio file is written to (used internally to find it again).',
+					'audioPathProperty',
+				);
+				this.renderPropertyField(
+					containerEl,
+					'Timestamp property',
+					'Frontmatter property the generation timestamp is written to.',
+					'audioTimestampProperty',
+				);
+				this.renderPropertyField(
+					containerEl,
+					'Voice property',
+					'Frontmatter property the voice ID used to generate the audio is written to. Used to detect when the selected voice differs from the saved audio\'s voice.',
+					'audioVoiceProperty',
+				);
 
 				new Setting(containerEl)
 					.setName('On regenerate')
@@ -291,28 +487,47 @@ export class ReaderSettingTab extends PluginSettingTab {
 							await this.plugin.saveSettings();
 						}),
 					);
+
+				new Setting(containerEl)
+					.setName('Show "Clear reader files" button')
+					.setDesc('Show a button in the player view that deletes a note\'s linked audio file and removes the properties above, after confirming.')
+					.addToggle((toggle) =>
+						toggle.setValue(this.plugin.settings.showClearFilesButton).onChange(async (value) => {
+							this.plugin.settings.showClearFilesButton = value;
+							await this.plugin.saveSettings();
+						}),
+					);
 			}
 		}
 	}
 
-	private async refreshVoices(dropdown: DropdownComponent | undefined): Promise<void> {
-		if (!dropdown) return;
+	private renderPropertyField(
+		containerEl: HTMLElement,
+		name: string,
+		desc: string,
+		key: 'audioLinkProperty' | 'audioHashProperty' | 'audioPathProperty' | 'audioTimestampProperty' | 'audioVoiceProperty',
+	): void {
+		new Setting(containerEl)
+			.setName(name)
+			.setDesc(desc)
+			.addText((text) =>
+				text
+					.setPlaceholder(DEFAULT_SETTINGS[key])
+					.setValue(this.plugin.settings[key])
+					.onChange(async (value) => {
+						this.plugin.settings[key] = value.trim() || DEFAULT_SETTINGS[key];
+						await this.plugin.saveSettings();
+					}),
+			);
+	}
 
+	private async loadVoices(): Promise<void> {
 		const apiKey = this.app.secretStorage.getSecret(this.plugin.settings.apiKeySecretId);
 		if (!apiKey) return;
 
 		try {
-			const voices = await listElevenLabsVoices(apiKey);
-			const currentValue = this.plugin.settings.voiceId;
-
-			dropdown.selectEl.empty();
-			for (const voice of voices) {
-				dropdown.addOption(voice.voiceId, voice.name);
-			}
-			if (!voices.some((voice) => voice.voiceId === currentValue)) {
-				dropdown.addOption(currentValue, `${currentValue} (custom)`);
-			}
-			dropdown.setValue(currentValue);
+			this.voices = await listElevenLabsVoices(apiKey);
+			this.display();
 		} catch (error) {
 			console.error('Obsidian Reader: failed to fetch ElevenLabs voices', error);
 			new Notice(`Failed to fetch voices: ${error instanceof Error ? error.message : String(error)}`);

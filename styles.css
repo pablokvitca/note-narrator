@@ -50,10 +50,43 @@
 	margin-bottom: var(--size-4-3);
 }
 
-.obsidian-reader-read-button {
+.obsidian-reader-primary-actions {
+	display: flex;
+	gap: var(--size-2-2);
+	margin-bottom: var(--size-4-4);
+}
+
+.obsidian-reader-primary-actions button {
+	flex: 1;
+}
+
+.obsidian-reader-generation-bar {
+	display: flex;
+	gap: 2px;
+	margin-bottom: var(--size-4-3);
+}
+
+.obsidian-reader-generation-segment {
+	flex: 1;
+	height: var(--size-2-2);
+	border-radius: var(--radius-s);
+	background-color: var(--background-modifier-border);
+}
+
+.obsidian-reader-generation-segment.is-ready {
+	background-color: var(--interactive-accent);
+}
+
+.obsidian-reader-generation-segment.is-current {
+	outline: 2px solid var(--text-accent);
+	outline-offset: 1px;
+}
+
+.obsidian-reader-clear-files-button {
 	display: block;
 	width: 100%;
-	margin-bottom: var(--size-4-4);
+	margin-top: var(--size-4-4);
+	color: var(--text-error);
 }
 
 .obsidian-reader-controls {
