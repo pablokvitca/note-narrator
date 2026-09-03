@@ -106,6 +106,9 @@ export class PlayerView extends ItemView {
 		const active = state.status !== 'idle';
 		const skipSeconds = this.plugin.settings.skipSeconds;
 
+		if (state.activeFile) {
+			contentEl.createDiv({ cls: 'obsidian-reader-active-note', text: state.activeFile.basename });
+		}
 		contentEl.createDiv({ cls: 'obsidian-reader-status', text: STATUS_LABELS[state.status] });
 
 		if (state.chunkCount > 1) {
@@ -284,7 +287,7 @@ export class PlayerView extends ItemView {
 			}
 
 			playSavedButton.disabled = active;
-			playSavedButton.onclick = () => void this.plugin.reader.playSavedFile(info.audioFile);
+			playSavedButton.onclick = () => void this.plugin.reader.playSavedFile(info.audioFile, activeFile);
 		});
 	}
 

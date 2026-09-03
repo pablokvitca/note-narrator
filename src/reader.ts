@@ -15,9 +15,19 @@ export interface ReaderState {
 	duration: number;
 	/** Whether each chunk's audio has finished generating, for the segmented generation-progress bar. */
 	chunkReady: boolean[];
+	/** The note this status is about, so the panel can show it even when it isn't the currently-active note. Null when reading a selection with no backing file, or once idle. */
+	activeFile: TFile | null;
 }
 
-const IDLE_STATE: ReaderState = { status: 'idle', chunkIndex: 0, chunkCount: 0, currentTime: 0, duration: 0, chunkReady: [] };
+const IDLE_STATE: ReaderState = {
+	status: 'idle',
+	chunkIndex: 0,
+	chunkCount: 0,
+	currentTime: 0,
+	duration: 0,
+	chunkReady: [],
+	activeFile: null,
+};
 
 type ChunkOutcome = 'ended' | 'next' | 'previous';
 
@@ -189,6 +199,7 @@ export class Reader extends Events {
 			currentTime: 0,
 			duration: 0,
 			chunkReady: new Array<boolean>(chunks.length).fill(false),
+			activeFile: sourceFile,
 		});
 
 		if (!this.settings.startPlaybackImmediately) {
@@ -459,7 +470,7 @@ export class Reader extends Events {
 	}
 
 	/** Plays a previously saved audio file directly, without generating anything. */
-	async playSavedFile(audioFile: TFile): Promise<void> {
+	async playSavedFile(audioFile: TFile, sourceFile: TFile | null = null): Promise<void> {
 		this.stop();
 		const session = this.sessionId;
 
@@ -474,7 +485,15 @@ export class Reader extends Events {
 			this.sourceFileForSave = null;
 			this.savedForSession = true;
 			this.currentPlaybackRate = this.settings.playbackRate;
-			this.setState({ status: 'playing', chunkIndex: 0, chunkCount: 1, currentTime: 0, duration: 0, chunkReady: [true] });
+			this.setState({
+				status: 'playing',
+				chunkIndex: 0,
+				chunkCount: 1,
+				currentTime: 0,
+				duration: 0,
+				chunkReady: [true],
+				activeFile: sourceFile,
+			});
 
 			if (session !== this.sessionId) return;
 			await this.playChunk(data, 0, 1);
