@@ -76,6 +76,7 @@ See [FUTURE_FEATURES.md](FUTURE_FEATURES.md) for ideas not yet implemented (othe
 - `npm run dev` to compile in watch mode.
 - `npm run build` to type-check and produce a production `main.js`.
 - `npm run lint` to run ESLint.
+- Pushing a tag matching `manifest.json`'s `version` (no leading `v`) triggers a GitHub Actions workflow that builds the plugin and creates a GitHub release with `main.js`, `manifest.json`, and `styles.css` attached. This only creates the release — it does not publish to the community plugin directory.
 
 ## Manually installing the plugin
 
