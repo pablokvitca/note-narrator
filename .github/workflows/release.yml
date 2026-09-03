@@ -34,7 +34,17 @@ jobs:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
               run: |
                   tag="${GITHUB_REF#refs/tags/}"
+
+                  # A SemVer pre-release suffix (e.g. 1.7.0-beta.1) marks this as a BRAT beta
+                  # release rather than a stable one, so it doesn't show up as "latest" and
+                  # BRAT users must opt in to installing beta versions to pick it up.
+                  prerelease_flag=()
+                  if [[ "$tag" == *-* ]]; then
+                    prerelease_flag=(--prerelease)
+                  fi
+
                   gh release create "$tag" \
                     main.js manifest.json styles.css \
                     --title "$tag" \
-                    --generate-notes
+                    --generate-notes \
+                    "${prerelease_flag[@]}"
