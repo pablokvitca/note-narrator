@@ -20,7 +20,6 @@ export default class ObsidianReaderPlugin extends Plugin {
 
 		this.addRibbonIcon('audio-lines', 'Read note aloud', () => {
 			void this.activateView();
-			void this.reader.readNote();
 		});
 
 		this.app.workspace.onLayoutReady(() => this.patchOpenMarkdownViews());
@@ -83,7 +82,6 @@ export default class ObsidianReaderPlugin extends Plugin {
 		this.patchedViews.add(view);
 		const button = view.addAction('audio-lines', 'Read note aloud', () => {
 			void this.activateView();
-			void this.reader.readNote(view);
 		});
 		this.actionButtons.push(button);
 	}
