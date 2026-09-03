@@ -6,8 +6,9 @@ An Obsidian plugin that reads your notes aloud using text-to-speech. MVP ships w
 
 ### Triggering a read
 
-- Three ways to start: a ribbon icon in the left sidebar (always visible), a speaker icon in each note's top-right action row (next to the "more options" `⋯` icon), and a **Read note aloud** command. All open the **Obsidian Reader** panel in the right sidebar.
-- The panel itself has its own **Voice** dropdown and, when idle, a **Read** button, so you can pick a voice and start a read without leaving the panel.
+- The ribbon icon in the left sidebar (always visible) and the speaker icon in each note's top-right action row (next to the "more options" `⋯` icon) just open the **Obsidian Reader** panel in the right sidebar — they don't start generating audio by themselves.
+- The panel itself has its own **Voice** dropdown and, when idle, a **Read** button, so you can pick a voice and explicitly start a read without leaving the panel.
+- The **Read note aloud** command is the one exception: since it names the action explicitly, it opens the panel and starts reading immediately, without needing a click on the panel's Read button.
 - If a note already has saved audio (see below), the panel shows **Play saved** (plays the existing file with no regeneration) alongside a **Read** button that relabels itself to **Regenerate** (note content changed since the audio was generated) or **Regenerate with new voice** (the selected voice differs from the one the saved audio used).
 - **Read selection instead of whole note** setting — when on, reading a note with an active text selection reads only the selection instead of the whole note.
 - **Read note title** (on by default) and **Read note properties** (off by default) settings — properties reads "Properties", each frontmatter key and value, then "Content", before the note's body. Neither applies when reading a selection.
@@ -52,7 +53,7 @@ See [FUTURE_FEATURES.md](FUTURE_FEATURES.md) for ideas not yet implemented (othe
 1. Install the plugin (see below).
 2. Open **Settings → Obsidian Reader** and add your ElevenLabs API key. It's stored via Obsidian's built-in [SecretStorage](https://docs.obsidian.md/plugins/guides/secret-storage), not in this plugin's own settings file — the setting only remembers which secret to look up, so the key can be shared with other plugins that use the same secret and never appears in `data.json`.
 3. Pick a **Voice** from the dropdown (fetched from your ElevenLabs account) and a **Model** — Eleven v3 (research preview), Eleven Multilingual v2, or Eleven Flash v2.5.
-4. Click the ribbon icon in the left sidebar, or the speaker icon at the top-right of a note (or run **Read note aloud** from the command palette). This opens the **Obsidian Reader** panel in the right sidebar with progress and playback controls.
+4. Click the ribbon icon in the left sidebar, or the speaker icon at the top-right of a note, to open the **Obsidian Reader** panel in the right sidebar, then click its **Read** button — or just run **Read note aloud** from the command palette to open the panel and start reading in one step.
 
 ## Known limitations (MVP)
 
