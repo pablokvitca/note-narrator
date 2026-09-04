@@ -33,6 +33,14 @@ export class PlayerView extends ItemView {
 	private voices: ElevenLabsVoice[] = [];
 	private lastActiveFilePath: string | null = null;
 
+	// Elements patched directly on frequent playback ticks (many times a second via `timeupdate`)
+	// instead of going through a full render(), so ticks don't tear down/rebuild the whole panel
+	// (which disrupts hover/focus state) and the progress bar can animate smoothly via CSS transition.
+	private progressFillEl: HTMLElement | null = null;
+	private timeEl: HTMLElement | null = null;
+	private chunkProgressEl: HTMLElement | null = null;
+	private lastStructuralKey: string | null = null;
+
 	constructor(
 		leaf: WorkspaceLeaf,
 		private plugin: ObsidianReaderPlugin,
@@ -57,7 +65,7 @@ export class PlayerView extends ItemView {
 
 		this.lastActiveFilePath = this.app.workspace.getActiveViewOfType(MarkdownView)?.file?.path ?? null;
 
-		this.registerEvent(this.plugin.reader.on('change', () => this.render()));
+		this.registerEvent(this.plugin.reader.on('change', () => this.handleReaderChange()));
 		this.registerEvent(this.app.workspace.on('active-leaf-change', () => this.handleActiveFileMaybeChanged()));
 		this.registerEvent(
 			this.app.metadataCache.on('changed', (file) => {
@@ -70,6 +78,47 @@ export class PlayerView extends ItemView {
 
 		void this.loadVoices();
 		this.render();
+	}
+
+	/**
+	 * Frequent ticks (playback `timeupdate`) only change currentTime/duration, not status, chunk index/count,
+	 * or which chunks are ready — patch just the progress bar and time text for those instead of a full
+	 * render(), reserving render() for actual state transitions.
+	 */
+	private handleReaderChange(): void {
+		const state = this.plugin.reader.getState();
+		const key = this.structuralKey(state);
+		if (key === this.lastStructuralKey && this.timeEl) {
+			this.updateProgress(state);
+		} else {
+			this.render();
+		}
+	}
+
+	private structuralKey(state: ReaderState): string {
+		return [state.status, state.chunkIndex, state.chunkCount, state.chunkReady.join(',')].join('|');
+	}
+
+	private updateProgress(state: ReaderState): void {
+		if (this.progressFillEl && state.status !== 'generating') {
+			const percent = state.duration > 0 ? Math.min(100, (state.currentTime / state.duration) * 100) : 0;
+			this.progressFillEl.style.width = `${percent}%`;
+		}
+
+		if (this.timeEl) {
+			this.timeEl.style.display = state.duration > 0 ? '' : 'none';
+			if (state.duration > 0) {
+				const rate = this.plugin.reader.getPlaybackRate();
+				const remaining = (state.duration - state.currentTime) / rate;
+				this.timeEl.setText(`${formatTime(state.currentTime)} / ${formatTime(state.duration)} · ${formatTime(remaining)} remaining`);
+			}
+		}
+
+		if (this.chunkProgressEl && state.chunkCount > 1) {
+			const chunkFraction = state.duration > 0 ? state.currentTime / state.duration : 0;
+			const overallPercent = Math.round(Math.min(1, (state.chunkIndex + chunkFraction) / state.chunkCount) * 100);
+			this.chunkProgressEl.setText(`Part ${state.chunkIndex + 1} of ${state.chunkCount} · ${overallPercent}% complete`);
+		}
 	}
 
 	/**
@@ -106,18 +155,18 @@ export class PlayerView extends ItemView {
 		const active = state.status !== 'idle';
 		const skipSeconds = this.plugin.settings.skipSeconds;
 
+		this.lastStructuralKey = this.structuralKey(state);
+		this.progressFillEl = null;
+		this.timeEl = null;
+		this.chunkProgressEl = null;
+
 		if (state.activeFile) {
 			contentEl.createDiv({ cls: 'obsidian-reader-active-note', text: state.activeFile.basename });
 		}
 		contentEl.createDiv({ cls: 'obsidian-reader-status', text: STATUS_LABELS[state.status] });
 
 		if (state.chunkCount > 1) {
-			const chunkFraction = state.duration > 0 ? state.currentTime / state.duration : 0;
-			const overallPercent = Math.round(Math.min(1, (state.chunkIndex + chunkFraction) / state.chunkCount) * 100);
-			contentEl.createDiv({
-				cls: 'obsidian-reader-chunk-progress',
-				text: `Part ${state.chunkIndex + 1} of ${state.chunkCount} · ${overallPercent}% complete`,
-			});
+			this.chunkProgressEl = contentEl.createDiv({ cls: 'obsidian-reader-chunk-progress' });
 
 			const generationBar = contentEl.createDiv({ cls: 'obsidian-reader-generation-bar' });
 			for (let i = 0; i < state.chunkCount; i++) {
@@ -132,19 +181,11 @@ export class PlayerView extends ItemView {
 			bar.addClass('is-indeterminate');
 			bar.createDiv({ cls: 'obsidian-reader-progress-fill' });
 		} else {
-			const percent = state.duration > 0 ? Math.min(100, (state.currentTime / state.duration) * 100) : 0;
-			const fill = bar.createDiv({ cls: 'obsidian-reader-progress-fill' });
-			fill.style.width = `${percent}%`;
+			this.progressFillEl = bar.createDiv({ cls: 'obsidian-reader-progress-fill' });
 		}
 
-		if (state.duration > 0) {
-			const rate = this.plugin.reader.getPlaybackRate();
-			const remaining = (state.duration - state.currentTime) / rate;
-			contentEl.createDiv({
-				cls: 'obsidian-reader-time',
-				text: `${formatTime(state.currentTime)} / ${formatTime(state.duration)} · ${formatTime(remaining)} remaining`,
-			});
-		}
+		this.timeEl = contentEl.createDiv({ cls: 'obsidian-reader-time' });
+		this.updateProgress(state);
 
 		this.renderVoiceSelector(contentEl);
 
