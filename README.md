@@ -76,9 +76,11 @@ See [FUTURE_FEATURES.md](FUTURE_FEATURES.md) for ideas not yet implemented (othe
 - `npm run dev` to compile in watch mode.
 - `npm run build` to type-check and produce a production `main.js`.
 - `npm run lint` to run ESLint.
+- Pushing a tag matching `manifest.json`'s `version` (no leading `v`) triggers a GitHub Actions workflow that builds the plugin and creates a GitHub release with `main.js`, `manifest.json`, and `styles.css` attached. This only creates the release — it does not publish to the community plugin directory.
+- A version with a SemVer pre-release suffix (e.g. `1.7.0-beta.1`) is published as a GitHub **pre-release** instead of a stable release, so it doesn't appear as "latest" and is only picked up by [BRAT](https://github.com/TfTHacker/obsidian42-brat) users who've opted in to beta versions for this plugin.
 
 ## Manually installing the plugin
 
-Copy `main.js`, `manifest.json` to `VaultFolder/.obsidian/plugins/obsidian-reader/`, then enable it in Obsidian's Community Plugins settings (this plugin is not published to the community plugin store).
+Copy `main.js`, `manifest.json` to `VaultFolder/.obsidian/plugins/obsidian-reader/`, then enable it in Obsidian's Community Plugins settings (this plugin is not published to the community plugin store). To test a beta release before it's promoted to stable, install via [BRAT](https://github.com/TfTHacker/obsidian42-brat) instead, adding this repo and enabling beta versions.
 
 Requires Obsidian 1.11.4+ (for the SecretStorage API).
