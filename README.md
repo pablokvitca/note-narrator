@@ -68,7 +68,6 @@ See [FUTURE_FEATURES.md](FUTURE_FEATURES.md) for ideas not yet implemented (othe
 - Eleven v3 is ElevenLabs' own "research preview" model — it can be more expressive but also more prone to hallucinated/mispronounced output than Multilingual v2, and their Professional Voice Clones aren't fully optimized for it yet.
 - No scrubbing to an arbitrary point — only relative rewind/skip by the configured skip amount.
 - Requires an ElevenLabs account and API key; this plugin makes network requests to `api.elevenlabs.io` only when you trigger a read.
-- Settings use the classic `display()`-based settings tab, not Obsidian 1.13's declarative settings API, so this plugin's settings won't appear in Obsidian's in-app settings search on 1.13.0+ (you can still find them normally under **Settings → Obsidian Reader**).
 
 ## Development
 
@@ -83,4 +82,4 @@ See [FUTURE_FEATURES.md](FUTURE_FEATURES.md) for ideas not yet implemented (othe
 
 Copy `main.js`, `manifest.json` to `VaultFolder/.obsidian/plugins/obsidian-reader/`, then enable it in Obsidian's Community Plugins settings (this plugin is not published to the community plugin store). To test a beta release before it's promoted to stable, install via [BRAT](https://github.com/TfTHacker/obsidian42-brat) instead, adding this repo and enabling beta versions.
 
-Requires Obsidian 1.11.4+ (for the SecretStorage API).
+Requires Obsidian 1.13.0+ (for the declarative settings API; SecretStorage itself only needs 1.11.4+).
