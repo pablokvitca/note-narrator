@@ -53,7 +53,7 @@ export class PlayerView extends ItemView {
 	}
 
 	getDisplayText(): string {
-		return 'Obsidian Reader';
+		return 'Obsidian reader';
 	}
 
 	getIcon(): string {

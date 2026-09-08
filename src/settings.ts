@@ -222,7 +222,7 @@ export class ReaderSettingTab extends PluginSettingTab {
 		new Setting(containerEl).setName('Panel voices').setHeading();
 		containerEl.createEl('p', {
 			cls: 'setting-item-description',
-			text: "Choose a short list of voices to show in the player view's Voice dropdown, instead of your whole account list. Leave none selected to show all voices there.",
+			text: "Choose a short list of voices to show in the player view's voice dropdown, instead of your whole account list. Leave none selected to show all voices there.",
 		});
 
 		if (this.voices.length === 0) {
@@ -255,7 +255,7 @@ export class ReaderSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('Read note properties')
-			.setDesc('Speak "Properties", each frontmatter property and value, then "Content", before the note\'s content. Does not apply when reading a selection.')
+			.setDesc('Speak "properties", each frontmatter property and value, then "content", before the note\'s content. Does not apply when reading a selection.')
 			.addToggle((toggle) =>
 				toggle.setValue(this.plugin.settings.readProperties).onChange(async (value) => {
 					this.plugin.settings.readProperties = value;
@@ -541,9 +541,9 @@ export class ReaderSettingTab extends PluginSettingTab {
 					);
 
 				new Setting(containerEl)
-					.setName('Show "Clear reader files" menu item')
+					.setName('Show "clear reader files" menu item')
 					.setDesc(
-						'Enable the "Clear reader files" item in the player view\'s ⋮ menu (top-right), which deletes a note\'s linked audio file and removes the properties above, after confirming.',
+						'Enable the "clear reader files" item in the player view\'s ⋮ menu (top-right), which deletes a note\'s linked audio file and removes the properties above, after confirming.',
 					)
 					.addToggle((toggle) =>
 						toggle.setValue(this.plugin.settings.showClearFilesButton).onChange(async (value) => {

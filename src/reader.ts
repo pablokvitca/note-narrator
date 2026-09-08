@@ -158,7 +158,7 @@ export class Reader extends Events {
 	private async readText(rawText: string, sourceFile: TFile | null, options: { allowSave: boolean }): Promise<void> {
 		const apiKey = this.app.secretStorage.getSecret(this.settings.apiKeySecretId);
 		if (!apiKey) {
-			new Notice('Set an ElevenLabs API key in the Obsidian Reader settings.');
+			new Notice('Set an ElevenLabs API key in the Obsidian reader settings.');
 			return;
 		}
 
