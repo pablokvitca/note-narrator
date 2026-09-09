@@ -38,6 +38,9 @@ export class Reader extends Events {
 	private state: ReaderState = { ...IDLE_STATE };
 	/** Live playback rate for the current/next read. Starts from settings.playbackRate but is never persisted back to it. */
 	private currentPlaybackRate: number;
+	/** Live volume/mute for the current session. Not tied to any setting — persists across reads until Obsidian restarts, like a physical volume knob. */
+	private currentVolume = 1;
+	private muted = false;
 
 	/** Chunk texts and their generated audio for the active read, addressable so Previous/Next part can jump around. */
 	private chunks: string[] = [];
@@ -130,6 +133,25 @@ export class Reader extends Events {
 	setPlaybackRate(rate: number): void {
 		this.currentPlaybackRate = rate;
 		if (this.audio) this.audio.playbackRate = rate;
+	}
+
+	/** Live-only, per-session: never persisted as a note/read setting. */
+	getVolume(): number {
+		return this.currentVolume;
+	}
+
+	setVolume(volume: number): void {
+		this.currentVolume = Math.min(1, Math.max(0, volume));
+		if (this.audio) this.audio.volume = this.currentVolume;
+	}
+
+	isMuted(): boolean {
+		return this.muted;
+	}
+
+	setMuted(muted: boolean): void {
+		this.muted = muted;
+		if (this.audio) this.audio.muted = muted;
 	}
 
 	async readNote(view?: MarkdownView): Promise<void> {
@@ -447,6 +469,40 @@ export class Reader extends Events {
 		}
 	}
 
+	/**
+	 * Note-length stats for the panel's idle-state display (total characters/chunks, average per chunk),
+	 * computed via the same preamble+chunking pipeline readNote() would use. Null for non-notes or notes
+	 * with nothing to read.
+	 */
+	async getNoteStats(
+		file: TFile,
+	): Promise<{ totalChars: number; chunkCount: number; avgCharsPerChunk: number; avgWordsPerChunk: number } | null> {
+		if (file.extension !== 'md') return null;
+
+		const rawText = await this.app.vault.cachedRead(file);
+		const body = stripFrontmatter(rawText);
+		const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
+		const preamble = buildReadingPreamble(file.basename, frontmatter, {
+			readTitle: this.settings.readTitle,
+			readProperties: this.settings.readProperties,
+		});
+		const textToRead = preamble ? `${preamble}\n\n${body}` : body;
+		if (!textToRead.trim()) return null;
+
+		const charLimit = ELEVENLABS_MODEL_CHAR_LIMITS[this.settings.modelId] ?? DEFAULT_ELEVENLABS_CHAR_LIMIT;
+		const chunks = chunkNote(textToRead, charLimit, this.settings.chunkerStyle, this.settings.maxHeadingDepth);
+		if (chunks.length === 0) return null;
+
+		const totalChars = textToRead.length;
+		const totalWords = textToRead.split(/\s+/).filter(Boolean).length;
+		return {
+			totalChars,
+			chunkCount: chunks.length,
+			avgCharsPerChunk: Math.round(totalChars / chunks.length),
+			avgWordsPerChunk: Math.round(totalWords / chunks.length),
+		};
+	}
+
 	/** Compares the note's current content against the hash stored when its linked audio was last generated. */
 	async getAudioStatus(file: TFile): Promise<AudioLinkStatus> {
 		const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
@@ -537,6 +593,8 @@ export class Reader extends Events {
 			const url = URL.createObjectURL(blob);
 			const audio = new Audio(url);
 			audio.playbackRate = this.currentPlaybackRate;
+			audio.volume = this.currentVolume;
+			audio.muted = this.muted;
 			this.audio = audio;
 
 			const onTimeUpdate = () => this.setState({ currentTime: audio.currentTime, duration: audio.duration || 0 });

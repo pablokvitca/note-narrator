@@ -8,6 +8,8 @@ export const READER_VIEW_TYPE = 'obsidian-reader-player';
 
 const SPEED_MIN = 0.5;
 const SPEED_MAX = 3;
+const VOLUME_MIN = 0;
+const VOLUME_MAX = 1;
 
 const STATUS_LABELS: Record<ReaderState['status'], string> = {
 	idle: 'Nothing playing',
@@ -225,7 +227,9 @@ export class PlayerView extends ItemView {
 
 		this.renderVoiceSelector(contentEl);
 
-		this.renderPrimaryActions(contentEl, active);
+		this.renderNoteStats(contentEl, selectedFile);
+
+		this.renderPrimaryActions(contentEl, active, state.status);
 
 		{
 			const partsDisabled = !active || state.chunkCount <= 1;
@@ -271,6 +275,28 @@ export class PlayerView extends ItemView {
 		const speedRange = speedSetting.controlEl.createDiv({ cls: 'obsidian-reader-speed-range' });
 		speedRange.createSpan({ cls: 'obsidian-reader-speed-bound', text: `${SPEED_MIN.toFixed(2)}x` });
 		speedRange.createSpan({ cls: 'obsidian-reader-speed-bound', text: `${SPEED_MAX.toFixed(2)}x` });
+
+		const isMuted = this.plugin.reader.isMuted();
+		const currentVolume = this.plugin.reader.getVolume();
+		const volumeSetting = new Setting(contentEl).setName(`Volume: ${isMuted ? 'Muted' : `${Math.round(currentVolume * 100)}%`}`);
+		volumeSetting.addSlider((slider) =>
+			slider
+				.setLimits(VOLUME_MIN, VOLUME_MAX, 0.05)
+				.setValue(currentVolume)
+				.onChange((value) => {
+					this.plugin.reader.setVolume(value);
+					volumeSetting.setName(`Volume: ${this.plugin.reader.isMuted() ? 'Muted' : `${Math.round(value * 100)}%`}`);
+				}),
+		);
+		volumeSetting.addExtraButton((button) =>
+			button
+				.setIcon(isMuted ? 'volume-x' : 'volume-2')
+				.setTooltip(isMuted ? 'Unmute' : 'Mute')
+				.onClick(() => {
+					this.plugin.reader.setMuted(!this.plugin.reader.isMuted());
+					this.render();
+				}),
+		);
 
 		this.renderAudioStatus(contentEl);
 	}
@@ -337,7 +363,28 @@ export class PlayerView extends ItemView {
 		});
 	}
 
-	private renderPrimaryActions(container: HTMLElement, active: boolean): void {
+	/** Total characters/chunks and derived averages for the selected note, shown just above the Read button. */
+	private renderNoteStats(container: HTMLElement, file: TFile | null): void {
+		if (!file) return;
+
+		const statsEl = container.createDiv({ cls: 'obsidian-reader-note-stats' });
+		void this.plugin.reader.getNoteStats(file).then((stats) => {
+			if (!stats) {
+				statsEl.remove();
+				return;
+			}
+			statsEl.empty();
+			statsEl.createDiv({
+				text: `${stats.totalChars.toLocaleString()} characters · ${stats.chunkCount} chunk${stats.chunkCount === 1 ? '' : 's'}`,
+			});
+			statsEl.createDiv({
+				cls: 'obsidian-reader-note-stats-secondary',
+				text: `~${stats.avgCharsPerChunk.toLocaleString()} characters/chunk · ~${stats.avgWordsPerChunk.toLocaleString()} words/chunk`,
+			});
+		});
+	}
+
+	private renderPrimaryActions(container: HTMLElement, active: boolean, status: ReaderState['status']): void {
 		const actionsRow = container.createDiv({ cls: 'obsidian-reader-primary-actions' });
 
 		const playSavedButton = actionsRow.createEl('button', { cls: 'obsidian-reader-play-saved-button', text: 'Play saved' });
@@ -345,16 +392,20 @@ export class PlayerView extends ItemView {
 
 		const readButton = actionsRow.createEl('button', {
 			cls: 'mod-cta obsidian-reader-read-button',
-			text: 'Read',
+			text: active ? 'Reading' : 'Read',
 		});
 		readButton.disabled = active;
 		readButton.onclick = () => void this.plugin.reader.readNote(this.getActiveMarkdownView() ?? undefined);
+
+		const cancelButton = actionsRow.createEl('button', { cls: 'obsidian-reader-cancel-button', text: 'Cancel generation' });
+		cancelButton.disabled = status !== 'generating';
+		cancelButton.onclick = () => this.plugin.reader.stop();
 
 		const activeFile = this.getActiveFile();
 		if (!activeFile || !this.plugin.settings.linkAudioInNote) return;
 
 		void this.plugin.reader.getAudioInfo(activeFile).then((info) => {
-			if (!info) return;
+			if (!info || active) return;
 
 			const voiceMismatch = info.voiceId !== undefined && info.voiceId !== this.plugin.settings.voiceId;
 			if (info.status === 'outdated') {
