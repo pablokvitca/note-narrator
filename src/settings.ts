@@ -81,6 +81,8 @@ export interface ReaderSettings {
 	parallelGenerationEnabled: boolean;
 	/** How many chunks may be generating at once when parallelGenerationEnabled is on. */
 	maxParallelGeneration: number;
+	/** How many chunks may generate at once for a note continuing in the background (via "Continue in background"), independent of maxParallelGeneration -- kept low by default so it doesn't compete with an actively-playing read. */
+	maxBackgroundParallelGeneration: number;
 	/** Show the volume slider + mute button row in the player view. */
 	showVolumeSlider: boolean;
 	/** Show the playback speed slider row in the player view. */
@@ -127,6 +129,7 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
 	quickStartCharCount: 750,
 	parallelGenerationEnabled: true,
 	maxParallelGeneration: 2,
+	maxBackgroundParallelGeneration: 1,
 	showVolumeSlider: true,
 	showPlaybackSpeedSlider: true,
 	timeDisplayMode: 'current',
@@ -394,6 +397,18 @@ export class ReaderSettingTab extends PluginSettingTab {
 						desc: 'How many chunks may be generating at the same time. Higher can finish long notes faster but makes more simultaneous ElevenLabs requests.',
 						control: { type: 'slider', key: 'maxParallelGeneration', min: 2, max: 5, step: 1, defaultValue: DEFAULT_SETTINGS.maxParallelGeneration },
 						visible: () => settings.parallelGenerationEnabled,
+					},
+					{
+						name: 'Max parallel background chunk generation',
+						desc: 'How many chunks may generate at once for a note continuing in the background (via the panel\'s "Continue in background" button), independent of the setting above. Kept low by default so it doesn\'t compete with an actively-playing read.',
+						control: {
+							type: 'slider',
+							key: 'maxBackgroundParallelGeneration',
+							min: 1,
+							max: 5,
+							step: 1,
+							defaultValue: DEFAULT_SETTINGS.maxBackgroundParallelGeneration,
+						},
 					},
 					{
 						name: 'Read selection instead of whole note',
