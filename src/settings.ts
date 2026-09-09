@@ -36,6 +36,12 @@ export interface ReaderSettings {
 	audioTimestampProperty: string;
 	/** Frontmatter property the voice ID used to generate the audio is written to. */
 	audioVoiceProperty: string;
+	/**
+	 * Extra frontmatter property keys (besides the reader's own) to exclude when computing the staleness
+	 * hash, one per line — for properties other plugins/workflows auto-update that shouldn't count as
+	 * "the note changed" (e.g. a last-modified timestamp).
+	 */
+	extraStaleHashExcludedProperties: string;
 	/** Show a "Clear reader files" button in the player view. */
 	showClearFilesButton: boolean;
 	/** Silently (re)generate and save a note's audio on open if missing or outdated. Requires saveAudioFile and linkAudioInNote. */
@@ -86,6 +92,7 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
 	audioPathProperty: 'reader_audio_path',
 	audioTimestampProperty: 'reader_audio_timestamp',
 	audioVoiceProperty: 'reader_audio_voice',
+	extraStaleHashExcludedProperties: '',
 	showClearFilesButton: true,
 	autoGenerateOnOpen: false,
 	saveVersioning: 'replace',
@@ -431,6 +438,12 @@ export class ReaderSettingTab extends PluginSettingTab {
 						name: 'Voice property',
 						desc: "Frontmatter property the voice ID used to generate the audio is written to. Used to detect when the selected voice differs from the saved audio's voice.",
 						control: { type: 'text', key: 'audioVoiceProperty', placeholder: DEFAULT_SETTINGS.audioVoiceProperty, defaultValue: DEFAULT_SETTINGS.audioVoiceProperty },
+						visible: () => settings.saveAudioFile && settings.linkAudioInNote,
+					},
+					{
+						name: 'Extra properties to exclude from staleness hashing',
+						desc: "Besides the reader's own properties above (always excluded), also ignore these frontmatter properties when checking whether a note has changed since its audio was generated — for properties other plugins auto-update that shouldn't count as a real edit. One property key per line.",
+						control: { type: 'textarea', key: 'extraStaleHashExcludedProperties', placeholder: 'last_modified', rows: 3 },
 						visible: () => settings.saveAudioFile && settings.linkAudioInNote,
 					},
 					{

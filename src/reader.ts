@@ -413,6 +413,10 @@ export class Reader extends Events {
 		delete frontmatter[this.settings.audioPathProperty];
 		delete frontmatter[this.settings.audioTimestampProperty];
 		delete frontmatter[this.settings.audioVoiceProperty];
+		for (const key of this.settings.extraStaleHashExcludedProperties.split('\n')) {
+			const trimmed = key.trim();
+			if (trimmed) delete frontmatter[trimmed];
+		}
 		return hashText(`${JSON.stringify(frontmatter)}\n${body}`);
 	}
 
