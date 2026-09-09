@@ -179,12 +179,22 @@
 }
 
 .obsidian-reader-audio-status {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--size-2-2);
 	margin-top: var(--size-4-3);
 	padding: var(--size-4-2);
 	border-radius: var(--radius-s);
 	font-size: var(--font-ui-smaller);
 	color: var(--text-normal);
 	border-left: 3px solid transparent;
+}
+
+.obsidian-reader-audio-status-delete {
+	flex-shrink: 0;
+	width: var(--size-4-6);
+	height: var(--size-4-6);
 }
 
 /*
