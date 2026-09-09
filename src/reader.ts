@@ -578,6 +578,7 @@ export class Reader extends Events {
 		if (!this.findExistingAudioFile(file)) {
 			if (this.settings.autoCleanupMissingAudioProperties) {
 				await this.removeReaderProperties(file);
+				new Notice('Cleaned up stale reader audio file metadata properties');
 			}
 			return 'none';
 		}
