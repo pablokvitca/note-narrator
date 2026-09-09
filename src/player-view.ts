@@ -194,7 +194,9 @@ export class PlayerView extends ItemView {
 		});
 
 		if (state.activeFile && (!selectedFile || state.activeFile.path !== selectedFile.path)) {
-			contentEl.createDiv({ cls: 'obsidian-reader-currently-reading', text: `Currently reading: ${state.activeFile.basename}` });
+			const currentlyReading = contentEl.createDiv({ cls: 'obsidian-reader-currently-reading' });
+			currentlyReading.createSpan({ cls: 'obsidian-reader-currently-reading-icon' }, (el) => setIcon(el, 'headphones'));
+			currentlyReading.createSpan({ text: `Currently reading: ${state.activeFile.basename}` });
 		}
 
 		contentEl.createDiv({ cls: 'obsidian-reader-status', text: STATUS_LABELS[state.status] });
