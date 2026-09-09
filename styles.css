@@ -86,8 +86,19 @@
 	margin-bottom: var(--size-4-3);
 }
 
+.obsidian-reader-note-stats {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	margin-bottom: var(--size-4-3);
+}
+
+.obsidian-reader-note-stats-secondary {
+	color: var(--text-faint);
+}
+
 .obsidian-reader-primary-actions {
 	display: flex;
+	flex-wrap: wrap;
 	gap: var(--size-2-2);
 	margin-bottom: var(--size-4-4);
 }
