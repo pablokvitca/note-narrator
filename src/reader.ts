@@ -396,10 +396,29 @@ export class Reader extends Events {
 		return file instanceof TFile ? file : null;
 	}
 
+	/**
+	 * Staleness hash for a note, excluding the reader's own bookkeeping properties from the frontmatter
+	 * before hashing. Hashing raw file content directly would be self-referential: linkAudioInNote() writes
+	 * these properties (including this very hash) into the file's frontmatter right after computing it, so
+	 * every later read of "current content" would include them while the stored hash never could —
+	 * guaranteeing a permanent mismatch. Excluding them keeps the hash stable across saves.
+	 */
+	private async computeStalenessHash(file: TFile): Promise<string> {
+		const rawContent = await this.app.vault.cachedRead(file);
+		const body = stripFrontmatter(rawContent);
+		const frontmatter: Record<string, unknown> = { ...(this.app.metadataCache.getFileCache(file)?.frontmatter ?? {}) };
+		delete frontmatter.position;
+		delete frontmatter[this.settings.audioLinkProperty];
+		delete frontmatter[this.settings.audioHashProperty];
+		delete frontmatter[this.settings.audioPathProperty];
+		delete frontmatter[this.settings.audioTimestampProperty];
+		delete frontmatter[this.settings.audioVoiceProperty];
+		return hashText(`${JSON.stringify(frontmatter)}\n${body}`);
+	}
+
 	private async linkAudioInNote(audioFile: TFile, sourceFile: TFile): Promise<void> {
 		const link = this.app.fileManager.generateMarkdownLink(audioFile, sourceFile.path);
-		const currentContent = await this.app.vault.cachedRead(sourceFile);
-		const hash = hashText(currentContent);
+		const hash = await this.computeStalenessHash(sourceFile);
 
 		await this.app.fileManager.processFrontMatter(sourceFile, (frontmatter: Record<string, unknown>) => {
 			frontmatter[this.settings.audioLinkProperty] = link;
@@ -510,8 +529,8 @@ export class Reader extends Events {
 		const storedHash = frontmatter?.[this.settings.audioHashProperty] as string | undefined;
 		if (!link || !storedHash) return 'none';
 
-		const currentContent = await this.app.vault.cachedRead(file);
-		return hashText(currentContent) === storedHash ? 'up-to-date' : 'outdated';
+		const currentHash = await this.computeStalenessHash(file);
+		return currentHash === storedHash ? 'up-to-date' : 'outdated';
 	}
 
 	/** Info about a note's linked saved audio, for the player view's "Play saved"/"Regenerate" buttons. Null if none exists. */
