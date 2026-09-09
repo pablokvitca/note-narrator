@@ -16,13 +16,26 @@ export interface StripMarkdownOptions {
 
 const DEFAULT_STRIP_MARKDOWN_OPTIONS: StripMarkdownOptions = { stripHtmlComments: true, stripMarkdownComments: true };
 
+/**
+ * Removes HTML/Markdown comments, content included. Applied to the whole note before markdown-aware
+ * chunking splits it into heading-delimited sections (not just per-section inside stripMarkdown) -- a
+ * comment that happens to span a heading boundary (e.g. commenting out a whole section, heading
+ * included) would otherwise have its opening/closing `%%`/`<!--...-->` land in different sections,
+ * leaving unmatched fragments behind that neither section's own stripMarkdown() call could pair up.
+ */
+function stripComments(markdown: string, options: StripMarkdownOptions): string {
+	let text = markdown;
+	if (options.stripHtmlComments) text = text.replace(/<!--[\s\S]*?-->/g, '');
+	if (options.stripMarkdownComments) text = text.replace(/%%[\s\S]*?%%/g, '');
+	return text;
+}
+
 /** Strips common Markdown syntax so TTS reads prose instead of literal symbols. */
 export function stripMarkdown(markdown: string, options: StripMarkdownOptions = DEFAULT_STRIP_MARKDOWN_OPTIONS): string {
 	let text = markdown.replace(/\r\n/g, '\n');
 
 	text = stripFrontmatter(text);
-	if (options.stripHtmlComments) text = text.replace(/<!--[\s\S]*?-->/g, '');
-	if (options.stripMarkdownComments) text = text.replace(/%%[\s\S]*?%%/g, '');
+	text = stripComments(text, options);
 	text = text.replace(/```[\s\S]*?```/g, '');
 	text = text.replace(/`([^`]+)`/g, '$1');
 	text = text.replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1');
@@ -167,7 +180,7 @@ function splitIntoSections(markdown: string, maxHeadingDepth: number): string[] 
 
 /** Splits raw markdown by section (heading-delimited, up to maxHeadingDepth), then by sentence within each section. */
 function chunkMarkdownAware(markdown: string, maxLength: number, maxHeadingDepth: number, stripOptions: StripMarkdownOptions): string[] {
-	const sections = splitIntoSections(stripFrontmatter(markdown), maxHeadingDepth);
+	const sections = splitIntoSections(stripComments(stripFrontmatter(markdown), stripOptions), maxHeadingDepth);
 	const chunks: string[] = [];
 
 	for (const section of sections) {
