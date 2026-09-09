@@ -439,16 +439,23 @@ export class PlayerView extends ItemView {
 		if (!activeFile || !this.plugin.settings.linkAudioInNote) return;
 
 		void this.plugin.reader.getAudioInfo(activeFile).then((info) => {
-			if (!info || active) return;
+			if (!info) return;
 
-			const voiceMismatch = info.voiceId !== undefined && info.voiceId !== this.plugin.settings.voiceId;
-			if (info.status === 'outdated') {
-				readButton.setText('Regenerate');
-			} else if (voiceMismatch) {
-				readButton.setText('Regenerate with new voice');
+			// Read button's label only makes sense while it's actually clickable (not `active`) — leave it
+			// alone otherwise so it doesn't flash "Regenerate" next to a disabled "Reading" state. Play saved
+			// isn't gated the same way: it's available the instant a saved file exists, even mid-read, since
+			// clicking it just stops whatever's currently happening and plays the saved copy instead (same
+			// pattern as Read/Regenerate staying clickable while a *different* note is playing).
+			if (!active) {
+				const voiceMismatch = info.voiceId !== undefined && info.voiceId !== this.plugin.settings.voiceId;
+				if (info.status === 'outdated') {
+					readButton.setText('Regenerate');
+				} else if (voiceMismatch) {
+					readButton.setText('Regenerate with new voice');
+				}
 			}
 
-			playSavedButton.disabled = active;
+			playSavedButton.disabled = false;
 			playSavedButton.onclick = () => void this.plugin.reader.playSavedFile(info.audioFile, activeFile);
 		});
 	}
