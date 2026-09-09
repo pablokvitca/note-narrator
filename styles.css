@@ -120,6 +120,28 @@
 	background-color: var(--interactive-accent);
 }
 
+.obsidian-reader-generation-segment.is-generating {
+	background-color: var(--color-orange, #e69138);
+	animation: obsidian-reader-generating-pulse 1.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.obsidian-reader-generation-segment.is-generating {
+		animation: none;
+		opacity: 0.7;
+	}
+}
+
+@keyframes obsidian-reader-generating-pulse {
+	0%,
+	100% {
+		opacity: 1;
+	}
+	50% {
+		opacity: 0.45;
+	}
+}
+
 .obsidian-reader-generation-segment.is-current {
 	outline: 2px solid var(--text-accent);
 	outline-offset: 1px;
