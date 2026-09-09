@@ -293,27 +293,29 @@ export class PlayerView extends ItemView {
 		speedRange.createSpan({ cls: 'obsidian-reader-speed-bound', text: `${SPEED_MIN.toFixed(2)}x` });
 		speedRange.createSpan({ cls: 'obsidian-reader-speed-bound', text: `${SPEED_MAX.toFixed(2)}x` });
 
-		const isMuted = this.plugin.reader.isMuted();
-		const currentVolume = this.plugin.reader.getVolume();
-		const volumeSetting = new Setting(contentEl).setName(`Volume: ${isMuted ? 'Muted' : `${Math.round(currentVolume * 100)}%`}`);
-		volumeSetting.addSlider((slider) =>
-			slider
-				.setLimits(VOLUME_MIN, VOLUME_MAX, 0.05)
-				.setValue(currentVolume)
-				.onChange((value) => {
-					this.plugin.reader.setVolume(value);
-					volumeSetting.setName(`Volume: ${this.plugin.reader.isMuted() ? 'Muted' : `${Math.round(value * 100)}%`}`);
-				}),
-		);
-		volumeSetting.addExtraButton((button) =>
-			button
-				.setIcon(isMuted ? 'volume-x' : 'volume-2')
-				.setTooltip(isMuted ? 'Unmute' : 'Mute')
-				.onClick(() => {
-					this.plugin.reader.setMuted(!this.plugin.reader.isMuted());
-					this.render();
-				}),
-		);
+		if (this.plugin.settings.showVolumeSlider) {
+			const isMuted = this.plugin.reader.isMuted();
+			const currentVolume = this.plugin.reader.getVolume();
+			const volumeSetting = new Setting(contentEl).setName(`Volume: ${isMuted ? 'Muted' : `${Math.round(currentVolume * 100)}%`}`);
+			volumeSetting.addSlider((slider) =>
+				slider
+					.setLimits(VOLUME_MIN, VOLUME_MAX, 0.05)
+					.setValue(currentVolume)
+					.onChange((value) => {
+						this.plugin.reader.setVolume(value);
+						volumeSetting.setName(`Volume: ${this.plugin.reader.isMuted() ? 'Muted' : `${Math.round(value * 100)}%`}`);
+					}),
+			);
+			volumeSetting.addExtraButton((button) =>
+				button
+					.setIcon(isMuted ? 'volume-x' : 'volume-2')
+					.setTooltip(isMuted ? 'Unmute' : 'Mute')
+					.onClick(() => {
+						this.plugin.reader.setMuted(!this.plugin.reader.isMuted());
+						this.render();
+					}),
+			);
+		}
 
 		this.renderAudioStatus(contentEl);
 	}
