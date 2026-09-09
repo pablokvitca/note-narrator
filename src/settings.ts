@@ -80,6 +80,8 @@ export interface ReaderSettings {
 	parallelGenerationEnabled: boolean;
 	/** How many chunks may be generating at once when parallelGenerationEnabled is on. */
 	maxParallelGeneration: number;
+	/** Show the volume slider + mute button row in the player view. */
+	showVolumeSlider: boolean;
 }
 
 export const DEFAULT_SETTINGS: ReaderSettings = {
@@ -120,6 +122,7 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
 	quickStartCharCount: 750,
 	parallelGenerationEnabled: true,
 	maxParallelGeneration: 2,
+	showVolumeSlider: true,
 };
 
 export const ELEVENLABS_MODELS: Record<string, string> = {
@@ -399,6 +402,11 @@ export class ReaderSettingTab extends PluginSettingTab {
 						name: 'Skip amount',
 						desc: 'How many seconds the skip-forward and rewind buttons in the player view jump by.',
 						control: { type: 'slider', key: 'skipSeconds', min: 5, max: 60, step: 5, defaultValue: DEFAULT_SETTINGS.skipSeconds },
+					},
+					{
+						name: 'Show volume slider in panel',
+						desc: "Show the volume slider and mute button row in the player view, for people who don't want the extra control taking up panel space.",
+						control: { type: 'toggle', key: 'showVolumeSlider', defaultValue: DEFAULT_SETTINGS.showVolumeSlider },
 					},
 				],
 			},
