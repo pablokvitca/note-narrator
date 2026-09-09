@@ -62,6 +62,10 @@ export interface ReaderSettings {
 	stripHtmlComments: boolean;
 	/** Strip Obsidian/Markdown comments (`%% ... %%`) before reading. */
 	stripMarkdownComments: boolean;
+	/** When a comment isn't fully skipped above, never read its raw `<!--`/`-->`/`%%` delimiter symbols aloud -- just the text between them. */
+	stripCommentDelimiters: boolean;
+	/** When a comment isn't fully skipped above, prefix its (delimiter-stripped) text with "Comment: " when read aloud. */
+	announceComments: boolean;
 	/** Voice IDs shown in the player view's Voice dropdown. Empty means show all fetched voices there. */
 	panelVoiceIds: string[];
 	/** Start playback as soon as the first chunk is ready, rather than waiting for the whole note to generate. */
@@ -109,6 +113,8 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
 	readProperties: false,
 	stripHtmlComments: true,
 	stripMarkdownComments: true,
+	stripCommentDelimiters: true,
+	announceComments: true,
 	panelVoiceIds: [],
 	startPlaybackImmediately: true,
 	quickStart: true,
@@ -300,6 +306,18 @@ export class ReaderSettingTab extends PluginSettingTab {
 						name: 'Skip Markdown comments',
 						desc: 'Strip Obsidian/Markdown comments (`%% like this %%`) before reading, instead of reading them aloud verbatim.',
 						control: { type: 'toggle', key: 'stripMarkdownComments', defaultValue: DEFAULT_SETTINGS.stripMarkdownComments },
+					},
+					{
+						name: "Don't read comment delimiter symbols",
+						desc: "When a comment above isn't fully skipped, never read its raw `<!--`/`-->`/`%%` markup aloud -- just the text between them.",
+						control: { type: 'toggle', key: 'stripCommentDelimiters', defaultValue: DEFAULT_SETTINGS.stripCommentDelimiters },
+						visible: () => !settings.stripHtmlComments || !settings.stripMarkdownComments,
+					},
+					{
+						name: 'Announce comments as "Comment: ..."',
+						desc: "When a comment above isn't fully skipped, prefix its text with \"Comment: \" when read aloud, so a listener knows it was one.",
+						control: { type: 'toggle', key: 'announceComments', defaultValue: DEFAULT_SETTINGS.announceComments },
+						visible: () => !settings.stripHtmlComments || !settings.stripMarkdownComments,
 					},
 					{
 						name: 'Text chunker',
