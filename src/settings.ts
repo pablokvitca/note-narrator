@@ -7,6 +7,7 @@ import { ElevenLabsVoice, listElevenLabsVoices } from './tts/elevenlabs-provider
 export type SaveAudioLocation = 'note-folder' | 'custom-folder';
 export type SaveVersioning = 'replace' | 'keep';
 export type QuickStartUnit = 'words' | 'characters';
+export type BackgroundJobDisplayStyle = 'full' | 'compact' | 'minimal';
 
 export interface ReaderSettings {
 	/** Name of the secret in Obsidian's SecretStorage holding the ElevenLabs API key. */
@@ -83,6 +84,8 @@ export interface ReaderSettings {
 	maxParallelGeneration: number;
 	/** How many chunks may generate at once for a note continuing in the background (via "Continue in background"), independent of maxParallelGeneration -- kept low by default so it doesn't compete with an actively-playing read. */
 	maxBackgroundParallelGeneration: number;
+	/** How the panel shows queued/generating/done background jobs: a full callout with text buttons, a compact pill row, or a minimal card -- all with icon buttons and click-to-play. */
+	backgroundJobDisplayStyle: BackgroundJobDisplayStyle;
 	/** Show the volume slider + mute button row in the player view. */
 	showVolumeSlider: boolean;
 	/** Show the playback speed slider row in the player view. */
@@ -130,6 +133,7 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
 	parallelGenerationEnabled: true,
 	maxParallelGeneration: 2,
 	maxBackgroundParallelGeneration: 1,
+	backgroundJobDisplayStyle: 'minimal',
 	showVolumeSlider: true,
 	showPlaybackSpeedSlider: true,
 	timeDisplayMode: 'current',
@@ -408,6 +412,16 @@ export class ReaderSettingTab extends PluginSettingTab {
 							max: 5,
 							step: 1,
 							defaultValue: DEFAULT_SETTINGS.maxBackgroundParallelGeneration,
+						},
+					},
+					{
+						name: 'Background job display',
+						desc: 'How the panel shows notes queued/generating/finished in the background. "Full" shows a callout with text buttons per note. "Compact" is a slim row with icon buttons. "Minimal" is a small card with icon buttons only. All three play a note when you click anywhere on it besides its buttons.',
+						control: {
+							type: 'dropdown',
+							key: 'backgroundJobDisplayStyle',
+							options: { minimal: 'Minimal card (default)', compact: 'Compact row', full: 'Full callout' },
+							defaultValue: DEFAULT_SETTINGS.backgroundJobDisplayStyle,
 						},
 					},
 					{

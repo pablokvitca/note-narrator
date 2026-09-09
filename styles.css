@@ -235,12 +235,39 @@
 	border-left-color: var(--text-warning);
 }
 
-.obsidian-reader-background-job {
+.obsidian-reader-background-jobs {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-2-2);
 	margin-bottom: var(--size-4-3);
-	padding: var(--size-4-2);
+}
+
+/* Base look, shared by all three "Background job display" styles -- clicking anywhere on the
+   row/card besides its own icon buttons plays that job, so every variant signals it's clickable. */
+.obsidian-reader-background-job {
+	cursor: pointer;
 	border-radius: var(--radius-s);
-	border-left: 3px solid var(--text-warning);
+	border-left: 3px solid var(--text-muted);
+	background-color: var(--background-modifier-hover);
+	transition: background-color 0.1s ease;
+}
+
+.obsidian-reader-background-job:hover {
+	background-color: var(--background-modifier-border-hover);
+}
+
+.obsidian-reader-background-job:focus-visible {
+	outline: 2px solid var(--text-accent);
+	outline-offset: 1px;
+}
+
+.obsidian-reader-background-job.is-generating {
+	border-left-color: var(--text-warning);
 	background-color: color-mix(in oklch, var(--color-orange) 12%, transparent);
+}
+
+.obsidian-reader-background-job.is-generating:hover {
+	background-color: color-mix(in oklch, var(--color-orange) 20%, transparent);
 }
 
 .obsidian-reader-background-job.is-done {
@@ -248,21 +275,16 @@
 	background-color: color-mix(in oklch, var(--color-green) 12%, transparent);
 }
 
-.obsidian-reader-background-job-header {
-	display: flex;
-	align-items: center;
-	gap: var(--size-2-2);
-	font-size: var(--font-ui-smaller);
-	color: var(--text-normal);
-	margin-bottom: var(--size-2-2);
+.obsidian-reader-background-job.is-done:hover {
+	background-color: color-mix(in oklch, var(--color-green) 20%, transparent);
 }
 
-.obsidian-reader-background-job-header span:last-child {
-	overflow-wrap: break-word;
+.obsidian-reader-background-job-icon {
+	display: flex;
+	flex-shrink: 0;
 }
 
 .obsidian-reader-background-job.is-generating .obsidian-reader-background-job-icon {
-	display: flex;
 	animation: obsidian-reader-spin 1.5s linear infinite;
 }
 
@@ -281,7 +303,49 @@
 	}
 }
 
-.obsidian-reader-background-job .obsidian-reader-generation-bar {
+.obsidian-reader-background-job-name {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* Icon buttons used by the compact and minimal styles -- smaller than the transport controls' since
+   several can sit inline with a note title. */
+.obsidian-reader-bgjob-icon-button {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+	width: var(--size-4-6);
+	height: var(--size-4-6);
+	border-radius: var(--radius-s);
+	color: var(--text-muted);
+}
+
+.obsidian-reader-bgjob-icon-button:hover {
+	color: var(--text-normal);
+	background-color: var(--background-modifier-hover);
+}
+
+/* --- Full: a callout per job, matching the panel's other status callouts --- */
+.obsidian-reader-background-job--full {
+	padding: var(--size-4-2);
+}
+
+.obsidian-reader-background-job-header {
+	display: flex;
+	align-items: center;
+	gap: var(--size-2-2);
+	font-size: var(--font-ui-smaller);
+	color: var(--text-normal);
+	margin-bottom: var(--size-2-2);
+}
+
+.obsidian-reader-background-job-header span:last-child {
+	overflow-wrap: break-word;
+}
+
+.obsidian-reader-background-job--full .obsidian-reader-generation-bar {
 	margin-bottom: var(--size-2-2);
 }
 
@@ -299,4 +363,61 @@
 	flex-shrink: 0;
 	width: var(--size-4-6);
 	height: var(--size-4-6);
+}
+
+/* --- Compact: one slim pill row per job --- */
+.obsidian-reader-background-job--compact {
+	display: flex;
+	align-items: center;
+	gap: var(--size-2-2);
+	padding: var(--size-2-3) var(--size-4-2);
+	font-size: var(--font-ui-smaller);
+	color: var(--text-normal);
+}
+
+.obsidian-reader-background-job-minibar {
+	display: flex;
+	gap: 2px;
+	flex: 1;
+	min-width: var(--size-4-8);
+}
+
+.obsidian-reader-background-job-minibar div {
+	flex: 1;
+	height: 5px;
+	border-radius: 2px;
+	background-color: var(--background-modifier-border);
+}
+
+.obsidian-reader-background-job-minibar div.is-ready {
+	background-color: var(--interactive-accent);
+}
+
+/* --- Minimal: a small card with icon buttons, no text labels beyond the note title --- */
+.obsidian-reader-background-job--minimal {
+	padding: var(--size-4-1) var(--size-4-2) var(--size-4-2);
+}
+
+.obsidian-reader-background-job-title-row {
+	display: flex;
+	align-items: center;
+	gap: var(--size-2-2);
+	font-size: var(--font-ui-smaller);
+	color: var(--text-normal);
+	margin-bottom: var(--size-2-2);
+}
+
+.obsidian-reader-background-job-title-row .obsidian-reader-background-job-name {
+	flex: 1;
+}
+
+.obsidian-reader-background-job-minimal-buttons {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	flex-shrink: 0;
+}
+
+.obsidian-reader-background-job--minimal .obsidian-reader-generation-bar {
+	margin-bottom: 0;
 }
