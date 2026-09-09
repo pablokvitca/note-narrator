@@ -234,3 +234,69 @@
 	background-color: color-mix(in oklch, var(--color-orange) 12%, transparent);
 	border-left-color: var(--text-warning);
 }
+
+.obsidian-reader-background-job {
+	margin-bottom: var(--size-4-3);
+	padding: var(--size-4-2);
+	border-radius: var(--radius-s);
+	border-left: 3px solid var(--text-warning);
+	background-color: color-mix(in oklch, var(--color-orange) 12%, transparent);
+}
+
+.obsidian-reader-background-job.is-done {
+	border-left-color: var(--text-success);
+	background-color: color-mix(in oklch, var(--color-green) 12%, transparent);
+}
+
+.obsidian-reader-background-job-header {
+	display: flex;
+	align-items: center;
+	gap: var(--size-2-2);
+	font-size: var(--font-ui-smaller);
+	color: var(--text-normal);
+	margin-bottom: var(--size-2-2);
+}
+
+.obsidian-reader-background-job-header span:last-child {
+	overflow-wrap: break-word;
+}
+
+.obsidian-reader-background-job.is-generating .obsidian-reader-background-job-icon {
+	display: flex;
+	animation: obsidian-reader-spin 1.5s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.obsidian-reader-background-job.is-generating .obsidian-reader-background-job-icon {
+		animation: none;
+	}
+}
+
+@keyframes obsidian-reader-spin {
+	from {
+		transform: rotate(0deg);
+	}
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+.obsidian-reader-background-job .obsidian-reader-generation-bar {
+	margin-bottom: var(--size-2-2);
+}
+
+.obsidian-reader-background-job-actions {
+	display: flex;
+	align-items: center;
+	gap: var(--size-2-2);
+}
+
+.obsidian-reader-background-job-actions button {
+	flex: 1;
+}
+
+.obsidian-reader-background-job-discard {
+	flex-shrink: 0;
+	width: var(--size-4-6);
+	height: var(--size-4-6);
+}

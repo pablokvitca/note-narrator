@@ -1,6 +1,7 @@
 import { debounce, ItemView, MarkdownView, Menu, setIcon, Setting, TFile, WorkspaceLeaf } from 'obsidian';
 import { ConfirmModal } from './confirm-modal';
 import ObsidianReaderPlugin from './main';
+import { hasPendingGeneration } from './background-job';
 import { AudioLinkStatus, ReaderState } from './reader';
 import { computeFullReadTimes, formatTimeDisplay } from './time-utils';
 import { ElevenLabsVoice, listElevenLabsVoices } from './tts/elevenlabs-provider';
@@ -100,7 +101,10 @@ export class PlayerView extends ItemView {
 	}
 
 	private structuralKey(state: ReaderState): string {
-		return [state.status, state.chunkIndex, state.chunkCount, state.chunkReady.join(','), state.chunkInFlight.join(',')].join('|');
+		const backgroundKey = state.backgroundJob
+			? [state.backgroundJob.file?.path, state.backgroundJob.chunkReady.join(','), state.backgroundJob.chunkInFlight.join(',')].join(':')
+			: 'none';
+		return [state.status, state.chunkIndex, state.chunkCount, state.chunkReady.join(','), state.chunkInFlight.join(','), backgroundKey].join('|');
 	}
 
 	private updateProgress(state: ReaderState): void {
@@ -208,7 +212,7 @@ export class PlayerView extends ItemView {
 		// Not just status === 'generating': once quick-start playback begins, status flips to 'playing' while
 		// later chunks can still be generating in the background (parallel generation/lookahead) — Cancel
 		// generation should stay enabled through all of that, not just the initial generating phase.
-		const hasPendingGeneration = active && state.chunkReady.some((ready) => !ready);
+		const pendingGeneration = active && hasPendingGeneration(state.chunkReady);
 		contentEl.createDiv({
 			cls: 'obsidian-reader-selected-note',
 			text: selectedFile ? `Read: ${selectedFile.basename}` : 'Open a note to read it aloud',
@@ -221,6 +225,8 @@ export class PlayerView extends ItemView {
 		}
 
 		contentEl.createDiv({ cls: 'obsidian-reader-status', text: STATUS_LABELS[state.status] });
+
+		this.renderBackgroundJobStatus(contentEl, state);
 
 		if (state.chunkCount > 1) {
 			this.chunkProgressEl = contentEl.createDiv({ cls: 'obsidian-reader-chunk-progress' });
@@ -249,7 +255,7 @@ export class PlayerView extends ItemView {
 
 		this.renderNoteStats(contentEl, selectedFile);
 
-		this.renderPrimaryActions(contentEl, activeForSelected, hasPendingGeneration);
+		this.renderPrimaryActions(contentEl, activeForSelected, pendingGeneration);
 
 		{
 			const partsDisabled = !active || state.chunkCount <= 1;
@@ -375,6 +381,42 @@ export class PlayerView extends ItemView {
 		return button;
 	}
 
+	/** Shows what's generating (or has just finished) in the background, with buttons to jump in or discard it. */
+	private renderBackgroundJobStatus(container: HTMLElement, state: ReaderState): void {
+		const job = state.backgroundJob;
+		if (!job) return;
+
+		const readyCount = job.chunkReady.filter(Boolean).length;
+
+		const box = container.createDiv({ cls: 'obsidian-reader-background-job' });
+		box.addClass(job.done ? 'is-done' : 'is-generating');
+
+		const header = box.createDiv({ cls: 'obsidian-reader-background-job-header' });
+		header.createSpan({ cls: 'obsidian-reader-background-job-icon' }, (el) => setIcon(el, job.done ? 'check-circle-2' : 'loader-2'));
+		header.createSpan({
+			text: job.done
+				? `Finished generating in background: ${job.file?.basename ?? 'note'}`
+				: `Generating in background: ${job.file?.basename ?? 'note'} — ${readyCount}/${job.chunkCount} parts`,
+		});
+
+		const bar = box.createDiv({ cls: 'obsidian-reader-generation-bar' });
+		for (let i = 0; i < job.chunkCount; i++) {
+			const segment = bar.createDiv({ cls: 'obsidian-reader-generation-segment' });
+			if (job.chunkReady[i]) segment.addClass('is-ready');
+			else if (job.chunkInFlight[i]) segment.addClass('is-generating');
+		}
+
+		const actions = box.createDiv({ cls: 'obsidian-reader-background-job-actions' });
+		const playButton = actions.createEl('button', { text: 'Play' });
+		playButton.disabled = readyCount === 0;
+		playButton.onclick = () => this.plugin.reader.playBackgroundJob();
+
+		const discardButton = actions.createDiv({ cls: 'clickable-icon obsidian-reader-background-job-discard' });
+		setIcon(discardButton, 'trash-2');
+		discardButton.setAttribute('aria-label', 'Discard background generation');
+		discardButton.onclick = () => this.plugin.reader.discardBackgroundJob();
+	}
+
 	private renderAudioStatus(container: HTMLElement): void {
 		const activeFile = this.getActiveFile();
 		if (!activeFile || !this.plugin.settings.linkAudioInNote) return;
@@ -425,7 +467,7 @@ export class PlayerView extends ItemView {
 		});
 	}
 
-	private renderPrimaryActions(container: HTMLElement, active: boolean, hasPendingGeneration: boolean): void {
+	private renderPrimaryActions(container: HTMLElement, active: boolean, pendingGeneration: boolean): void {
 		const actionsRow = container.createDiv({ cls: 'obsidian-reader-primary-actions' });
 
 		const playSavedButton = actionsRow.createEl('button', { cls: 'obsidian-reader-play-saved-button', text: 'Play saved' });
@@ -439,8 +481,16 @@ export class PlayerView extends ItemView {
 		readButton.onclick = () => void this.plugin.reader.readNote(this.getActiveMarkdownView() ?? undefined);
 
 		const cancelButton = actionsRow.createEl('button', { cls: 'obsidian-reader-cancel-button', text: 'Cancel generation' });
-		cancelButton.disabled = !hasPendingGeneration;
+		cancelButton.disabled = !pendingGeneration;
 		cancelButton.onclick = () => this.plugin.reader.stop();
+
+		const backgroundButton = actionsRow.createEl('button', { cls: 'obsidian-reader-background-button', text: 'Continue in background' });
+		backgroundButton.disabled = !pendingGeneration;
+		backgroundButton.setAttribute(
+			'aria-label',
+			'Stop playback but keep generating the rest of this note in the background, so you can jump back into it later.',
+		);
+		backgroundButton.onclick = () => this.plugin.reader.continueGeneratingInBackground();
 
 		const activeFile = this.getActiveFile();
 		if (!activeFile || !this.plugin.settings.linkAudioInNote) return;
