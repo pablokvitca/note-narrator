@@ -78,6 +78,14 @@ See [FUTURE_FEATURES.md](FUTURE_FEATURES.md) for ideas not yet implemented (othe
 - Pushing a tag matching `manifest.json`'s `version` (no leading `v`) triggers a GitHub Actions workflow that builds the plugin and creates a GitHub release with `main.js`, `manifest.json`, and `styles.css` attached. This only creates the release — it does not publish to the community plugin directory.
 - A version with a SemVer pre-release suffix (e.g. `1.7.0-beta.1`) is published as a GitHub **pre-release** instead of a stable release, so it doesn't appear as "latest" and is only picked up by [BRAT](https://github.com/TfTHacker/obsidian42-brat) users who've opted in to beta versions for this plugin.
 
+### Branching model
+
+- `main` always reflects the latest **released stable** version — nothing merges directly into it except a fast-forward to a tracking branch's tip at release time.
+- Feature work for an upcoming minor version targets a `next/X.Y` branch (e.g. `next/0.11`), branched off `main`. Every push to it triggers a beta pre-release (see below) so it can be tested via BRAT before shipping.
+- Once `X.Y.0` ships (version bumped, tagged, released, `main` fast-forwarded to match), the branch is renamed `next/X.Y` → `release/X.Y` and becomes where patches for that line land directly (`X.Y.1`, `X.Y.2`, ...) — each patch release follows the same bump-tag-push-fast-forward-main flow.
+- A new `next/X.(Y+1)` branch (or `next/(X+1).0`) is cut from `main` once the next minor's feature work starts.
+- Every push to a `next/**` or `release/**` branch triggers a separate GitHub Actions workflow that builds the plugin and publishes a GitHub **pre-release** tagged `<current manifest version>-beta.<run number>` — an on-push beta build for BRAT testers, without ever committing a version bump back to the branch. Each push supersedes (deletes) the previous beta release for that version line, so only the latest beta build stays published.
+
 ## Manually installing the plugin
 
 Copy `main.js`, `manifest.json` to `VaultFolder/.obsidian/plugins/obsidian-reader/`, then enable it in Obsidian's Community Plugins settings (this plugin is not published to the community plugin store). To test a beta release before it's promoted to stable, install via [BRAT](https://github.com/TfTHacker/obsidian42-brat) instead, adding this repo and enabling beta versions.
