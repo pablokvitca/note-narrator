@@ -1,4 +1,4 @@
-import { debounce, ItemView, MarkdownView, Menu, setIcon, Setting, WorkspaceLeaf } from 'obsidian';
+import { debounce, ItemView, MarkdownView, Menu, setIcon, Setting, TFile, WorkspaceLeaf } from 'obsidian';
 import { ConfirmModal } from './confirm-modal';
 import ObsidianReaderPlugin from './main';
 import { AudioLinkStatus, ReaderState } from './reader';
@@ -132,6 +132,33 @@ export class PlayerView extends ItemView {
 		if (view.file?.path === this.lastActiveFilePath) return;
 		this.lastActiveFilePath = view.file?.path ?? null;
 		this.render();
+	}
+
+	/**
+	 * `workspace.getActiveViewOfType(MarkdownView)` returns null once this panel itself becomes the
+	 * active leaf — which happens as soon as the user clicks into it (e.g. to press Read) — so relying
+	 * on it alone from inside the panel's own click handlers falsely reports "no note open". Falls back
+	 * to the last note this panel tracked as active, resolved to its still-open MarkdownView if any.
+	 */
+	private getActiveMarkdownView(): MarkdownView | null {
+		const active = this.app.workspace.getActiveViewOfType(MarkdownView);
+		if (active) return active;
+		if (!this.lastActiveFilePath) return null;
+		for (const leaf of this.app.workspace.getLeavesOfType('markdown')) {
+			if (leaf.view instanceof MarkdownView && leaf.view.file?.path === this.lastActiveFilePath) {
+				return leaf.view;
+			}
+		}
+		return null;
+	}
+
+	/** Same fallback as {@link getActiveMarkdownView}, for call sites that only need the file, not an editor. */
+	private getActiveFile(): TFile | null {
+		const view = this.getActiveMarkdownView();
+		if (view?.file) return view.file;
+		if (!this.lastActiveFilePath) return null;
+		const file = this.app.vault.getAbstractFileByPath(this.lastActiveFilePath);
+		return file instanceof TFile ? file : null;
 	}
 
 	private async loadVoices(): Promise<void> {
@@ -290,7 +317,7 @@ export class PlayerView extends ItemView {
 	}
 
 	private renderAudioStatus(container: HTMLElement): void {
-		const activeFile = this.app.workspace.getActiveViewOfType(MarkdownView)?.file;
+		const activeFile = this.getActiveFile();
 		if (!activeFile || !this.plugin.settings.linkAudioInNote) return;
 
 		const statusEl = container.createDiv({ cls: 'obsidian-reader-audio-status' });
@@ -312,9 +339,9 @@ export class PlayerView extends ItemView {
 			text: 'Read',
 		});
 		readButton.disabled = active;
-		readButton.onclick = () => void this.plugin.reader.readNote();
+		readButton.onclick = () => void this.plugin.reader.readNote(this.getActiveMarkdownView() ?? undefined);
 
-		const activeFile = this.app.workspace.getActiveViewOfType(MarkdownView)?.file;
+		const activeFile = this.getActiveFile();
 		if (!activeFile || !this.plugin.settings.linkAudioInNote) return;
 
 		void this.plugin.reader.getAudioInfo(activeFile).then((info) => {
@@ -333,7 +360,7 @@ export class PlayerView extends ItemView {
 	}
 
 	private showOptionsMenu(evt: MouseEvent): void {
-		const activeFile = this.app.workspace.getActiveViewOfType(MarkdownView)?.file;
+		const activeFile = this.getActiveFile();
 		const clearEnabled = this.plugin.settings.showClearFilesButton && this.plugin.settings.linkAudioInNote && !!activeFile;
 
 		const menu = new Menu();
