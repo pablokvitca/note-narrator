@@ -58,11 +58,9 @@ export interface ReaderSettings {
 	readTitle: boolean;
 	/** Speak "Properties", each frontmatter property and value, then "Content", before the note's content. */
 	readProperties: boolean;
-	/** Strip HTML comments (`<!-- ... -->`) before reading. */
-	stripHtmlComments: boolean;
 	/** Strip Obsidian/Markdown comments (`%% ... %%`) before reading. */
 	stripMarkdownComments: boolean;
-	/** When a comment isn't fully skipped above, never read its raw `<!--`/`-->`/`%%` delimiter symbols aloud -- just the text between them. */
+	/** When a comment isn't fully skipped above, never read its raw `%%` delimiter symbols aloud -- just the text between them. */
 	stripCommentDelimiters: boolean;
 	/** When a comment isn't fully skipped above, prefix its (delimiter-stripped) text with "Comment: " when read aloud. */
 	announceComments: boolean;
@@ -111,7 +109,6 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
 	maxHeadingDepth: 2,
 	readTitle: true,
 	readProperties: false,
-	stripHtmlComments: true,
 	stripMarkdownComments: true,
 	stripCommentDelimiters: true,
 	announceComments: true,
@@ -298,26 +295,21 @@ export class ReaderSettingTab extends PluginSettingTab {
 						control: { type: 'toggle', key: 'readProperties', defaultValue: DEFAULT_SETTINGS.readProperties },
 					},
 					{
-						name: 'Skip HTML comments',
-						desc: 'Strip HTML comments (`<!-- like this -->`) before reading, instead of reading them aloud verbatim.',
-						control: { type: 'toggle', key: 'stripHtmlComments', defaultValue: DEFAULT_SETTINGS.stripHtmlComments },
-					},
-					{
 						name: 'Skip Markdown comments',
-						desc: 'Strip Obsidian/Markdown comments (`%% like this %%`) before reading, instead of reading them aloud verbatim.',
+						desc: 'Strip Obsidian/Markdown comments (`%% like this %%`) before reading, instead of reading them aloud verbatim. HTML comments (`<!-- like this -->`) aren\'t handled specially yet and are always read as literal text -- see the README\'s "Known limitations".',
 						control: { type: 'toggle', key: 'stripMarkdownComments', defaultValue: DEFAULT_SETTINGS.stripMarkdownComments },
 					},
 					{
 						name: "Don't read comment delimiter symbols",
-						desc: "When a comment above isn't fully skipped, never read its raw `<!--`/`-->`/`%%` markup aloud -- just the text between them.",
+						desc: "When a Markdown comment above isn't fully skipped, never read its raw `%%` markup aloud -- just the text between them.",
 						control: { type: 'toggle', key: 'stripCommentDelimiters', defaultValue: DEFAULT_SETTINGS.stripCommentDelimiters },
-						visible: () => !settings.stripHtmlComments || !settings.stripMarkdownComments,
+						visible: () => !settings.stripMarkdownComments,
 					},
 					{
 						name: 'Announce comments as "Comment: ..."',
-						desc: "When a comment above isn't fully skipped, prefix its text with \"Comment: \" when read aloud, so a listener knows it was one.",
+						desc: "When a Markdown comment above isn't fully skipped, prefix its text with \"Comment: \" when read aloud, so a listener knows it was one.",
 						control: { type: 'toggle', key: 'announceComments', defaultValue: DEFAULT_SETTINGS.announceComments },
-						visible: () => !settings.stripHtmlComments || !settings.stripMarkdownComments,
+						visible: () => !settings.stripMarkdownComments,
 					},
 					{
 						name: 'Text chunker',

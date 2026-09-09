@@ -8,13 +8,11 @@ export function stripFrontmatter(markdown: string): string {
 }
 
 export interface StripMarkdownOptions {
-	/** Remove HTML comments (`<!-- ... -->`) entirely, content included, before reading. */
-	stripHtmlComments: boolean;
 	/** Remove Obsidian/Markdown comments (`%% ... %%`) entirely, content included, before reading. */
 	stripMarkdownComments: boolean;
 	/**
-	 * When a comment isn't fully removed (its `stripXComments` toggle above is off), still never read the
-	 * raw `<!--`/`-->`/`%%` delimiter symbols themselves aloud -- just the text between them, as normal prose.
+	 * When a comment isn't fully removed (`stripMarkdownComments` above is off), still never read the raw
+	 * `%%` delimiter symbols themselves aloud -- just the text between them, as normal prose.
 	 */
 	stripCommentDelimiters: boolean;
 	/** When a comment isn't fully removed, prefix its (delimiter-stripped) text with "Comment: " so a listener knows it was one. */
@@ -22,35 +20,30 @@ export interface StripMarkdownOptions {
 }
 
 const DEFAULT_STRIP_MARKDOWN_OPTIONS: StripMarkdownOptions = {
-	stripHtmlComments: true,
 	stripMarkdownComments: true,
 	stripCommentDelimiters: true,
 	announceComments: true,
 };
 
-/** Replaces every match of a comment pattern per the skip/delimiter/announce options. */
-function processComments(text: string, pattern: RegExp, skip: boolean, stripDelimiters: boolean, announce: boolean): string {
-	return text.replace(pattern, (match: string, inner: string) => {
-		if (skip) return '';
-		if (!stripDelimiters) return match;
-		const content = inner.trim();
-		if (!content) return '';
-		return announce ? `Comment: ${content}.` : content;
-	});
-}
-
 /**
- * Removes/rewrites HTML and Markdown comments per options. Applied to the whole note before markdown-aware
+ * Removes/rewrites Obsidian/Markdown comments per options. Applied to the whole note before markdown-aware
  * chunking splits it into heading-delimited sections (not just per-section inside stripMarkdown) -- a
  * comment that happens to span a heading boundary (e.g. commenting out a whole section, heading
- * included) would otherwise have its opening/closing `%%`/`<!--...-->` land in different sections,
- * leaving unmatched fragments behind that neither section's own stripMarkdown() call could pair up.
+ * included) would otherwise have its opening/closing `%%` land in different sections, leaving unmatched
+ * fragments behind that neither section's own stripMarkdown() call could pair up.
+ *
+ * HTML comment (`<!-- ... -->`) support was removed -- see README's "Known limitations" for why -- so raw
+ * HTML comments are left untouched here and read as literal text, same as any other markdown syntax we
+ * don't specifically handle.
  */
 function stripComments(markdown: string, options: StripMarkdownOptions): string {
-	let text = markdown;
-	text = processComments(text, /<!--([\s\S]*?)-->/g, options.stripHtmlComments, options.stripCommentDelimiters, options.announceComments);
-	text = processComments(text, /%%([\s\S]*?)%%/g, options.stripMarkdownComments, options.stripCommentDelimiters, options.announceComments);
-	return text;
+	return markdown.replace(/%%([\s\S]*?)%%/g, (match: string, inner: string) => {
+		if (options.stripMarkdownComments) return '';
+		if (!options.stripCommentDelimiters) return match;
+		const content = inner.trim();
+		if (!content) return '';
+		return options.announceComments ? `Comment: ${content}.` : content;
+	});
 }
 
 /** Strips common Markdown syntax so TTS reads prose instead of literal symbols. */

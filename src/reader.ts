@@ -164,7 +164,6 @@ export class Reader extends Events {
 
 	private getStripMarkdownOptions(): StripMarkdownOptions {
 		return {
-			stripHtmlComments: this.settings.stripHtmlComments,
 			stripMarkdownComments: this.settings.stripMarkdownComments,
 			stripCommentDelimiters: this.settings.stripCommentDelimiters,
 			announceComments: this.settings.announceComments,
