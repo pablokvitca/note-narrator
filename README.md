@@ -67,6 +67,7 @@ See [FUTURE_FEATURES.md](FUTURE_FEATURES.md) for ideas not yet implemented (othe
 - The rate-limit fallback to sequential generation applies only to the read in progress; each new read starts again at your configured parallel-generation setting.
 - Eleven v3 is ElevenLabs' own "research preview" model — it can be more expressive but also more prone to hallucinated/mispronounced output than Multilingual v2, and their Professional Voice Clones aren't fully optimized for it yet.
 - No scrubbing to an arbitrary point — only relative rewind/skip by the configured skip amount.
+- HTML comments (`<!-- like this -->`) aren't stripped or otherwise handled specially — they're read as literal text, `<`/`!`/`-`/`>` symbols included. An attempted "Skip HTML comments" setting was pulled after it didn't reliably suppress them in testing; root cause not yet found. Obsidian/Markdown comments (`%% like this %%`) are unaffected and have their own working settings.
 - Requires an ElevenLabs account and API key; this plugin makes network requests to `api.elevenlabs.io` only when you trigger a read.
 
 ## Development
