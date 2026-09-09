@@ -158,14 +158,22 @@
 	padding: var(--size-4-2);
 	border-radius: var(--radius-s);
 	font-size: var(--font-ui-smaller);
+	color: var(--text-normal);
+	border-left: 3px solid transparent;
 }
 
+/*
+ * --text-success/--text-warning and --background-modifier-success/--background-modifier-warning
+ * resolve to the exact same color (verified against Obsidian's own app.css), so pairing them as
+ * foreground+background made this unreadable. Obsidian's own callouts use a color-mix() tint of the
+ * accent color for the background instead, with normal body text — matching that here.
+ */
 .obsidian-reader-audio-status.is-up-to-date {
-	color: var(--text-success);
-	background-color: var(--background-modifier-success);
+	background-color: color-mix(in oklch, var(--color-green) 12%, transparent);
+	border-left-color: var(--text-success);
 }
 
 .obsidian-reader-audio-status.is-outdated {
-	color: var(--text-warning);
-	background-color: var(--background-modifier-warning);
+	background-color: color-mix(in oklch, var(--color-orange) 12%, transparent);
+	border-left-color: var(--text-warning);
 }
