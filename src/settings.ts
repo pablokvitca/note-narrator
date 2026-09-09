@@ -44,6 +44,8 @@ export interface ReaderSettings {
 	extraStaleHashExcludedProperties: string;
 	/** Show a "Clear reader files" button in the player view. */
 	showClearFilesButton: boolean;
+	/** Silently remove the reader's own frontmatter properties from a note when its linked audio file no longer exists on disk, instead of showing a misleading "outdated" status. */
+	autoCleanupMissingAudioProperties: boolean;
 	/** Silently (re)generate and save a note's audio on open if missing or outdated. Requires saveAudioFile and linkAudioInNote. */
 	autoGenerateOnOpen: boolean;
 	/** Whether regenerating a note's audio replaces the previously linked file or keeps it and creates a new one. Only applies when linkAudioInNote is on. */
@@ -94,6 +96,7 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
 	audioVoiceProperty: 'reader_audio_voice',
 	extraStaleHashExcludedProperties: '',
 	showClearFilesButton: true,
+	autoCleanupMissingAudioProperties: true,
 	autoGenerateOnOpen: false,
 	saveVersioning: 'replace',
 	chunkerStyle: 'markdown-aware',
@@ -467,6 +470,12 @@ export class ReaderSettingTab extends PluginSettingTab {
 						name: 'Show "clear reader files" menu item and delete button',
 						desc: 'Enable the "clear reader files" item in the player view\'s ⋮ menu (top-right) and the small delete button on the saved-audio status line, both of which delete a note\'s linked audio file and remove the properties above, after confirming.',
 						control: { type: 'toggle', key: 'showClearFilesButton', defaultValue: DEFAULT_SETTINGS.showClearFilesButton },
+						visible: () => settings.saveAudioFile && settings.linkAudioInNote,
+					},
+					{
+						name: 'Auto-clean up properties when saved file is missing',
+						desc: "When a note's linked audio file no longer exists (moved or deleted outside Obsidian Reader), silently remove the properties above instead of showing a misleading \"outdated\" status.",
+						control: { type: 'toggle', key: 'autoCleanupMissingAudioProperties', defaultValue: DEFAULT_SETTINGS.autoCleanupMissingAudioProperties },
 						visible: () => settings.saveAudioFile && settings.linkAudioInNote,
 					},
 				],
