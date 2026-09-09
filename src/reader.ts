@@ -462,13 +462,8 @@ export class Reader extends Events {
 		this.trigger('audio-status-change', sourceFile);
 	}
 
-	/** Deletes a note's linked audio file (if any) and removes the reader-audio properties from its frontmatter. */
-	async clearReaderFiles(sourceFile: TFile): Promise<void> {
-		const audioFile = this.findExistingAudioFile(sourceFile);
-		if (audioFile) {
-			await this.app.fileManager.trashFile(audioFile);
-		}
-
+	/** Removes just the reader-audio frontmatter properties (not the audio file itself), used by both the user-facing clear action and silent missing-file cleanup. */
+	private async removeReaderProperties(sourceFile: TFile): Promise<void> {
 		const cacheUpdated = this.waitForMetadataCacheUpdate(sourceFile);
 		await this.app.fileManager.processFrontMatter(sourceFile, (frontmatter: Record<string, unknown>) => {
 			delete frontmatter[this.settings.audioLinkProperty];
@@ -479,8 +474,19 @@ export class Reader extends Events {
 		});
 		await cacheUpdated;
 
-		new Notice(audioFile ? 'Cleared reader audio file and properties.' : 'Cleared reader properties (no audio file was linked).');
 		this.trigger('audio-status-change', sourceFile);
+	}
+
+	/** Deletes a note's linked audio file (if any) and removes the reader-audio properties from its frontmatter. */
+	async clearReaderFiles(sourceFile: TFile): Promise<void> {
+		const audioFile = this.findExistingAudioFile(sourceFile);
+		if (audioFile) {
+			await this.app.fileManager.trashFile(audioFile);
+		}
+
+		await this.removeReaderProperties(sourceFile);
+
+		new Notice(audioFile ? 'Cleared reader audio file and properties.' : 'Cleared reader properties (no audio file was linked).');
 	}
 
 	/**
@@ -564,6 +570,17 @@ export class Reader extends Events {
 		const link = frontmatter?.[this.settings.audioLinkProperty] as string | undefined;
 		const storedHash = frontmatter?.[this.settings.audioHashProperty] as string | undefined;
 		if (!link || !storedHash) return 'none';
+
+		// The note still links to audio that's since been moved/deleted outside Obsidian Reader — there's
+		// nothing to be "outdated" relative to, so clean up the stale properties instead of showing a
+		// misleading status. Self-stabilizing: once cleaned, `link`/`storedHash` above are gone and this
+		// short-circuits to 'none' on the next call without re-checking the vault.
+		if (!this.findExistingAudioFile(file)) {
+			if (this.settings.autoCleanupMissingAudioProperties) {
+				await this.removeReaderProperties(file);
+			}
+			return 'none';
+		}
 
 		const currentHash = await this.computeStalenessHash(file);
 		return currentHash === storedHash ? 'up-to-date' : 'outdated';
