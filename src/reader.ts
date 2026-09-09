@@ -1,7 +1,15 @@
 import { App, Events, MarkdownView, moment, Notice, normalizePath, TFile } from 'obsidian';
 import { concatArrayBuffers, sanitizeFilenameComponent } from './audio-utils';
 import { DEFAULT_ELEVENLABS_CHAR_LIMIT, ELEVENLABS_MODEL_CHAR_LIMITS, ReaderSettings } from './settings';
-import { buildReadingPreamble, chunkByWordCount, chunkBySentence, chunkNote, hashText, stripFrontmatter } from './text-utils';
+import {
+	buildReadingPreamble,
+	chunkByWordCount,
+	chunkBySentence,
+	chunkNote,
+	hashText,
+	stripFrontmatter,
+	StripMarkdownOptions,
+} from './text-utils';
 import { ElevenLabsProvider, getElevenLabsVoiceName } from './tts/elevenlabs-provider';
 
 export type ReaderStatus = 'idle' | 'generating' | 'playing' | 'paused';
@@ -154,6 +162,15 @@ export class Reader extends Events {
 		if (this.audio) this.audio.muted = muted;
 	}
 
+	private getStripMarkdownOptions(): StripMarkdownOptions {
+		return {
+			stripHtmlComments: this.settings.stripHtmlComments,
+			stripMarkdownComments: this.settings.stripMarkdownComments,
+			stripCommentDelimiters: this.settings.stripCommentDelimiters,
+			announceComments: this.settings.announceComments,
+		};
+	}
+
 	async readNote(view?: MarkdownView): Promise<void> {
 		const target = view ?? this.app.workspace.getActiveViewOfType(MarkdownView);
 		if (!target) {
@@ -185,7 +202,7 @@ export class Reader extends Events {
 		}
 
 		const charLimit = ELEVENLABS_MODEL_CHAR_LIMITS[this.settings.modelId] ?? DEFAULT_ELEVENLABS_CHAR_LIMIT;
-		let chunks = chunkNote(rawText, charLimit, this.settings.chunkerStyle, this.settings.maxHeadingDepth, { stripHtmlComments: this.settings.stripHtmlComments, stripMarkdownComments: this.settings.stripMarkdownComments });
+		let chunks = chunkNote(rawText, charLimit, this.settings.chunkerStyle, this.settings.maxHeadingDepth, this.getStripMarkdownOptions());
 		if (chunks.length === 0) {
 			new Notice('Nothing to read.');
 			return;
@@ -514,7 +531,7 @@ export class Reader extends Events {
 			const textToRead = preamble ? `${preamble}\n\n${body}` : body;
 
 			const charLimit = ELEVENLABS_MODEL_CHAR_LIMITS[this.settings.modelId] ?? DEFAULT_ELEVENLABS_CHAR_LIMIT;
-			const chunks = chunkNote(textToRead, charLimit, this.settings.chunkerStyle, this.settings.maxHeadingDepth, { stripHtmlComments: this.settings.stripHtmlComments, stripMarkdownComments: this.settings.stripMarkdownComments });
+			const chunks = chunkNote(textToRead, charLimit, this.settings.chunkerStyle, this.settings.maxHeadingDepth, this.getStripMarkdownOptions());
 			if (chunks.length === 0) return;
 
 			const provider = new ElevenLabsProvider(apiKey, this.settings);
@@ -551,7 +568,7 @@ export class Reader extends Events {
 		if (!textToRead.trim()) return null;
 
 		const charLimit = ELEVENLABS_MODEL_CHAR_LIMITS[this.settings.modelId] ?? DEFAULT_ELEVENLABS_CHAR_LIMIT;
-		const chunks = chunkNote(textToRead, charLimit, this.settings.chunkerStyle, this.settings.maxHeadingDepth, { stripHtmlComments: this.settings.stripHtmlComments, stripMarkdownComments: this.settings.stripMarkdownComments });
+		const chunks = chunkNote(textToRead, charLimit, this.settings.chunkerStyle, this.settings.maxHeadingDepth, this.getStripMarkdownOptions());
 		if (chunks.length === 0) return null;
 
 		const totalChars = textToRead.length;
