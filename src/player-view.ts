@@ -195,6 +195,10 @@ export class PlayerView extends ItemView {
 		// this one instead (until background generation lands and playing elsewhere no longer needs to
 		// interrupt at all).
 		const activeForSelected = active && !!state.activeFile && !!selectedFile && state.activeFile.path === selectedFile.path;
+		// Not just status === 'generating': once quick-start playback begins, status flips to 'playing' while
+		// later chunks can still be generating in the background (parallel generation/lookahead) — Cancel
+		// generation should stay enabled through all of that, not just the initial generating phase.
+		const hasPendingGeneration = active && state.chunkReady.some((ready) => !ready);
 		contentEl.createDiv({
 			cls: 'obsidian-reader-selected-note',
 			text: selectedFile ? `Read: ${selectedFile.basename}` : 'Open a note to read it aloud',
@@ -234,7 +238,7 @@ export class PlayerView extends ItemView {
 
 		this.renderNoteStats(contentEl, selectedFile);
 
-		this.renderPrimaryActions(contentEl, activeForSelected, state.status);
+		this.renderPrimaryActions(contentEl, activeForSelected, hasPendingGeneration);
 
 		{
 			const partsDisabled = !active || state.chunkCount <= 1;
@@ -389,7 +393,7 @@ export class PlayerView extends ItemView {
 		});
 	}
 
-	private renderPrimaryActions(container: HTMLElement, active: boolean, status: ReaderState['status']): void {
+	private renderPrimaryActions(container: HTMLElement, active: boolean, hasPendingGeneration: boolean): void {
 		const actionsRow = container.createDiv({ cls: 'obsidian-reader-primary-actions' });
 
 		const playSavedButton = actionsRow.createEl('button', { cls: 'obsidian-reader-play-saved-button', text: 'Play saved' });
@@ -403,7 +407,7 @@ export class PlayerView extends ItemView {
 		readButton.onclick = () => void this.plugin.reader.readNote(this.getActiveMarkdownView() ?? undefined);
 
 		const cancelButton = actionsRow.createEl('button', { cls: 'obsidian-reader-cancel-button', text: 'Cancel generation' });
-		cancelButton.disabled = status !== 'generating';
+		cancelButton.disabled = !hasPendingGeneration;
 		cancelButton.onclick = () => this.plugin.reader.stop();
 
 		const activeFile = this.getActiveFile();
