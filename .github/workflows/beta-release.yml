@@ -1,0 +1,64 @@
+name: Beta release
+
+# Fires on every push to a tracking branch for an upcoming or currently-shipping minor
+# version (next/X.Y while it's unreleased, release/X.Y once X.Y.0 has shipped and it's
+# taking patches). Builds and publishes a GitHub pre-release tagged <manifest version>-beta.<run number>,
+# so BRAT users who've opted into beta versions get it, without it ever becoming "latest"
+# for normal community-plugin users. Never commits a version bump back to the branch.
+
+on:
+    push:
+        branches:
+            - 'next/**'
+            - 'release/**'
+
+permissions:
+    contents: write
+
+jobs:
+    beta:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v6
+            - uses: actions/setup-node@v6
+              with:
+                  node-version: '20.x'
+                  cache: 'npm'
+            - run: npm ci
+            - run: npm run build
+
+            - name: Compute beta version
+              id: version
+              run: |
+                  base_version=$(node -p "require('./manifest.json').version")
+                  echo "base_version=$base_version" >> "$GITHUB_OUTPUT"
+                  echo "beta_version=${base_version}-beta.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+            - name: Stamp the beta version into the build output only (not committed)
+              run: |
+                  node -e "
+                    const fs = require('fs');
+                    const manifest = JSON.parse(fs.readFileSync('manifest.json', 'utf8'));
+                    manifest.version = '${{ steps.version.outputs.beta_version }}';
+                    fs.writeFileSync('manifest.json', JSON.stringify(manifest, null, '\t'));
+                  "
+
+            - name: Remove previous beta releases for this version line
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: |
+                  base_version="${{ steps.version.outputs.base_version }}"
+                  for tag in $(gh release list --limit 100 --json tagName,isPrerelease --jq ".[] | select(.isPrerelease and (.tagName | startswith(\"${base_version}-beta.\"))) | .tagName"); do
+                    gh release delete "$tag" --yes --cleanup-tag || true
+                  done
+
+            - name: Create beta pre-release
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              run: |
+                  gh release create "${{ steps.version.outputs.beta_version }}" \
+                    main.js manifest.json styles.css \
+                    --title "${{ steps.version.outputs.beta_version }}" \
+                    --notes "Automatic beta build from \`${{ github.ref_name }}\` @ ${{ github.sha }}. Install via [BRAT](https://github.com/TfTHacker/obsidian42-brat) with beta versions enabled for this plugin. Superseded by the next push to this branch." \
+                    --prerelease \
+                    --target "${{ github.sha }}"
