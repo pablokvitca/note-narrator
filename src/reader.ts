@@ -420,10 +420,36 @@ export class Reader extends Events {
 		return hashText(`${JSON.stringify(frontmatter)}\n${body}`);
 	}
 
+	/**
+	 * `processFrontMatter()`'s returned promise can resolve before `metadataCache.getFileCache()` actually
+	 * reflects the write — the cache recomputes on its own pipeline after the underlying `vault.modify`,
+	 * not synchronously as part of the write call. Callers that immediately re-read frontmatter via the
+	 * cache (like the panel's Play saved/status checks, triggered off `audio-status-change`) would see the
+	 * stale pre-write cache otherwise. Waits for the cache's own 'changed' event for this file, with a
+	 * timeout as a safety net in case that event is ever missed.
+	 */
+	private waitForMetadataCacheUpdate(file: TFile): Promise<void> {
+		return new Promise((resolve) => {
+			let settled = false;
+			const finish = () => {
+				if (settled) return;
+				settled = true;
+				this.app.metadataCache.offref(ref);
+				window.clearTimeout(timeoutId);
+				resolve();
+			};
+			const ref = this.app.metadataCache.on('changed', (changedFile: TFile) => {
+				if (changedFile.path === file.path) finish();
+			});
+			const timeoutId = window.setTimeout(finish, 2000);
+		});
+	}
+
 	private async linkAudioInNote(audioFile: TFile, sourceFile: TFile): Promise<void> {
 		const link = this.app.fileManager.generateMarkdownLink(audioFile, sourceFile.path);
 		const hash = await this.computeStalenessHash(sourceFile);
 
+		const cacheUpdated = this.waitForMetadataCacheUpdate(sourceFile);
 		await this.app.fileManager.processFrontMatter(sourceFile, (frontmatter: Record<string, unknown>) => {
 			frontmatter[this.settings.audioLinkProperty] = link;
 			frontmatter[this.settings.audioHashProperty] = hash;
@@ -431,6 +457,7 @@ export class Reader extends Events {
 			frontmatter[this.settings.audioTimestampProperty] = moment().toISOString(true);
 			frontmatter[this.settings.audioVoiceProperty] = this.settings.voiceId;
 		});
+		await cacheUpdated;
 
 		this.trigger('audio-status-change', sourceFile);
 	}
@@ -442,6 +469,7 @@ export class Reader extends Events {
 			await this.app.fileManager.trashFile(audioFile);
 		}
 
+		const cacheUpdated = this.waitForMetadataCacheUpdate(sourceFile);
 		await this.app.fileManager.processFrontMatter(sourceFile, (frontmatter: Record<string, unknown>) => {
 			delete frontmatter[this.settings.audioLinkProperty];
 			delete frontmatter[this.settings.audioHashProperty];
@@ -449,6 +477,7 @@ export class Reader extends Events {
 			delete frontmatter[this.settings.audioTimestampProperty];
 			delete frontmatter[this.settings.audioVoiceProperty];
 		});
+		await cacheUpdated;
 
 		new Notice(audioFile ? 'Cleared reader audio file and properties.' : 'Cleared reader properties (no audio file was linked).');
 		this.trigger('audio-status-change', sourceFile);
