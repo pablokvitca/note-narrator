@@ -451,8 +451,8 @@ export class ReaderSettingTab extends PluginSettingTab {
 						visible: () => settings.saveAudioFile && settings.linkAudioInNote,
 					},
 					{
-						name: 'Show "clear reader files" menu item',
-						desc: 'Enable the "clear reader files" item in the player view\'s ⋮ menu (top-right), which deletes a note\'s linked audio file and removes the properties above, after confirming.',
+						name: 'Show "clear reader files" menu item and delete button',
+						desc: 'Enable the "clear reader files" item in the player view\'s ⋮ menu (top-right) and the small delete button on the saved-audio status line, both of which delete a note\'s linked audio file and remove the properties above, after confirming.',
 						control: { type: 'toggle', key: 'showClearFilesButton', defaultValue: DEFAULT_SETTINGS.showClearFilesButton },
 						visible: () => settings.saveAudioFile && settings.linkAudioInNote,
 					},

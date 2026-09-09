@@ -367,9 +367,26 @@ export class PlayerView extends ItemView {
 		const statusEl = container.createDiv({ cls: 'obsidian-reader-audio-status' });
 		void this.plugin.reader.getAudioStatus(activeFile).then((status) => {
 			if (status === 'none') return;
-			statusEl.setText(AUDIO_STATUS_LABELS[status]);
 			statusEl.addClass(status === 'outdated' ? 'is-outdated' : 'is-up-to-date');
+			statusEl.createSpan({ text: AUDIO_STATUS_LABELS[status] });
+
+			if (this.plugin.settings.showClearFilesButton) {
+				const deleteButton = statusEl.createDiv({ cls: 'clickable-icon obsidian-reader-audio-status-delete' });
+				setIcon(deleteButton, 'trash-2');
+				deleteButton.setAttribute('aria-label', 'Delete saved audio file');
+				deleteButton.onclick = () => this.confirmClearReaderFiles(activeFile);
+			}
 		});
+	}
+
+	private confirmClearReaderFiles(activeFile: TFile): void {
+		new ConfirmModal(
+			this.app,
+			'Clear reader files?',
+			`This deletes ${activeFile.basename}'s linked audio file and removes the reader-audio properties from its frontmatter. This can't be undone from within Obsidian Reader.`,
+			'Clear',
+			() => void this.plugin.reader.clearReaderFiles(activeFile),
+		).open();
 	}
 
 	/** Total characters/chunks and derived averages for the selected note, shown just above the Read button. */
@@ -440,13 +457,7 @@ export class PlayerView extends ItemView {
 				.setDisabled(!clearEnabled)
 				.onClick(() => {
 					if (!activeFile) return;
-					new ConfirmModal(
-						this.app,
-						'Clear reader files?',
-						`This deletes ${activeFile.basename}'s linked audio file and removes the reader-audio properties from its frontmatter. This can't be undone from within Obsidian Reader.`,
-						'Clear',
-						() => void this.plugin.reader.clearReaderFiles(activeFile),
-					).open();
+					this.confirmClearReaderFiles(activeFile);
 				}),
 		);
 		menu.showAtMouseEvent(evt);
