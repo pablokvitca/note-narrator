@@ -187,9 +187,16 @@ export class PlayerView extends ItemView {
 		this.timeEl = null;
 		this.chunkProgressEl = null;
 
-		if (state.activeFile) {
-			contentEl.createDiv({ cls: 'obsidian-reader-active-note', text: state.activeFile.basename });
+		const selectedFile = this.getActiveFile();
+		contentEl.createDiv({
+			cls: 'obsidian-reader-selected-note',
+			text: selectedFile ? `Read: ${selectedFile.basename}` : 'Open a note to read it aloud',
+		});
+
+		if (state.activeFile && (!selectedFile || state.activeFile.path !== selectedFile.path)) {
+			contentEl.createDiv({ cls: 'obsidian-reader-currently-reading', text: `Currently reading: ${state.activeFile.basename}` });
 		}
+
 		contentEl.createDiv({ cls: 'obsidian-reader-status', text: STATUS_LABELS[state.status] });
 
 		if (state.chunkCount > 1) {
