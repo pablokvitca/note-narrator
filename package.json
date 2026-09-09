@@ -1,6 +1,6 @@
 {
 	"name": "obsidian-reader",
-	"version": "0.10.0",
+	"version": "0.10.1",
 	"description": "Read the current note aloud with text-to-speech, starting with ElevenLabs.",
 	"main": "main.js",
 	"type": "module",
