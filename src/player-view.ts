@@ -68,6 +68,14 @@ export class PlayerView extends ItemView {
 		this.lastActiveFilePath = this.app.workspace.getActiveViewOfType(MarkdownView)?.file?.path ?? null;
 
 		this.registerEvent(this.plugin.reader.on('change', () => this.handleReaderChange()));
+		// Fired explicitly whenever a note's saved-audio link/hash actually changes (save completes, a note is
+		// cleared) — decoupled from the 'change' event above (which cheap-patches on unrelated playback ticks
+		// and can leave Play saved/Regenerate stale) and from waiting on an incidental re-render to catch up.
+		this.registerEvent(
+			this.plugin.reader.on('audio-status-change', (file: unknown) => {
+				if (file instanceof TFile && file.path === this.lastActiveFilePath) this.render();
+			}),
+		);
 		this.registerEvent(this.app.workspace.on('active-leaf-change', () => this.handleActiveFileMaybeChanged()));
 		this.registerEvent(
 			this.app.metadataCache.on('changed', (file) => {

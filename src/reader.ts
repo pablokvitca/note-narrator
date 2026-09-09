@@ -431,6 +431,8 @@ export class Reader extends Events {
 			frontmatter[this.settings.audioTimestampProperty] = moment().toISOString(true);
 			frontmatter[this.settings.audioVoiceProperty] = this.settings.voiceId;
 		});
+
+		this.trigger('audio-status-change', sourceFile);
 	}
 
 	/** Deletes a note's linked audio file (if any) and removes the reader-audio properties from its frontmatter. */
@@ -449,6 +451,7 @@ export class Reader extends Events {
 		});
 
 		new Notice(audioFile ? 'Cleared reader audio file and properties.' : 'Cleared reader properties (no audio file was linked).');
+		this.trigger('audio-status-change', sourceFile);
 	}
 
 	/**
