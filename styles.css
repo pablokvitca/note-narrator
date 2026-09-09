@@ -6,14 +6,12 @@
 	font-weight: var(--font-medium);
 	color: var(--text-normal);
 	margin-bottom: var(--size-2-2);
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
+	overflow-wrap: break-word;
 }
 
 .obsidian-reader-currently-reading {
 	display: flex;
-	align-items: center;
+	align-items: flex-start;
 	gap: var(--size-2-2);
 	font-size: var(--font-ui-medium);
 	font-weight: var(--font-medium);
@@ -23,19 +21,17 @@
 	border-radius: var(--radius-s);
 	border-left: 3px solid var(--text-success);
 	background-color: color-mix(in oklch, var(--color-green) 12%, transparent);
-	overflow: hidden;
 }
 
 .obsidian-reader-currently-reading-icon {
 	display: flex;
 	flex-shrink: 0;
+	margin-top: 2px;
 	color: var(--text-success);
 }
 
 .obsidian-reader-currently-reading span:last-child {
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
+	overflow-wrap: break-word;
 }
 
 .obsidian-reader-status {
