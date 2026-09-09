@@ -392,7 +392,7 @@ export class PlayerView extends ItemView {
 			this.app,
 			'Clear reader files?',
 			`This deletes ${activeFile.basename}'s linked audio file and removes the reader-audio properties from its frontmatter. This can't be undone from within Obsidian Reader.`,
-			'Clear',
+			'DELETE',
 			() => void this.plugin.reader.clearReaderFiles(activeFile),
 		).open();
 	}
