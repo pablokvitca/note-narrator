@@ -190,6 +190,11 @@ export class PlayerView extends ItemView {
 		this.chunkProgressEl = null;
 
 		const selectedFile = this.getActiveFile();
+		// Read/Play saved/Regenerate act on the *selected* note, not whatever's currently playing — while
+		// reading a different note, they should stay clickable so clicking one stops that read and starts
+		// this one instead (until background generation lands and playing elsewhere no longer needs to
+		// interrupt at all).
+		const activeForSelected = active && !!state.activeFile && !!selectedFile && state.activeFile.path === selectedFile.path;
 		contentEl.createDiv({
 			cls: 'obsidian-reader-selected-note',
 			text: selectedFile ? `Read: ${selectedFile.basename}` : 'Open a note to read it aloud',
@@ -229,7 +234,7 @@ export class PlayerView extends ItemView {
 
 		this.renderNoteStats(contentEl, selectedFile);
 
-		this.renderPrimaryActions(contentEl, active, state.status);
+		this.renderPrimaryActions(contentEl, activeForSelected, state.status);
 
 		{
 			const partsDisabled = !active || state.chunkCount <= 1;
