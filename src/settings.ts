@@ -82,6 +82,8 @@ export interface ReaderSettings {
 	maxParallelGeneration: number;
 	/** Show the volume slider + mute button row in the player view. */
 	showVolumeSlider: boolean;
+	/** Show the playback speed slider row in the player view. */
+	showPlaybackSpeedSlider: boolean;
 }
 
 export const DEFAULT_SETTINGS: ReaderSettings = {
@@ -123,6 +125,7 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
 	parallelGenerationEnabled: true,
 	maxParallelGeneration: 2,
 	showVolumeSlider: true,
+	showPlaybackSpeedSlider: true,
 };
 
 export const ELEVENLABS_MODELS: Record<string, string> = {
@@ -407,6 +410,11 @@ export class ReaderSettingTab extends PluginSettingTab {
 						name: 'Show volume slider in panel',
 						desc: "Show the volume slider and mute button row in the player view, for people who don't want the extra control taking up panel space.",
 						control: { type: 'toggle', key: 'showVolumeSlider', defaultValue: DEFAULT_SETTINGS.showVolumeSlider },
+					},
+					{
+						name: 'Show playback speed slider in panel',
+						desc: "Show the playback speed slider row in the player view, for people who always read at the default speed and don't want the extra control taking up panel space.",
+						control: { type: 'toggle', key: 'showPlaybackSpeedSlider', defaultValue: DEFAULT_SETTINGS.showPlaybackSpeedSlider },
 					},
 				],
 			},

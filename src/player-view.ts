@@ -278,20 +278,22 @@ export class PlayerView extends ItemView {
 
 		this.createIconButton(controls, 'square-stop', 'Stop', !active, () => this.plugin.reader.stop());
 
-		const currentRate = this.plugin.reader.getPlaybackRate();
-		const speedSetting = new Setting(contentEl).setName(`Playback speed: ${currentRate.toFixed(2)}x`);
-		speedSetting.addSlider((slider) =>
-			slider
-				.setLimits(SPEED_MIN, SPEED_MAX, 0.05)
-				.setValue(currentRate)
-				.onChange((value) => {
-					this.plugin.reader.setPlaybackRate(value);
-					speedSetting.setName(`Playback speed: ${value.toFixed(2)}x`);
-				}),
-		);
-		const speedRange = speedSetting.controlEl.createDiv({ cls: 'obsidian-reader-speed-range' });
-		speedRange.createSpan({ cls: 'obsidian-reader-speed-bound', text: `${SPEED_MIN.toFixed(2)}x` });
-		speedRange.createSpan({ cls: 'obsidian-reader-speed-bound', text: `${SPEED_MAX.toFixed(2)}x` });
+		if (this.plugin.settings.showPlaybackSpeedSlider) {
+			const currentRate = this.plugin.reader.getPlaybackRate();
+			const speedSetting = new Setting(contentEl).setName(`Playback speed: ${currentRate.toFixed(2)}x`);
+			speedSetting.addSlider((slider) =>
+				slider
+					.setLimits(SPEED_MIN, SPEED_MAX, 0.05)
+					.setValue(currentRate)
+					.onChange((value) => {
+						this.plugin.reader.setPlaybackRate(value);
+						speedSetting.setName(`Playback speed: ${value.toFixed(2)}x`);
+					}),
+			);
+			const speedRange = speedSetting.controlEl.createDiv({ cls: 'obsidian-reader-speed-range' });
+			speedRange.createSpan({ cls: 'obsidian-reader-speed-bound', text: `${SPEED_MIN.toFixed(2)}x` });
+			speedRange.createSpan({ cls: 'obsidian-reader-speed-bound', text: `${SPEED_MAX.toFixed(2)}x` });
+		}
 
 		if (this.plugin.settings.showVolumeSlider) {
 			const isMuted = this.plugin.reader.isMuted();
