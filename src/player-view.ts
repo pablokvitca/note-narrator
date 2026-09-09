@@ -2,6 +2,7 @@ import { debounce, ItemView, MarkdownView, Menu, setIcon, Setting, TFile, Worksp
 import { ConfirmModal } from './confirm-modal';
 import ObsidianReaderPlugin from './main';
 import { AudioLinkStatus, ReaderState } from './reader';
+import { computeFullReadTimes, formatTimeDisplay } from './time-utils';
 import { ElevenLabsVoice, listElevenLabsVoices } from './tts/elevenlabs-provider';
 
 export const READER_VIEW_TYPE = 'obsidian-reader-player';
@@ -23,13 +24,6 @@ const AUDIO_STATUS_LABELS: Record<AudioLinkStatus, string> = {
 	'up-to-date': '✓ Saved audio is up to date',
 	outdated: '⚠ Saved audio is outdated — note has changed since it was generated',
 };
-
-function formatTime(totalSeconds: number): string {
-	if (!Number.isFinite(totalSeconds) || totalSeconds < 0) totalSeconds = 0;
-	const minutes = Math.floor(totalSeconds / 60);
-	const seconds = Math.floor(totalSeconds % 60);
-	return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-}
 
 export class PlayerView extends ItemView {
 	private voices: ElevenLabsVoice[] = [];
@@ -106,7 +100,7 @@ export class PlayerView extends ItemView {
 	}
 
 	private structuralKey(state: ReaderState): string {
-		return [state.status, state.chunkIndex, state.chunkCount, state.chunkReady.join(',')].join('|');
+		return [state.status, state.chunkIndex, state.chunkCount, state.chunkReady.join(','), state.chunkInFlight.join(',')].join('|');
 	}
 
 	private updateProgress(state: ReaderState): void {
@@ -116,11 +110,19 @@ export class PlayerView extends ItemView {
 		}
 
 		if (this.timeEl) {
-			this.timeEl.style.display = state.duration > 0 ? '' : 'none';
-			if (state.duration > 0) {
+			const mode = this.plugin.settings.timeDisplayMode;
+			const showTime = mode === 'current' ? state.duration > 0 : state.chunkCount > 0;
+			this.timeEl.style.display = showTime ? '' : 'none';
+			if (showTime) {
 				const rate = this.plugin.reader.getPlaybackRate();
-				const remaining = (state.duration - state.currentTime) / rate;
-				this.timeEl.setText(`${formatTime(state.currentTime)} / ${formatTime(state.duration)} · ${formatTime(remaining)} remaining`);
+				const times = computeFullReadTimes({
+					chunkCount: state.chunkCount,
+					chunkIndex: state.chunkIndex,
+					chunkDurations: state.chunkDurations,
+					currentTime: state.currentTime,
+					currentDuration: state.duration > 0 ? state.duration : undefined,
+				});
+				this.timeEl.setText(formatTimeDisplay(mode, times, { currentTime: state.currentTime, duration: state.duration }, rate));
 			}
 		}
 
@@ -227,6 +229,7 @@ export class PlayerView extends ItemView {
 			for (let i = 0; i < state.chunkCount; i++) {
 				const segment = generationBar.createDiv({ cls: 'obsidian-reader-generation-segment' });
 				if (state.chunkReady[i]) segment.addClass('is-ready');
+				else if (state.chunkInFlight[i]) segment.addClass('is-generating');
 				if (i === state.chunkIndex) segment.addClass('is-current');
 			}
 		}

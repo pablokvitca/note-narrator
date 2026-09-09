@@ -1,6 +1,7 @@
 import { App, Notice, PluginSettingTab, SecretComponent, Setting, SettingDefinitionItem } from 'obsidian';
 import ObsidianReaderPlugin from './main';
 import { ChunkerStyle } from './text-utils';
+import { TimeDisplayMode } from './time-utils';
 import { ElevenLabsVoice, listElevenLabsVoices } from './tts/elevenlabs-provider';
 
 export type SaveAudioLocation = 'note-folder' | 'custom-folder';
@@ -84,6 +85,8 @@ export interface ReaderSettings {
 	showVolumeSlider: boolean;
 	/** Show the playback speed slider row in the player view. */
 	showPlaybackSpeedSlider: boolean;
+	/** What the player view's time readout shows: whole-read totals, today's per-chunk-only readout, or both. */
+	timeDisplayMode: TimeDisplayMode;
 }
 
 export const DEFAULT_SETTINGS: ReaderSettings = {
@@ -126,6 +129,7 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
 	maxParallelGeneration: 2,
 	showVolumeSlider: true,
 	showPlaybackSpeedSlider: true,
+	timeDisplayMode: 'current',
 };
 
 export const ELEVENLABS_MODELS: Record<string, string> = {
@@ -415,6 +419,16 @@ export class ReaderSettingTab extends PluginSettingTab {
 						name: 'Show playback speed slider in panel',
 						desc: "Show the playback speed slider row in the player view, for people who always read at the default speed and don't want the extra control taking up panel space.",
 						control: { type: 'toggle', key: 'showPlaybackSpeedSlider', defaultValue: DEFAULT_SETTINGS.showPlaybackSpeedSlider },
+					},
+					{
+						name: 'Time display',
+						desc: 'What the player view\'s time readout shows. "Full" totals the whole read across every generated chunk (marking any not-yet-generated parts as "+N parts" rather than guessing their length). "Current part" is today\'s per-chunk-only readout. "Both" shows full totals with the current part\'s times alongside in parentheses.',
+						control: {
+							type: 'dropdown',
+							key: 'timeDisplayMode',
+							options: { full: 'Show full times', current: 'Show current part times', both: 'Show full times + current part times' },
+							defaultValue: DEFAULT_SETTINGS.timeDisplayMode,
+						},
 					},
 				],
 			},

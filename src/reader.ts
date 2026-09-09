@@ -23,6 +23,10 @@ export interface ReaderState {
 	duration: number;
 	/** Whether each chunk's audio has finished generating, for the segmented generation-progress bar. */
 	chunkReady: boolean[];
+	/** Whether each chunk is actively being generated right now (dispatched to the provider, not yet resolved), for the generation-progress bar. */
+	chunkInFlight: boolean[];
+	/** Decoded audio duration (seconds) of each chunk once generated, for whole-read elapsed/total/remaining. Undefined until decoded. */
+	chunkDurations: (number | undefined)[];
 	/** The note this status is about, so the panel can show it even when it isn't the currently-active note. Null when reading a selection with no backing file, or once idle. */
 	activeFile: TFile | null;
 }
@@ -34,6 +38,8 @@ const IDLE_STATE: ReaderState = {
 	currentTime: 0,
 	duration: 0,
 	chunkReady: [],
+	chunkInFlight: [],
+	chunkDurations: [],
 	activeFile: null,
 };
 
@@ -237,6 +243,8 @@ export class Reader extends Events {
 			currentTime: 0,
 			duration: 0,
 			chunkReady: new Array<boolean>(chunks.length).fill(false),
+			chunkInFlight: new Array<boolean>(chunks.length).fill(false),
+			chunkDurations: new Array<number | undefined>(chunks.length).fill(undefined),
 			activeFile: sourceFile,
 		});
 
@@ -330,16 +338,51 @@ export class Reader extends Events {
 		const inFlight = this.chunkPromises[index];
 		if (inFlight) return inFlight;
 
-		const promise = this.provider!.synthesize(this.chunks[index] ?? '').then((buffer) => {
-			this.chunkBuffers[index] = buffer;
-			const chunkReady = [...this.state.chunkReady];
-			chunkReady[index] = true;
-			this.setState({ chunkReady });
-			this.maybeSaveOnGenerationComplete(chunkReady);
-			return buffer;
-		});
+		const chunkInFlight = [...this.state.chunkInFlight];
+		chunkInFlight[index] = true;
+		this.setState({ chunkInFlight });
+
+		const promise = this.provider!.synthesize(this.chunks[index] ?? '')
+			.then(async (buffer) => {
+				this.chunkBuffers[index] = buffer;
+				const duration = await this.decodeAudioDuration(buffer);
+				const chunkReady = [...this.state.chunkReady];
+				chunkReady[index] = true;
+				const chunkDurations = [...this.state.chunkDurations];
+				chunkDurations[index] = duration;
+				const stillInFlight = [...this.state.chunkInFlight];
+				stillInFlight[index] = false;
+				this.setState({ chunkReady, chunkDurations, chunkInFlight: stillInFlight });
+				this.maybeSaveOnGenerationComplete(chunkReady);
+				return buffer;
+			})
+			.catch((error: unknown) => {
+				const stillInFlight = [...this.state.chunkInFlight];
+				stillInFlight[index] = false;
+				this.setState({ chunkInFlight: stillInFlight });
+				throw error;
+			});
 		this.chunkPromises[index] = promise;
 		return promise;
+	}
+
+	/** Decodes a generated chunk's audio duration (seconds) without playing it, for whole-read time totals. */
+	private decodeAudioDuration(buffer: ArrayBuffer): Promise<number> {
+		return new Promise((resolve) => {
+			const blob = new Blob([buffer], { type: 'audio/mpeg' });
+			const url = URL.createObjectURL(blob);
+			const audio = new Audio(url);
+			const finish = (duration: number) => {
+				audio.removeEventListener('loadedmetadata', onLoaded);
+				audio.removeEventListener('error', onError);
+				URL.revokeObjectURL(url);
+				resolve(duration);
+			};
+			const onLoaded = () => finish(audio.duration || 0);
+			const onError = () => finish(0);
+			audio.addEventListener('loadedmetadata', onLoaded);
+			audio.addEventListener('error', onError);
+		});
 	}
 
 	/** Saves (once) as soon as every chunk has finished generating, regardless of playback progress. */
@@ -637,6 +680,8 @@ export class Reader extends Events {
 				currentTime: 0,
 				duration: 0,
 				chunkReady: [true],
+				chunkInFlight: [false],
+				chunkDurations: [undefined],
 				activeFile: sourceFile,
 			});
 
@@ -701,7 +746,16 @@ export class Reader extends Events {
 			};
 
 			this.resolveCurrentChunk = finish;
-			audio.addEventListener('loadedmetadata', () => this.setState({ duration: audio.duration || 0 }));
+			audio.addEventListener('loadedmetadata', () => {
+				const duration = audio.duration || 0;
+				const patch: Partial<ReaderState> = { duration };
+				if (this.state.chunkDurations[index] === undefined) {
+					const chunkDurations = [...this.state.chunkDurations];
+					chunkDurations[index] = duration;
+					patch.chunkDurations = chunkDurations;
+				}
+				this.setState(patch);
+			});
 			audio.addEventListener('timeupdate', onTimeUpdate);
 			audio.addEventListener('ended', () => finish('ended'));
 			audio.addEventListener('error', () => finish('ended'));
