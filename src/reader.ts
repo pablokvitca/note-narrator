@@ -185,7 +185,7 @@ export class Reader extends Events {
 		}
 
 		const charLimit = ELEVENLABS_MODEL_CHAR_LIMITS[this.settings.modelId] ?? DEFAULT_ELEVENLABS_CHAR_LIMIT;
-		let chunks = chunkNote(rawText, charLimit, this.settings.chunkerStyle, this.settings.maxHeadingDepth);
+		let chunks = chunkNote(rawText, charLimit, this.settings.chunkerStyle, this.settings.maxHeadingDepth, { stripHtmlComments: this.settings.stripHtmlComments, stripMarkdownComments: this.settings.stripMarkdownComments });
 		if (chunks.length === 0) {
 			new Notice('Nothing to read.');
 			return;
@@ -514,7 +514,7 @@ export class Reader extends Events {
 			const textToRead = preamble ? `${preamble}\n\n${body}` : body;
 
 			const charLimit = ELEVENLABS_MODEL_CHAR_LIMITS[this.settings.modelId] ?? DEFAULT_ELEVENLABS_CHAR_LIMIT;
-			const chunks = chunkNote(textToRead, charLimit, this.settings.chunkerStyle, this.settings.maxHeadingDepth);
+			const chunks = chunkNote(textToRead, charLimit, this.settings.chunkerStyle, this.settings.maxHeadingDepth, { stripHtmlComments: this.settings.stripHtmlComments, stripMarkdownComments: this.settings.stripMarkdownComments });
 			if (chunks.length === 0) return;
 
 			const provider = new ElevenLabsProvider(apiKey, this.settings);
@@ -551,7 +551,7 @@ export class Reader extends Events {
 		if (!textToRead.trim()) return null;
 
 		const charLimit = ELEVENLABS_MODEL_CHAR_LIMITS[this.settings.modelId] ?? DEFAULT_ELEVENLABS_CHAR_LIMIT;
-		const chunks = chunkNote(textToRead, charLimit, this.settings.chunkerStyle, this.settings.maxHeadingDepth);
+		const chunks = chunkNote(textToRead, charLimit, this.settings.chunkerStyle, this.settings.maxHeadingDepth, { stripHtmlComments: this.settings.stripHtmlComments, stripMarkdownComments: this.settings.stripMarkdownComments });
 		if (chunks.length === 0) return null;
 
 		const totalChars = textToRead.length;

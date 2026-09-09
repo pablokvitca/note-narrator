@@ -7,11 +7,22 @@ export function stripFrontmatter(markdown: string): string {
 	return markdown.replace(/^---\n[\s\S]*?\n---(\n|$)/, '');
 }
 
+export interface StripMarkdownOptions {
+	/** Remove HTML comments (`<!-- ... -->`), content included, before reading. */
+	stripHtmlComments: boolean;
+	/** Remove Obsidian/Markdown comments (`%% ... %%`), content included, before reading. */
+	stripMarkdownComments: boolean;
+}
+
+const DEFAULT_STRIP_MARKDOWN_OPTIONS: StripMarkdownOptions = { stripHtmlComments: true, stripMarkdownComments: true };
+
 /** Strips common Markdown syntax so TTS reads prose instead of literal symbols. */
-export function stripMarkdown(markdown: string): string {
+export function stripMarkdown(markdown: string, options: StripMarkdownOptions = DEFAULT_STRIP_MARKDOWN_OPTIONS): string {
 	let text = markdown.replace(/\r\n/g, '\n');
 
 	text = stripFrontmatter(text);
+	if (options.stripHtmlComments) text = text.replace(/<!--[\s\S]*?-->/g, '');
+	if (options.stripMarkdownComments) text = text.replace(/%%[\s\S]*?%%/g, '');
 	text = text.replace(/```[\s\S]*?```/g, '');
 	text = text.replace(/`([^`]+)`/g, '$1');
 	text = text.replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1');
@@ -155,12 +166,12 @@ function splitIntoSections(markdown: string, maxHeadingDepth: number): string[] 
 }
 
 /** Splits raw markdown by section (heading-delimited, up to maxHeadingDepth), then by sentence within each section. */
-function chunkMarkdownAware(markdown: string, maxLength: number, maxHeadingDepth: number): string[] {
+function chunkMarkdownAware(markdown: string, maxLength: number, maxHeadingDepth: number, stripOptions: StripMarkdownOptions): string[] {
 	const sections = splitIntoSections(stripFrontmatter(markdown), maxHeadingDepth);
 	const chunks: string[] = [];
 
 	for (const section of sections) {
-		const stripped = stripMarkdown(section).trim();
+		const stripped = stripMarkdown(section, stripOptions).trim();
 		if (!stripped) continue;
 		chunks.push(...chunkBySentence(stripped, maxLength));
 	}
@@ -169,11 +180,17 @@ function chunkMarkdownAware(markdown: string, maxLength: number, maxHeadingDepth
 }
 
 /** Splits raw markdown/text into TTS-request-sized chunks per the given style. */
-export function chunkNote(rawText: string, maxLength: number, style: ChunkerStyle, maxHeadingDepth: number): string[] {
+export function chunkNote(
+	rawText: string,
+	maxLength: number,
+	style: ChunkerStyle,
+	maxHeadingDepth: number,
+	stripOptions: StripMarkdownOptions = DEFAULT_STRIP_MARKDOWN_OPTIONS,
+): string[] {
 	if (style === 'markdown-aware') {
-		return chunkMarkdownAware(rawText, maxLength, maxHeadingDepth);
+		return chunkMarkdownAware(rawText, maxLength, maxHeadingDepth, stripOptions);
 	}
-	return chunkBySentence(stripMarkdown(rawText).trim(), maxLength);
+	return chunkBySentence(stripMarkdown(rawText, stripOptions).trim(), maxLength);
 }
 
 function formatPropertyValue(value: unknown): string {

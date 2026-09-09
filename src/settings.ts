@@ -58,6 +58,10 @@ export interface ReaderSettings {
 	readTitle: boolean;
 	/** Speak "Properties", each frontmatter property and value, then "Content", before the note's content. */
 	readProperties: boolean;
+	/** Strip HTML comments (`<!-- ... -->`) before reading. */
+	stripHtmlComments: boolean;
+	/** Strip Obsidian/Markdown comments (`%% ... %%`) before reading. */
+	stripMarkdownComments: boolean;
 	/** Voice IDs shown in the player view's Voice dropdown. Empty means show all fetched voices there. */
 	panelVoiceIds: string[];
 	/** Start playback as soon as the first chunk is ready, rather than waiting for the whole note to generate. */
@@ -103,6 +107,8 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
 	maxHeadingDepth: 2,
 	readTitle: true,
 	readProperties: false,
+	stripHtmlComments: true,
+	stripMarkdownComments: true,
 	panelVoiceIds: [],
 	startPlaybackImmediately: true,
 	quickStart: true,
@@ -284,6 +290,16 @@ export class ReaderSettingTab extends PluginSettingTab {
 						name: 'Read note properties',
 						desc: 'Speak "properties", each frontmatter property and value, then "content", before the note\'s content. Does not apply when reading a selection.',
 						control: { type: 'toggle', key: 'readProperties', defaultValue: DEFAULT_SETTINGS.readProperties },
+					},
+					{
+						name: 'Skip HTML comments',
+						desc: 'Strip HTML comments (`<!-- like this -->`) before reading, instead of reading them aloud verbatim.',
+						control: { type: 'toggle', key: 'stripHtmlComments', defaultValue: DEFAULT_SETTINGS.stripHtmlComments },
+					},
+					{
+						name: 'Skip Markdown comments',
+						desc: 'Strip Obsidian/Markdown comments (`%% like this %%`) before reading, instead of reading them aloud verbatim.',
+						control: { type: 'toggle', key: 'stripMarkdownComments', defaultValue: DEFAULT_SETTINGS.stripMarkdownComments },
 					},
 					{
 						name: 'Text chunker',
