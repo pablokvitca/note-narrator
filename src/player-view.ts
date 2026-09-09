@@ -1,7 +1,8 @@
 import { debounce, ItemView, MarkdownView, Menu, setIcon, Setting, TFile, WorkspaceLeaf } from 'obsidian';
 import { ConfirmModal } from './confirm-modal';
 import ObsidianReaderPlugin from './main';
-import { hasPendingGeneration } from './background-job';
+import { hasPendingGeneration, queuePosition } from './background-job';
+import type { BackgroundJobInfo } from './background-job';
 import { AudioLinkStatus, ReaderState } from './reader';
 import { computeFullReadTimes, formatTimeDisplay } from './time-utils';
 import { ElevenLabsVoice, listElevenLabsVoices } from './tts/elevenlabs-provider';
@@ -101,9 +102,9 @@ export class PlayerView extends ItemView {
 	}
 
 	private structuralKey(state: ReaderState): string {
-		const backgroundKey = state.backgroundJob
-			? [state.backgroundJob.file?.path, state.backgroundJob.chunkReady.join(','), state.backgroundJob.chunkInFlight.join(',')].join(':')
-			: 'none';
+		const backgroundKey = state.backgroundJobs
+			.map((job) => [job.id, job.file?.path, job.status, job.chunkReady.join(''), job.chunkInFlight.join('')].join(':'))
+			.join(',');
 		return [state.status, state.chunkIndex, state.chunkCount, state.chunkReady.join(','), state.chunkInFlight.join(','), backgroundKey].join('|');
 	}
 
@@ -381,40 +382,132 @@ export class PlayerView extends ItemView {
 		return button;
 	}
 
-	/** Shows what's generating (or has just finished) in the background, with buttons to jump in or discard it. */
-	private renderBackgroundJobStatus(container: HTMLElement, state: ReaderState): void {
-		const job = state.backgroundJob;
-		if (!job) return;
-
+	/** Label text for a background job's current status, per {@link BackgroundJobInfo.status}. */
+	private backgroundJobLabel(job: BackgroundJobInfo, allJobs: BackgroundJobInfo[]): string {
+		const name = job.file?.basename ?? 'note';
+		if (job.status === 'done') return `Finished generating in background: ${name}`;
+		if (job.status === 'queued') return `Queued to generate in background: ${name} (#${queuePosition(allJobs, job.id)})`;
 		const readyCount = job.chunkReady.filter(Boolean).length;
+		return `Generating in background: ${name} — ${readyCount}/${job.chunkCount} parts`;
+	}
 
-		const box = container.createDiv({ cls: 'obsidian-reader-background-job' });
-		box.addClass(job.done ? 'is-done' : 'is-generating');
+	private backgroundJobIcon(job: BackgroundJobInfo): string {
+		if (job.status === 'done') return 'check-circle-2';
+		if (job.status === 'queued') return 'list-ordered';
+		return 'loader-2';
+	}
 
-		const header = box.createDiv({ cls: 'obsidian-reader-background-job-header' });
-		header.createSpan({ cls: 'obsidian-reader-background-job-icon' }, (el) => setIcon(el, job.done ? 'check-circle-2' : 'loader-2'));
-		header.createSpan({
-			text: job.done
-				? `Finished generating in background: ${job.file?.basename ?? 'note'}`
-				: `Generating in background: ${job.file?.basename ?? 'note'} — ${readyCount}/${job.chunkCount} parts`,
-		});
+	/** Makes a background-job row/card play that job on click or on Enter/Space when focused, like a real button. */
+	private makeBackgroundJobClickable(el: HTMLElement, jobId: number): void {
+		el.setAttribute('role', 'button');
+		el.setAttribute('tabindex', '0');
+		el.onclick = () => this.plugin.reader.playBackgroundJob(jobId);
+		el.onkeydown = (evt) => {
+			if (evt.key !== 'Enter' && evt.key !== ' ') return;
+			evt.preventDefault();
+			this.plugin.reader.playBackgroundJob(jobId);
+		};
+	}
 
-		const bar = box.createDiv({ cls: 'obsidian-reader-generation-bar' });
+	/** Small icon button for a background-job row/card, stopping the click from bubbling up to the row's own "play this" click handler. */
+	private createBackgroundJobIconButton(container: HTMLElement, icon: string, label: string, onClick: () => void): HTMLElement {
+		const button = container.createDiv({ cls: 'clickable-icon obsidian-reader-bgjob-icon-button' });
+		setIcon(button, icon);
+		button.setAttribute('aria-label', label);
+		button.onclick = (evt) => {
+			evt.stopPropagation();
+			onClick();
+		};
+		return button;
+	}
+
+	private renderBackgroundGenerationBar(container: HTMLElement, job: BackgroundJobInfo): void {
+		const bar = container.createDiv({ cls: 'obsidian-reader-generation-bar' });
 		for (let i = 0; i < job.chunkCount; i++) {
 			const segment = bar.createDiv({ cls: 'obsidian-reader-generation-segment' });
 			if (job.chunkReady[i]) segment.addClass('is-ready');
 			else if (job.chunkInFlight[i]) segment.addClass('is-generating');
 		}
+	}
+
+	/** Shows every note queued/generating/finished in the background, in the style chosen by the "Background job display" setting. Clicking anywhere on a row/card besides its own buttons plays that note. */
+	private renderBackgroundJobStatus(container: HTMLElement, state: ReaderState): void {
+		if (state.backgroundJobs.length === 0) return;
+
+		const list = container.createDiv({ cls: 'obsidian-reader-background-jobs' });
+		const style = this.plugin.settings.backgroundJobDisplayStyle;
+		for (const job of state.backgroundJobs) {
+			if (style === 'full') this.renderBackgroundJobFull(list, job, state.backgroundJobs);
+			else if (style === 'compact') this.renderBackgroundJobCompact(list, job, state.backgroundJobs);
+			else this.renderBackgroundJobMinimal(list, job, state.backgroundJobs);
+		}
+	}
+
+	private renderBackgroundJobFull(container: HTMLElement, job: BackgroundJobInfo, allJobs: BackgroundJobInfo[]): void {
+		const box = container.createDiv({ cls: 'obsidian-reader-background-job obsidian-reader-background-job--full' });
+		box.addClass(`is-${job.status}`);
+		this.makeBackgroundJobClickable(box, job.id);
+
+		const header = box.createDiv({ cls: 'obsidian-reader-background-job-header' });
+		header.createSpan({ cls: 'obsidian-reader-background-job-icon' }, (el) => setIcon(el, this.backgroundJobIcon(job)));
+		header.createSpan({ text: this.backgroundJobLabel(job, allJobs) });
+
+		this.renderBackgroundGenerationBar(box, job);
 
 		const actions = box.createDiv({ cls: 'obsidian-reader-background-job-actions' });
 		const playButton = actions.createEl('button', { text: 'Play' });
-		playButton.disabled = readyCount === 0;
-		playButton.onclick = () => this.plugin.reader.playBackgroundJob();
+		playButton.onclick = (evt) => {
+			evt.stopPropagation();
+			this.plugin.reader.playBackgroundJob(job.id);
+		};
 
 		const discardButton = actions.createDiv({ cls: 'clickable-icon obsidian-reader-background-job-discard' });
 		setIcon(discardButton, 'trash-2');
-		discardButton.setAttribute('aria-label', 'Discard background generation');
-		discardButton.onclick = () => this.plugin.reader.discardBackgroundJob();
+		discardButton.setAttribute('aria-label', job.status === 'done' ? 'Clear from list' : 'Discard background generation');
+		discardButton.onclick = (evt) => {
+			evt.stopPropagation();
+			this.plugin.reader.discardBackgroundJob(job.id);
+		};
+	}
+
+	private renderBackgroundJobCompact(container: HTMLElement, job: BackgroundJobInfo, allJobs: BackgroundJobInfo[]): void {
+		const row = container.createDiv({ cls: 'obsidian-reader-background-job obsidian-reader-background-job--compact' });
+		row.addClass(`is-${job.status}`);
+		row.setAttribute('aria-label', this.backgroundJobLabel(job, allJobs));
+		this.makeBackgroundJobClickable(row, job.id);
+
+		row.createSpan({ cls: 'obsidian-reader-background-job-icon' }, (el) => setIcon(el, this.backgroundJobIcon(job)));
+		row.createSpan({ cls: 'obsidian-reader-background-job-name', text: job.file?.basename ?? 'note' });
+
+		const bar = row.createDiv({ cls: 'obsidian-reader-background-job-minibar' });
+		for (let i = 0; i < job.chunkCount; i++) {
+			const segment = bar.createDiv();
+			if (job.chunkReady[i]) segment.addClass('is-ready');
+		}
+
+		this.createBackgroundJobIconButton(row, 'play', 'Play', () => this.plugin.reader.playBackgroundJob(job.id));
+		this.createBackgroundJobIconButton(row, 'trash-2', job.status === 'done' ? 'Clear from list' : 'Discard background generation', () =>
+			this.plugin.reader.discardBackgroundJob(job.id),
+		);
+	}
+
+	private renderBackgroundJobMinimal(container: HTMLElement, job: BackgroundJobInfo, allJobs: BackgroundJobInfo[]): void {
+		const card = container.createDiv({ cls: 'obsidian-reader-background-job obsidian-reader-background-job--minimal' });
+		card.addClass(`is-${job.status}`);
+		card.setAttribute('aria-label', this.backgroundJobLabel(job, allJobs));
+		this.makeBackgroundJobClickable(card, job.id);
+
+		const titleRow = card.createDiv({ cls: 'obsidian-reader-background-job-title-row' });
+		titleRow.createSpan({ cls: 'obsidian-reader-background-job-icon' }, (el) => setIcon(el, this.backgroundJobIcon(job)));
+		titleRow.createSpan({ cls: 'obsidian-reader-background-job-name', text: job.file?.basename ?? 'note' });
+
+		const buttons = titleRow.createDiv({ cls: 'obsidian-reader-background-job-minimal-buttons' });
+		this.createBackgroundJobIconButton(buttons, 'play', 'Play', () => this.plugin.reader.playBackgroundJob(job.id));
+		this.createBackgroundJobIconButton(buttons, 'trash-2', job.status === 'done' ? 'Clear from list' : 'Discard background generation', () =>
+			this.plugin.reader.discardBackgroundJob(job.id),
+		);
+
+		this.renderBackgroundGenerationBar(card, job);
 	}
 
 	private renderAudioStatus(container: HTMLElement): void {

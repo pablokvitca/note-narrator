@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildBackgroundJobInfo, hasPendingGeneration } from './background-job';
+import { buildBackgroundJobInfo, hasPendingGeneration, queuePosition } from './background-job';
 
 describe('hasPendingGeneration', () => {
 	it('is false for an empty chunk list', () => {
@@ -16,29 +16,39 @@ describe('hasPendingGeneration', () => {
 });
 
 describe('buildBackgroundJobInfo', () => {
-	it('reports done once every chunk is ready', () => {
-		const info = buildBackgroundJobInfo(null, [true, true], [false, false]);
-		expect(info).toEqual({ file: null, chunkCount: 2, chunkReady: [true, true], chunkInFlight: [false, false], done: true });
+	it('carries the id, file, and status through unchanged', () => {
+		const info = buildBackgroundJobInfo(7, null, [true, true], [false, false], 'done');
+		expect(info).toEqual({ id: 7, file: null, chunkCount: 2, chunkReady: [true, true], chunkInFlight: [false, false], status: 'done' });
 	});
 
-	it('reports not done while any chunk is pending', () => {
-		const info = buildBackgroundJobInfo(null, [true, false], [false, true]);
-		expect(info.done).toBe(false);
-	});
-
-	it('treats an empty read as not done (nothing to be done)', () => {
-		const info = buildBackgroundJobInfo(null, [], []);
-		expect(info.done).toBe(false);
+	it('reports chunkCount from the chunkReady array length regardless of status', () => {
+		const info = buildBackgroundJobInfo(1, null, [], [], 'queued');
 		expect(info.chunkCount).toBe(0);
 	});
 
 	it('copies the arrays so later mutation of the source does not affect the snapshot', () => {
 		const chunkReady = [true, false];
 		const chunkInFlight = [false, true];
-		const info = buildBackgroundJobInfo(null, chunkReady, chunkInFlight);
+		const info = buildBackgroundJobInfo(1, null, chunkReady, chunkInFlight, 'generating');
 		chunkReady[1] = true;
 		chunkInFlight[1] = false;
 		expect(info.chunkReady).toEqual([true, false]);
 		expect(info.chunkInFlight).toEqual([false, true]);
+	});
+});
+
+describe('queuePosition', () => {
+	const job = (id: number, status: 'queued' | 'generating' | 'done') => buildBackgroundJobInfo(id, null, [], [], status);
+
+	it('numbers queued jobs 1-based, in list order, ignoring non-queued jobs', () => {
+		const jobs = [job(1, 'generating'), job(2, 'queued'), job(3, 'done'), job(4, 'queued')];
+		expect(queuePosition(jobs, 2)).toBe(1);
+		expect(queuePosition(jobs, 4)).toBe(2);
+	});
+
+	it('is 0 for a job that is not queued (or not in the list)', () => {
+		const jobs = [job(1, 'generating'), job(2, 'queued')];
+		expect(queuePosition(jobs, 1)).toBe(0);
+		expect(queuePosition(jobs, 999)).toBe(0);
 	});
 });

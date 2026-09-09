@@ -1,6 +1,7 @@
 import { App, Events, MarkdownView, moment, Notice, normalizePath, TFile } from 'obsidian';
 import { concatArrayBuffers, sanitizeFilenameComponent } from './audio-utils';
 import { buildBackgroundJobInfo, hasPendingGeneration } from './background-job';
+import type { BackgroundJobInfo } from './background-job';
 import { DEFAULT_ELEVENLABS_CHAR_LIMIT, ELEVENLABS_MODEL_CHAR_LIMITS, ReaderSettings } from './settings';
 import {
 	buildReadingPreamble,
@@ -16,16 +17,6 @@ import { ElevenLabsProvider, getElevenLabsVoiceName } from './tts/elevenlabs-pro
 export type ReaderStatus = 'idle' | 'generating' | 'playing' | 'paused';
 export type AudioLinkStatus = 'none' | 'up-to-date' | 'outdated';
 
-/** Progress snapshot of a note generating in the background (not bound to playback), for the panel. */
-export interface BackgroundJobInfo {
-	file: TFile | null;
-	chunkCount: number;
-	chunkReady: boolean[];
-	chunkInFlight: boolean[];
-	/** True once every chunk has finished generating. */
-	done: boolean;
-}
-
 export interface ReaderState {
 	status: ReaderStatus;
 	chunkIndex: number;
@@ -40,8 +31,12 @@ export interface ReaderState {
 	chunkDurations: (number | undefined)[];
 	/** The note this status is about, so the panel can show it even when it isn't the currently-active note. Null when reading a selection with no backing file, or once idle. */
 	activeFile: TFile | null;
-	/** A note continuing to generate in the background after playback was stopped/detached from it. Null when there is none. Independent of the playback fields above. */
-	backgroundJob: BackgroundJobInfo | null;
+	/**
+	 * Notes generating in the background after being detached from playback, plus ones that have finished
+	 * (kept until explicitly cleared). Only one is ever 'generating' at once; the rest are 'queued' (waiting
+	 * their turn, in this array's order) or 'done'. Independent of the playback fields above.
+	 */
+	backgroundJobs: BackgroundJobInfo[];
 }
 
 const IDLE_STATE: ReaderState = {
@@ -54,17 +49,17 @@ const IDLE_STATE: ReaderState = {
 	chunkInFlight: [],
 	chunkDurations: [],
 	activeFile: null,
-	backgroundJob: null,
+	backgroundJobs: [],
 };
 
 type ChunkOutcome = 'ended' | 'next' | 'previous';
 
 /**
  * A single read's generation state: its chunk texts, buffers/promises/readiness, and the provider used to
- * synthesize them. Exactly one job at a time drives active playback (`Reader.activeJob`); at most one other
- * can keep generating in the background (`Reader.backgroundJob`) after being detached from playback via
- * `continueGeneratingInBackground()`. Kept as a plain object (rather than flat fields on Reader) so a job
- * can be handed off between those two roles, or discarded, without the two roles' state colliding.
+ * synthesize them. Exactly one job at a time drives active playback (`Reader.activeJob`); any number of
+ * others can be queued/generating/done in the background (`Reader.backgroundJobs`) after being detached from
+ * playback via `continueGeneratingInBackground()`. Kept as a plain object (rather than flat fields on Reader)
+ * so a job can be handed off between roles, or discarded, without those roles' state colliding.
  */
 interface GenerationJob {
 	id: number;
@@ -83,6 +78,8 @@ interface GenerationJob {
 	rateLimited: boolean;
 	/** Set once this job is discarded (stopped, superseded, or promoted elsewhere) so any still-settling promises know not to touch playback/background state on completion. */
 	cancelled: boolean;
+	/** Only meaningful while the job is in `Reader.backgroundJobs` -- see {@link BackgroundJobStatus}. */
+	backgroundStatus: 'queued' | 'generating' | 'done';
 }
 
 export class Reader extends Events {
@@ -99,8 +96,8 @@ export class Reader extends Events {
 	private nextJobId = 0;
 	/** The job currently bound to playback and driving `state`. Null when nothing is generating/playing (or a saved file is playing directly, with no generation job involved). */
 	private activeJob: GenerationJob | null = null;
-	/** At most one job generating without being bound to playback, kept going after `continueGeneratingInBackground()`. */
-	private backgroundJob: GenerationJob | null = null;
+	/** Jobs generating (or queued to generate, or done) without being bound to playback. At most one has backgroundStatus 'generating' at a time. */
+	private backgroundJobs: GenerationJob[] = [];
 
 	constructor(
 		private app: App,
@@ -119,9 +116,43 @@ export class Reader extends Events {
 		this.trigger('change');
 	}
 
-	/** Resets playback to idle without disturbing an unrelated background job's progress (IDLE_STATE.backgroundJob is always null). */
+	/** Resets playback to idle without disturbing the background jobs list (IDLE_STATE.backgroundJobs is always empty). */
 	private resetToIdle(): void {
-		this.setState({ ...IDLE_STATE, backgroundJob: this.state.backgroundJob });
+		this.setState({ ...IDLE_STATE, backgroundJobs: this.state.backgroundJobs });
+	}
+
+	/** Publishes `this.backgroundJobs`' current progress/status onto `state.backgroundJobs`. */
+	private publishBackgroundJobs(): void {
+		this.setState({
+			backgroundJobs: this.backgroundJobs.map((job) =>
+				buildBackgroundJobInfo(job.id, job.file, job.chunkReady, job.chunkInFlight, job.backgroundStatus),
+			),
+		});
+	}
+
+	/** Starts the next queued background job (if any) generating. No-op if one is already generating or none are queued. */
+	private advanceBackgroundQueue(): void {
+		if (this.backgroundJobs.some((job) => job.backgroundStatus === 'generating')) return;
+		const next = this.backgroundJobs.find((job) => job.backgroundStatus === 'queued');
+		if (!next) return;
+
+		next.backgroundStatus = 'generating';
+		this.publishBackgroundJobs();
+		void this.runBackgroundJob(next);
+	}
+
+	/** Drives one background job's generation to completion, then advances the queue. A no-op past its own removal (promoted or discarded) -- the action that removed it is responsible for advancing the queue itself. */
+	private async runBackgroundJob(job: GenerationJob): Promise<void> {
+		const windowSize = Math.max(1, this.settings.maxBackgroundParallelGeneration);
+		const ok = await this.runGenerationWorkerPool(job, windowSize);
+		if (job.cancelled || !this.backgroundJobs.includes(job)) return;
+
+		if (ok) {
+			job.backgroundStatus = 'done';
+			this.publishBackgroundJobs();
+			new Notice(`Finished generating "${job.file?.basename ?? 'note'}" in the background.`);
+		}
+		this.advanceBackgroundQueue();
 	}
 
 	isPlaying(): boolean {
@@ -151,19 +182,15 @@ export class Reader extends Events {
 	/**
 	 * Detaches the active job from playback so it keeps generating its remaining chunks in the background,
 	 * using the (likely lower) background parallel-generation setting instead of competing with an actively
-	 * playing read. Only one background job is kept at a time — starting another discards the previous one.
+	 * playing read. Only one job generates in the background at a time -- a second "continue in background"
+	 * queues behind whichever one is already generating, in the order they were backgrounded.
 	 */
 	continueGeneratingInBackground(): void {
 		const job = this.activeJob;
 		if (!job) return;
 		if (!hasPendingGeneration(job.chunkReady)) return;
 
-		if (this.backgroundJob && this.backgroundJob !== job) {
-			this.backgroundJob.cancelled = true;
-		}
-
 		this.activeJob = null;
-		this.backgroundJob = job;
 		// Bumping the session stops the playback loop (playFromIndex) at its next check without touching
 		// `job` -- generation for it continues below, gated only by `job.cancelled`, not `this.sessionId`.
 		this.sessionId++;
@@ -179,22 +206,23 @@ export class Reader extends Events {
 			resolve('ended');
 		}
 
-		this.setState({ ...IDLE_STATE, backgroundJob: buildBackgroundJobInfo(job.file, job.chunkReady, job.chunkInFlight) });
+		job.backgroundStatus = this.backgroundJobs.some((j) => j.backgroundStatus === 'generating') ? 'queued' : 'generating';
+		this.backgroundJobs.push(job);
+		this.resetToIdle();
+		this.publishBackgroundJobs();
 
-		const windowSize = Math.max(1, this.settings.maxBackgroundParallelGeneration);
-		void this.runGenerationWorkerPool(job, windowSize).then((ok) => {
-			if (job.cancelled || job !== this.backgroundJob) return;
-			if (ok) new Notice(`Finished generating "${job.file?.basename ?? 'note'}" in the background.`);
-		});
+		if (job.backgroundStatus === 'generating') void this.runBackgroundJob(job);
 	}
 
-	/** Promotes the background job to active and starts playing it from the beginning. No-op if there is none. */
-	playBackgroundJob(): void {
-		const job = this.backgroundJob;
+	/** Promotes a background job (queued, generating, or done) to active and starts playing it from the beginning. No-op if `jobId` isn't in the list. */
+	playBackgroundJob(jobId: number): void {
+		const job = this.backgroundJobs.find((j) => j.id === jobId);
 		if (!job) return;
+		this.backgroundJobs = this.backgroundJobs.filter((j) => j !== job);
+		const wasGenerating = job.backgroundStatus === 'generating';
+		this.publishBackgroundJobs();
 
 		this.stop();
-		this.backgroundJob = null;
 		job.cancelled = false;
 		this.activeJob = job;
 		const session = this.sessionId;
@@ -209,18 +237,24 @@ export class Reader extends Events {
 			chunkInFlight: [...job.chunkInFlight],
 			chunkDurations: [...job.chunkDurations],
 			activeFile: job.file,
-			backgroundJob: null,
 		});
+
+		// Promoting the job that held the one "generating" slot frees it for the next queued job. A job
+		// that was only 'queued' or already 'done' wasn't occupying that slot, so nothing to advance.
+		if (wasGenerating) this.advanceBackgroundQueue();
 
 		void this.playFromIndex(session, job, 0);
 	}
 
-	/** Discards the background job entirely, stopping its generation. No-op if there is none. */
-	discardBackgroundJob(): void {
-		if (!this.backgroundJob) return;
-		this.backgroundJob.cancelled = true;
-		this.backgroundJob = null;
-		this.setState({ backgroundJob: null });
+	/** Removes a background job from the list -- cancels its generation if still queued/generating, or just clears it once done. No-op if `jobId` isn't in the list. */
+	discardBackgroundJob(jobId: number): void {
+		const job = this.backgroundJobs.find((j) => j.id === jobId);
+		if (!job) return;
+		this.backgroundJobs = this.backgroundJobs.filter((j) => j !== job);
+		const wasGenerating = job.backgroundStatus === 'generating';
+		job.cancelled = true;
+		this.publishBackgroundJobs();
+		if (wasGenerating) this.advanceBackgroundQueue();
 	}
 
 	/** Jumps to the next chunk without waiting for the current one to finish playing. No-op past the last chunk. */
@@ -347,10 +381,12 @@ export class Reader extends Events {
 		}
 
 		this.stop();
-		// A note that's already generating in the background can't be adopted mid-flight -- starting a
-		// fresh read for the same file discards it rather than trying to merge in-progress buffers.
-		if (this.backgroundJob && sourceFile && this.backgroundJob.file?.path === sourceFile.path) {
-			this.discardBackgroundJob();
+		// Notes already queued/generating in the background can't be adopted mid-flight -- starting a
+		// fresh read for the same file discards them rather than trying to merge in-progress buffers.
+		if (sourceFile) {
+			for (const existing of this.backgroundJobs.filter((job) => job.file?.path === sourceFile.path)) {
+				this.discardBackgroundJob(existing.id);
+			}
 		}
 
 		const session = this.sessionId;
@@ -371,6 +407,7 @@ export class Reader extends Events {
 			savedForSession: false,
 			rateLimited: false,
 			cancelled: false,
+			backgroundStatus: 'queued',
 		};
 		this.activeJob = job;
 
@@ -406,8 +443,8 @@ export class Reader extends Events {
 	 * Drives a job's remaining chunks to completion with up to `windowSize` concurrent generations.
 	 * Safe to call on a job that's partially generated already (`ensureChunkBuffer` no-ops on chunks
 	 * that are already ready or in flight) -- used both to generate a whole read upfront (when "start
-	 * playback immediately" is off) and to resume a job detached into the background. Returns false on
-	 * failure, having already reset the job's owning role (active/background) to idle/null.
+	 * playback immediately" is off) and to drive a background job. Returns false on failure, having
+	 * already reset/removed the job from its owning role (active/background).
 	 */
 	private async runGenerationWorkerPool(job: GenerationJob, windowSize: number): Promise<boolean> {
 		let nextIndex = 0;
@@ -434,9 +471,11 @@ export class Reader extends Events {
 				this.activeJob = null;
 				this.resetToIdle();
 			}
-			if (job === this.backgroundJob) {
-				this.backgroundJob = null;
-				this.setState({ backgroundJob: null });
+			const bgIndex = this.backgroundJobs.indexOf(job);
+			if (bgIndex !== -1) {
+				this.backgroundJobs.splice(bgIndex, 1);
+				this.publishBackgroundJobs();
+				this.advanceBackgroundQueue();
 			}
 			return false;
 		}
@@ -522,7 +561,7 @@ export class Reader extends Events {
 		return promise;
 	}
 
-	/** Mirrors a job's generation progress onto whichever public state it's currently playing `state.backgroundJob`, depending on its current role. A no-op once the job has been discarded from both roles. */
+	/** Mirrors a job's generation progress onto whichever public state it's currently driving -- playback's `state` fields if it's the active job, or `state.backgroundJobs` if it's in that list. A no-op once the job has been discarded from both roles. */
 	private publishJobProgress(job: GenerationJob): void {
 		if (job === this.activeJob) {
 			this.setState({
@@ -530,8 +569,8 @@ export class Reader extends Events {
 				chunkInFlight: [...job.chunkInFlight],
 				chunkDurations: [...job.chunkDurations],
 			});
-		} else if (job === this.backgroundJob) {
-			this.setState({ backgroundJob: buildBackgroundJobInfo(job.file, job.chunkReady, job.chunkInFlight) });
+		} else if (this.backgroundJobs.includes(job)) {
+			this.publishBackgroundJobs();
 		}
 	}
 
