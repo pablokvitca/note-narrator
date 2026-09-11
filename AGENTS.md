@@ -94,10 +94,40 @@ npm run build
 
 ## Versioning & releases
 
-- Bump `version` in `manifest.json` (SemVer) and update `versions.json` to map plugin version → minimum app version.
-- Create a GitHub release whose tag exactly matches `manifest.json`'s `version`. Do not use a leading `v`.
-- Attach `manifest.json`, `main.js`, and `styles.css` (if present) to the release as individual assets.
-- After the initial release, follow the process to add/update your plugin in the community catalog as required.
+This repo uses a `next/X.Y` → `release/X.Y` branching model with fully automated beta builds on every push. Follow this exactly — skipping the immediate version bump (below) is a real, easy-to-hit mistake that has actually happened in this repo.
+
+### Branching model
+
+- `main` always reflects the latest **released stable** version. Nothing merges into it except a fast-forward to a tracking branch's tip at release time — never a regular merge commit.
+- Feature work for an upcoming minor version happens on `next/X.Y` (e.g. `next/0.14`), branched off `main`.
+- Once `X.Y.0` ships, `next/X.Y` is renamed to `release/X.Y` and becomes where patches for that line land directly (`X.Y.1`, `X.Y.2`, ...).
+- A new `next/X.(Y+1)` (or `next/(X+1).0`) branch is cut from `main` once the next minor's feature work starts.
+- If a later `next/X.(Y+1)` branch already exists when an earlier line ships a release, merge the released branch into it afterward (`git merge release/X.Y`) so it inherits the release commit — otherwise its own eventual release won't be a valid fast-forward of the new `main`.
+
+### The rule that's easy to miss: bump the version immediately, on every tracking branch, every time
+
+**As the first commit whenever you start work on a `next/X.Y` branch, and again as the first commit of *any* fix/feature that lands on a `release/X.Y` branch (a patch), bump `manifest.json`'s `version` to the target version (`X.Y.0` for a new minor, `X.Y.(Z+1)` for a patch) before pushing anything else.** This applies equally to patch branches, not just new minors — that's the part that's easy to forget.
+
+Why: every push to a `next/**` or `release/**` branch auto-publishes a beta tagged `<manifest version>-beta.N` (see below). SemVer ranks a prerelease *below* its base version once that version has shipped — `0.14.0-beta.51` sorts below the real, already-released `0.14.0`. Push a fix to `release/0.14` without first bumping `manifest.json` to `0.14.1`, and the resulting beta tag is `0.14.0-beta.N` — BRAT considers that older than the shipped `0.14.0` and silently keeps serving the old stable build instead of surfacing the fix at all. Concretely: `manifest.json`'s version must equal the version you intend to ship next, at all times while a tracking branch has unreleased commits.
+
+### Beta builds — automatic, do nothing extra
+
+- Every push to a `next/**` or `release/**` branch triggers a workflow that builds the plugin and publishes a GitHub **pre-release** tagged `<manifest version>-beta.<run number>`.
+- Each push supersedes (deletes) the previous beta release for that version line, so only the latest beta build for a given base version stays published.
+- Never manually create a beta tag or release — just push commits (with the version already bumped per the rule above) and the beta appears within a minute or two. Verify it exists and is versioned as expected: `gh release list --repo <owner>/<repo> --limit 5 --json tagName,isPrerelease`.
+- Testers install via [BRAT](https://github.com/TfTHacker/obsidian42-brat), adding this repo and enabling beta versions.
+
+### Final (stable) release
+
+Only do this when explicitly asked to release/ship — never on your own initiative, and never skip straight here without a beta having been tested first unless told to.
+
+1. On the tracking branch (`next/X.Y` for a new minor, `release/X.Y` for a patch): working tree clean, `npm run build && npm run lint && npm test` all passing.
+2. `npm version X.Y.Z -m "Release %s"` — bumps `package.json`, runs the `version` script (syncs `manifest.json`/adds a `versions.json` entry), commits everything as `Release X.Y.Z`, and creates git tag `X.Y.Z` (this repo's `.npmrc` sets `tag-version-prefix=""`, so no leading `v`).
+3. `git push origin <branch> --follow-tags` — pushes the release commit and tag together. The tag push triggers the release workflow, which creates the **stable** GitHub release (verify: `gh release view X.Y.Z`).
+4. Fast-forward `main`: `git checkout main && git merge --ff-only <branch> && git push origin main`. If a PR exists from this branch, GitHub auto-detects the fast-forward and marks it merged on its own.
+5. Only for a new-minor release (not a patch): rename the branch for future patches — `git checkout <branch> && git branch -m next/X.Y release/X.Y && git push origin release/X.Y`. GitHub may auto-delete the old `next/X.Y` remote ref once its PR is detected merged; check `git ls-remote origin` before trying to delete it yourself.
+6. Attach `manifest.json`, `main.js`, and `styles.css` as release assets — the release workflow does this automatically; don't do it by hand.
+7. After the *first-ever* stable release, separately follow the process to add/update this plugin in the community plugin catalog, if applicable.
 
 ## Security, privacy, and compliance
 
