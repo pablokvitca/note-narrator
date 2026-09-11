@@ -178,9 +178,15 @@ export class PlayerView extends ItemView {
 		return file instanceof TFile ? file : null;
 	}
 
-	/** Scrolls (and reveals) the note to whatever's currently playing at the given granularity, opening it in a leaf if it isn't already open. No-op if nothing's currently playing there. Doesn't touch playback -- unlike Previous/Next part, it only moves the editor. */
-	private async scrollToCurrent(granularity: 'chunk' | 'section'): Promise<void> {
-		const result = this.plugin.reader.getSpan(granularity);
+	/**
+	 * Scrolls (and reveals) the note to whatever section is currently playing, opening it in a leaf if it
+	 * isn't already open. No-op if nothing's currently playing there. Doesn't touch playback -- unlike
+	 * Previous/Next part, it only moves the editor. Section rather than chunk: a chunk is an internal
+	 * TTS-request boundary, not a unit a listener actually navigates by, and section gets you to the same
+	 * neighborhood even when it spans more than one chunk.
+	 */
+	private async scrollToCurrent(): Promise<void> {
+		const result = this.plugin.reader.getSpan('section');
 		if (!result) return;
 
 		let view: MarkdownView | null = null;
@@ -324,9 +330,7 @@ export class PlayerView extends ItemView {
 			if (this.plugin.settings.showJumpToCurrentButtons) {
 				controls.createDiv({ cls: 'obsidian-reader-controls-separator' });
 				const sectionSpan = active ? this.plugin.reader.getSpan('section') : null;
-				const chunkSpan = active ? this.plugin.reader.getSpan('chunk') : null;
-				this.createIconButton(controls, 'heading', 'Scroll to current section', !sectionSpan, () => void this.scrollToCurrent('section'));
-				this.createIconButton(controls, 'locate', 'Scroll to current chunk', !chunkSpan, () => void this.scrollToCurrent('chunk'));
+				this.createIconButton(controls, 'locate', 'Scroll to current section', !sectionSpan, () => void this.scrollToCurrent());
 			}
 		}
 

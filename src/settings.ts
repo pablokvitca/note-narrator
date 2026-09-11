@@ -112,7 +112,7 @@ export interface ReaderSettings {
 	highlightStyle: HighlightStyle;
 	/** When highlightGranularity is 'section', highlight only the section's heading instead of its whole body. */
 	highlightSectionTitleOnly: boolean;
-	/** Show the "scroll to current section/chunk" buttons in the player view's playback controls row. */
+	/** Show the "scroll to current section" button in the player view's playback controls row. */
 	showJumpToCurrentButtons: boolean;
 }
 
@@ -420,8 +420,8 @@ export class ReaderSettingTab extends PluginSettingTab {
 						visible: () => settings.highlightWhileReading,
 					},
 					{
-						name: 'Scroll-to-current buttons',
-						desc: 'Show "Scroll to current section" and "Scroll to current chunk" buttons in the player view\'s playback controls, to scroll the note to whatever\'s currently playing without affecting playback itself.',
+						name: 'Scroll-to-current button',
+						desc: 'Show a "Scroll to current section" button in the player view\'s playback controls, to scroll the note to whatever section is currently playing without affecting playback itself.',
 						control: { type: 'toggle', key: 'showJumpToCurrentButtons', defaultValue: DEFAULT_SETTINGS.showJumpToCurrentButtons },
 					},
 				],
