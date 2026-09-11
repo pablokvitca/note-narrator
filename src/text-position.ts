@@ -1,4 +1,4 @@
-import { ChunkerStyle, StripMarkdownOptions, chunkBySentence, isHeadingSkipped, splitSentences, stripMarkdown } from './text-utils';
+import { ChunkerStyle, StripMarkdownOptions, chunkBySentence, isHeadingSkipped, stripMarkdown } from './text-utils';
 
 /** A half-open character range `[start, end)` into some raw text. */
 export interface RawSpan {
@@ -143,17 +143,6 @@ export function splitChunkPosition(position: ChunkPosition | undefined, pieceLen
 	}
 	const spans = proportionalSplit(position.span, pieceLengths);
 	return spans.map((span) => ({ span, sectionSpan: position.sectionSpan, sectionHeadingSpan: position.sectionHeadingSpan }));
-}
-
-/**
- * Estimated raw spans of each sentence within one chunk, for sentence-granularity highlighting -- computed
- * lazily for just the currently-playing chunk rather than the whole note. Same proportional-estimate
- * caveat as `computeChunkPositions()`.
- */
-export function estimateSentenceSpans(chunkText: string, chunkSpan: RawSpan): RawSpan[] {
-	const sentences = splitSentences(chunkText).filter((sentence) => sentence.trim().length > 0);
-	if (sentences.length === 0) return [];
-	return proportionalSplit(chunkSpan, sentences.map((sentence) => sentence.length));
 }
 
 /**

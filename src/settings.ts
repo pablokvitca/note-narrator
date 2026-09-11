@@ -8,7 +8,13 @@ export type SaveAudioLocation = 'note-folder' | 'custom-folder';
 export type SaveVersioning = 'replace' | 'keep';
 export type QuickStartUnit = 'words' | 'characters';
 export type BackgroundJobDisplayStyle = 'full' | 'compact' | 'minimal';
-export type HighlightGranularity = 'sentence' | 'chunk' | 'section';
+/**
+ * How much text lights up at once while highlighting. Both are exact -- driven by which chunk is actually
+ * playing, a real event -- unlike a hypothetical 'sentence' granularity, which would need to estimate
+ * position from elapsed playback time (no per-word/sentence timing from the TTS provider); pushed to a
+ * future milestone alongside word-level highlighting rather than ship something that drifts out of sync.
+ */
+export type HighlightGranularity = 'chunk' | 'section';
 export type HighlightStyle = 'margin-marker' | 'background' | 'underline';
 
 export interface ReaderSettings {
@@ -383,11 +389,11 @@ export class ReaderSettingTab extends PluginSettingTab {
 					},
 					{
 						name: 'Highlight granularity',
-						desc: "How much text lights up at once. Chunk and Section are exact -- driven by which chunk/section is actually playing. Sentence estimates position from how far through the chunk's audio playback has gotten (there's no per-word timing from the TTS provider), so it can drift out of sync, especially in short chunks.",
+						desc: 'How much text lights up at once: Chunk moves once per generated audio request; Section (Markdown-aware chunker only -- otherwise the whole note counts as one section) moves least often. Both are exact, driven by which chunk is actually playing. Sentence/word granularity would need to estimate position from elapsed playback time (no per-word timing from the TTS provider) -- left for a future milestone rather than ship something that drifts out of sync.',
 						control: {
 							type: 'dropdown',
 							key: 'highlightGranularity',
-							options: { chunk: 'Chunk (default)', section: 'Section', sentence: 'Sentence (estimated)' },
+							options: { chunk: 'Chunk (default)', section: 'Section' },
 							defaultValue: DEFAULT_SETTINGS.highlightGranularity,
 						},
 						visible: () => settings.highlightWhileReading,

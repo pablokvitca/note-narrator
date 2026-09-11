@@ -73,7 +73,7 @@ export function stripMarkdown(markdown: string, options: StripMarkdownOptions = 
 }
 
 /** Splits text on sentence-ending punctuation without using a lookbehind (unsupported on iOS < 16.4). */
-export function splitSentences(text: string): string[] {
+function splitSentences(text: string): string[] {
 	return text.replace(/([.!?])\s+/g, `$1${SENTENCE_MARKER}`).split(SENTENCE_MARKER);
 }
 

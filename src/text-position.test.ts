@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_STRIP_MARKDOWN_OPTIONS } from './text-utils';
-import { computeChunkPositions, estimateSentenceSpans, rebaseSpan, splitChunkPosition } from './text-position';
+import { computeChunkPositions, rebaseSpan, splitChunkPosition } from './text-position';
 
 const STRIP_OPTIONS = DEFAULT_STRIP_MARKDOWN_OPTIONS;
 
@@ -44,21 +44,6 @@ describe('computeChunkPositions', () => {
 		const { positions } = computeChunkPositions(note, 5000, 'sentence', 2, STRIP_OPTIONS, []);
 		expect(positions[0]?.sectionSpan).toEqual({ start: 0, end: note.length });
 		expect(positions[0]?.sectionHeadingSpan).toBeNull();
-	});
-});
-
-describe('estimateSentenceSpans', () => {
-	it('splits a chunk into ordered, non-overlapping sentence spans within its own bounds', () => {
-		const chunkText = 'First sentence. Second sentence. Third sentence.';
-		const chunkSpan = { start: 100, end: 100 + chunkText.length };
-		const spans = estimateSentenceSpans(chunkText, chunkSpan);
-
-		expect(spans).toHaveLength(3);
-		expect(spans[0]!.start).toBe(chunkSpan.start);
-		expect(spans.at(-1)!.end).toBe(chunkSpan.end);
-		for (let i = 1; i < spans.length; i++) {
-			expect(spans[i]!.start).toBeGreaterThanOrEqual(spans[i - 1]!.end);
-		}
 	});
 });
 

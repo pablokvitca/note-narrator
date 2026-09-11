@@ -3,7 +3,7 @@ import { concatArrayBuffers, sanitizeFilenameComponent } from './audio-utils';
 import { buildBackgroundJobInfo, hasPendingGeneration } from './background-job';
 import type { BackgroundJobInfo } from './background-job';
 import { DEFAULT_ELEVENLABS_CHAR_LIMIT, ELEVENLABS_MODEL_CHAR_LIMITS, HighlightGranularity, ReaderSettings } from './settings';
-import { ChunkPosition, computeChunkPositions, estimateSentenceSpans, RawSpan, rebaseSpan, splitChunkPosition } from './text-position';
+import { ChunkPosition, computeChunkPositions, RawSpan, rebaseSpan, splitChunkPosition } from './text-position';
 import {
 	buildReadingPreamble,
 	chunkByWordCount,
@@ -340,14 +340,11 @@ export class Reader extends Events {
 
 	/**
 	 * Estimated editor position of whatever's currently playing, at the given granularity -- used for both
-	 * the now-playing highlight and the "jump to current" buttons. Null whenever there's nothing to point
-	 * at: nothing playing, a saved file playing directly (no chunk/section structure at all), a selection
-	 * read (no reliable position to rebase onto), or the active chunk's position estimate is itself null
-	 * (e.g. it's entirely the spoken title/properties preamble).
-	 *
-	 * 'sentence' granularity estimates *which* sentence within the active chunk is playing from the
-	 * fraction of that chunk's audio elapsed so far -- there's no per-word/sentence timing from the TTS
-	 * provider to do better than that.
+	 * the now-playing highlight and the "jump to current" buttons. Both granularities are exact (driven by
+	 * which chunk is actually playing, a real event), not a time-based estimate. Null whenever there's
+	 * nothing to point at: nothing playing, a saved file playing directly (no chunk/section structure at
+	 * all), a selection read (no reliable position to rebase onto), or the active chunk's position estimate
+	 * is itself null (e.g. it's entirely the spoken title/properties preamble).
 	 */
 	getSpan(granularity: HighlightGranularity, sectionTitleOnly = false): { file: TFile; span: RawSpan } | null {
 		const job = this.activeJob;
@@ -360,17 +357,7 @@ export class Reader extends Events {
 			return span ? { file: job.file, span } : null;
 		}
 
-		if (granularity === 'chunk') {
-			return position.span ? { file: job.file, span: position.span } : null;
-		}
-
-		if (!position.span) return null;
-		const chunkText = job.chunks[this.state.chunkIndex] ?? '';
-		const sentenceSpans = estimateSentenceSpans(chunkText, position.span);
-		if (sentenceSpans.length === 0) return null;
-		const elapsedFraction = this.state.duration > 0 ? Math.min(0.999, this.state.currentTime / this.state.duration) : 0;
-		const index = Math.min(sentenceSpans.length - 1, Math.floor(elapsedFraction * sentenceSpans.length));
-		return { file: job.file, span: sentenceSpans[index]! };
+		return position.span ? { file: job.file, span: position.span } : null;
 	}
 
 	private getStripMarkdownOptions(): StripMarkdownOptions {
