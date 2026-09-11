@@ -248,9 +248,19 @@ export class Reader extends Events {
 			activeFile: sourceFile,
 		});
 
+		// Kicked off now and never re-triggered on a fixed per-chunk schedule -- generateAllChunks() is a
+		// continuous worker pool that claims the next not-yet-ready index as soon as a worker frees up, so
+		// generation keeps running ahead at up to `windowSize` concurrent requests for the rest of the read,
+		// instead of stalling once a short fixed lookahead (the old prefetchAhead scheme) finishes early and
+		// waits for playback to catch up before requesting more.
+		const windowSize = this.settings.parallelGenerationEnabled ? Math.max(1, this.settings.maxParallelGeneration) : 1;
+		const generation = this.generateAllChunks(session, windowSize);
+
 		if (!this.settings.startPlaybackImmediately) {
-			const ok = await this.generateAllChunks(session);
+			const ok = await generation;
 			if (!ok || session !== this.sessionId) return;
+		} else {
+			void generation;
 		}
 
 		await this.playFromIndex(session, 0);
@@ -263,9 +273,15 @@ export class Reader extends Events {
 		new Notice('ElevenLabs rate limit hit — retrying with backoff and switching to sequential chunk generation.');
 	}
 
-	/** Generates every chunk (respecting the parallel-generation setting) before any playback starts. Returns false on failure. */
-	private async generateAllChunks(session: number): Promise<boolean> {
-		const windowSize = this.settings.parallelGenerationEnabled ? Math.max(1, this.settings.maxParallelGeneration) : 1;
+	/**
+	 * Drives every chunk to completion with up to `windowSize` concurrent generations, claiming the next
+	 * not-yet-ready index as soon as a worker frees up. Runs equally well upfront (when "start playback
+	 * immediately" is off, awaited before anything plays) or concurrently alongside `playFromIndex` (the
+	 * default) -- it never touches playback's `status`/`chunkIndex`, only the per-chunk ready/in-flight
+	 * state, so it can't fight with `playFromIndex`'s own tracking of which chunk is actually playing.
+	 * Returns false on failure, having already reset state to idle.
+	 */
+	private async generateAllChunks(session: number, windowSize: number): Promise<boolean> {
 		let nextIndex = 0;
 
 		const worker = async (workerId: number) => {
@@ -274,7 +290,7 @@ export class Reader extends Events {
 				// Once rate-limited, only the primary worker keeps going; the rest stop claiming new work.
 				if (this.rateLimited && workerId > 0) return;
 				const index = nextIndex++;
-				this.setState({ status: 'generating', chunkIndex: index });
+				if (this.state.chunkReady[index]) continue;
 				await this.ensureChunkBuffer(index);
 			}
 		};
@@ -283,7 +299,10 @@ export class Reader extends Events {
 			await Promise.all(Array.from({ length: windowSize }, (_, workerId) => worker(workerId)));
 			return true;
 		} catch (error) {
-			if (session !== this.sessionId) return false;
+			// This pool now runs concurrently with playFromIndex()'s own ensureChunkBuffer() calls, so both
+			// can independently catch the same rejection -- the idle check lets only the first one to get
+			// here actually notify/reset, instead of showing the same failure twice.
+			if (session !== this.sessionId || this.state.status === 'idle') return false;
 			console.error('Obsidian Reader: failed to read note aloud', error);
 			new Notice(`Failed to read note aloud: ${error instanceof Error ? error.message : String(error)}`);
 			this.setState(IDLE_STATE);
@@ -303,13 +322,12 @@ export class Reader extends Events {
 			try {
 				audioData = await this.ensureChunkBuffer(index);
 			} catch (error) {
+				if (session !== this.sessionId || this.state.status === 'idle') return;
 				console.error('Obsidian Reader: failed to read note aloud', error);
 				new Notice(`Failed to read note aloud: ${error instanceof Error ? error.message : String(error)}`);
 				this.setState(IDLE_STATE);
 				return;
 			}
-
-			this.prefetchAhead(index);
 
 			if (session !== this.sessionId) return;
 			const outcome = await this.playChunk(audioData, index, this.chunks.length);
@@ -320,15 +338,6 @@ export class Reader extends Events {
 
 		if (session !== this.sessionId) return;
 		this.setState(IDLE_STATE);
-	}
-
-	/** Kicks off generation for the next chunks within the configured parallel-generation window (a no-op if disabled). */
-	private prefetchAhead(fromIndex: number): void {
-		if (!this.settings.parallelGenerationEnabled || this.rateLimited) return;
-		const windowSize = Math.max(1, this.settings.maxParallelGeneration);
-		for (let offset = 1; offset < windowSize; offset++) {
-			this.prefetchChunkBuffer(fromIndex + offset);
-		}
 	}
 
 	private ensureChunkBuffer(index: number): Promise<ArrayBuffer> {
@@ -394,13 +403,6 @@ export class Reader extends Events {
 		this.savedForSession = true;
 		const buffers = this.chunkBuffers.filter((buffer): buffer is ArrayBuffer => buffer !== undefined);
 		void this.saveAudioFile(buffers, this.sourceFileForSave);
-	}
-
-	private prefetchChunkBuffer(index: number): void {
-		if (index < 0 || index >= this.chunks.length || this.chunkBuffers[index] || this.chunkPromises[index]) return;
-		void this.ensureChunkBuffer(index).catch((error: unknown) => {
-			console.error('Obsidian Reader: failed to prefetch chunk', error);
-		});
 	}
 
 	private async saveAudioFile(chunks: ArrayBuffer[], sourceFile: TFile | null): Promise<void> {
