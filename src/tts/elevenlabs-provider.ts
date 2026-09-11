@@ -41,8 +41,18 @@ export async function getElevenLabsVoiceName(apiKey: string, voiceId: string): P
 	return body.name ?? voiceId;
 }
 
-const MAX_RATE_LIMIT_RETRIES = 3;
+/**
+ * With a high "max parallel chunk generation" setting, many requests can be dispatched at once and hit
+ * ElevenLabs' "too many concurrent requests" 429 together -- they don't retry in lockstep (backoff is
+ * jittered below), but capacity only frees up as other in-flight requests finish, which can take a while
+ * under heavy concurrency. 3 retries at a ~1-4s backoff wasn't enough margin for that to clear: several
+ * requests would exhaust their retries and throw before the account's concurrency limit came back down,
+ * and `Promise.all` in the caller's worker pool fails the *entire* read the moment any one of them does.
+ * A higher retry budget with a longer capped backoff gives real congestion time to actually clear.
+ */
+const MAX_RATE_LIMIT_RETRIES = 8;
 const RATE_LIMIT_BASE_BACKOFF_MS = 1000;
+const RATE_LIMIT_MAX_BACKOFF_MS = 30000;
 
 function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => window.setTimeout(resolve, ms));
@@ -80,7 +90,10 @@ export class ElevenLabsProvider implements TTSProvider {
 
 			if (response.status === 429 && attempt < MAX_RATE_LIMIT_RETRIES) {
 				this.onRateLimited?.();
-				await sleep(RATE_LIMIT_BASE_BACKOFF_MS * 2 ** attempt);
+				const backoff = Math.min(RATE_LIMIT_BASE_BACKOFF_MS * 2 ** attempt, RATE_LIMIT_MAX_BACKOFF_MS);
+				// +/-20% jitter so many requests rate-limited at the same moment (a high parallel-generation
+				// setting) don't all retry in lockstep and collide again.
+				await sleep(backoff * (0.8 + Math.random() * 0.4));
 				continue;
 			}
 
