@@ -1,6 +1,6 @@
 import { Extension, StateEffect } from '@codemirror/state';
 import { Decoration, DecorationSet, EditorView, gutter, GutterMarker, ViewPlugin, ViewUpdate } from '@codemirror/view';
-import { editorInfoField } from 'obsidian';
+import { editorInfoField, setIcon } from 'obsidian';
 import ObsidianReaderPlugin from './main';
 
 /** Dispatched (as a no-op transaction) whenever the reader's playback state changes, so each open editor's decoration/gutter recomputes even though nothing in its own document changed. */
@@ -13,7 +13,8 @@ function isReaderRefresh(update: ViewUpdate): boolean {
 
 class SpeakerGutterMarker extends GutterMarker {
 	toDOM(): HTMLElement {
-		const el = createSpan({ cls: 'obsidian-reader-margin-marker', text: '\u{1F50A}' });
+		const el = createSpan({ cls: 'obsidian-reader-margin-marker' });
+		setIcon(el, 'audio-lines');
 		el.setAttribute('aria-hidden', 'true');
 		return el;
 	}

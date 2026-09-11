@@ -241,25 +241,40 @@ export class PlayerView extends ItemView {
 		// later chunks can still be generating in the background (parallel generation/lookahead) — Cancel
 		// generation should stay enabled through all of that, not just the initial generating phase.
 		const pendingGeneration = active && hasPendingGeneration(state.chunkReady);
-		contentEl.createDiv({
+
+		// Everything below scrolls together; the background-jobs queue (appended straight to contentEl,
+		// after this) stays pinned at the bottom regardless of scroll position.
+		const scroll = contentEl.createDiv({ cls: 'obsidian-reader-scroll-area' });
+
+		// 1. Title
+		scroll.createDiv({
 			cls: 'obsidian-reader-selected-note',
 			text: selectedFile ? `Read: ${selectedFile.basename}` : 'Open a note to read it aloud',
 		});
-
 		if (state.activeFile && (!selectedFile || state.activeFile.path !== selectedFile.path)) {
-			const currentlyReading = contentEl.createDiv({ cls: 'obsidian-reader-currently-reading' });
+			const currentlyReading = scroll.createDiv({ cls: 'obsidian-reader-currently-reading' });
 			currentlyReading.createSpan({ cls: 'obsidian-reader-currently-reading-icon' }, (el) => setIcon(el, 'headphones'));
 			currentlyReading.createSpan({ text: `Currently reading: ${state.activeFile.basename}` });
 		}
 
-		contentEl.createDiv({ cls: 'obsidian-reader-status', text: STATUS_LABELS[state.status] });
+		// 2. Status header
+		scroll.createDiv({ cls: 'obsidian-reader-status', text: STATUS_LABELS[state.status] });
 
-		this.renderBackgroundJobStatus(contentEl, state);
+		// 3/4. Audio status: saved audio up to date, or outdated (whichever applies -- nothing if neither)
+		this.renderAudioStatus(scroll);
 
+		// 5. Voice selection
+		this.renderVoiceSelector(scroll);
+		this.renderNoteStats(scroll, selectedFile);
+
+		// 6. Play saved / Read / Cancel generation / Continue in background
+		this.renderPrimaryActions(scroll, activeForSelected, pendingGeneration);
+
+		// 7. Progress bars/text
 		if (state.chunkCount > 1) {
-			this.chunkProgressEl = contentEl.createDiv({ cls: 'obsidian-reader-chunk-progress' });
+			this.chunkProgressEl = scroll.createDiv({ cls: 'obsidian-reader-chunk-progress' });
 
-			const generationBar = contentEl.createDiv({ cls: 'obsidian-reader-generation-bar' });
+			const generationBar = scroll.createDiv({ cls: 'obsidian-reader-generation-bar' });
 			for (let i = 0; i < state.chunkCount; i++) {
 				const segment = generationBar.createDiv({ cls: 'obsidian-reader-generation-segment' });
 				if (state.chunkReady[i]) segment.addClass('is-ready');
@@ -268,7 +283,7 @@ export class PlayerView extends ItemView {
 			}
 		}
 
-		const bar = contentEl.createDiv({ cls: 'obsidian-reader-progress-bar' });
+		const bar = scroll.createDiv({ cls: 'obsidian-reader-progress-bar' });
 		if (state.status === 'generating') {
 			bar.addClass('is-indeterminate');
 			bar.createDiv({ cls: 'obsidian-reader-progress-fill' });
@@ -276,18 +291,13 @@ export class PlayerView extends ItemView {
 			this.progressFillEl = bar.createDiv({ cls: 'obsidian-reader-progress-fill' });
 		}
 
-		this.timeEl = contentEl.createDiv({ cls: 'obsidian-reader-time' });
+		this.timeEl = scroll.createDiv({ cls: 'obsidian-reader-time' });
 		this.updateProgress(state);
 
-		this.renderVoiceSelector(contentEl);
-
-		this.renderNoteStats(contentEl, selectedFile);
-
-		this.renderPrimaryActions(contentEl, activeForSelected, pendingGeneration);
-
+		// 8. Previous/Next part + jump-to-current-section/chunk
 		{
 			const partsDisabled = !active || state.chunkCount <= 1;
-			const partControls = contentEl.createDiv({ cls: 'obsidian-reader-controls' });
+			const partControls = scroll.createDiv({ cls: 'obsidian-reader-controls' });
 			this.createIconButton(partControls, 'step-back', 'Previous part', partsDisabled, () => this.plugin.reader.previousPart());
 
 			if (this.plugin.settings.showJumpToCurrentButtons) {
@@ -306,7 +316,8 @@ export class PlayerView extends ItemView {
 			);
 		}
 
-		const controls = contentEl.createDiv({ cls: 'obsidian-reader-controls' });
+		// 9. Rewind/Pause/Skip forward/Stop
+		const controls = scroll.createDiv({ cls: 'obsidian-reader-controls' });
 
 		this.createIconButton(controls, 'skip-back', `Rewind ${skipSeconds}s`, !active, () =>
 			this.plugin.reader.skip(-skipSeconds),
@@ -323,9 +334,10 @@ export class PlayerView extends ItemView {
 
 		this.createIconButton(controls, 'square-stop', 'Stop', !active, () => this.plugin.reader.stop());
 
+		// 10. Playback speed
 		if (this.plugin.settings.showPlaybackSpeedSlider) {
 			const currentRate = this.plugin.reader.getPlaybackRate();
-			const speedSetting = new Setting(contentEl).setName(`Playback speed: ${currentRate.toFixed(2)}x`);
+			const speedSetting = new Setting(scroll).setName(`Playback speed: ${currentRate.toFixed(2)}x`);
 			speedSetting.addSlider((slider) =>
 				slider
 					.setLimits(SPEED_MIN, SPEED_MAX, 0.05)
@@ -340,10 +352,11 @@ export class PlayerView extends ItemView {
 			speedRange.createSpan({ cls: 'obsidian-reader-speed-bound', text: `${SPEED_MAX.toFixed(2)}x` });
 		}
 
+		// 11. Volume
 		if (this.plugin.settings.showVolumeSlider) {
 			const isMuted = this.plugin.reader.isMuted();
 			const currentVolume = this.plugin.reader.getVolume();
-			const volumeSetting = new Setting(contentEl).setName(`Volume: ${isMuted ? 'Muted' : `${Math.round(currentVolume * 100)}%`}`);
+			const volumeSetting = new Setting(scroll).setName(`Volume: ${isMuted ? 'Muted' : `${Math.round(currentVolume * 100)}%`}`);
 			volumeSetting.addSlider((slider) =>
 				slider
 					.setLimits(VOLUME_MIN, VOLUME_MAX, 0.05)
@@ -364,7 +377,11 @@ export class PlayerView extends ItemView {
 			);
 		}
 
-		this.renderAudioStatus(contentEl);
+		// 12. Background-jobs queue, pinned to the bottom of the panel (outside the scroll area)
+		if (state.backgroundJobs.length > 0) {
+			const pinned = contentEl.createDiv({ cls: 'obsidian-reader-background-jobs-pinned' });
+			this.renderBackgroundJobStatus(pinned, state);
+		}
 	}
 
 	private renderVoiceSelector(container: HTMLElement): void {
@@ -604,24 +621,34 @@ export class PlayerView extends ItemView {
 		});
 	}
 
+	/** An icon + text label button for the primary-actions row. Returns the label span separately so callers can update just the text later (e.g. Read -> Regenerate) without disturbing the icon. */
+	private createLabeledButton(container: HTMLElement, cls: string, icon: string, label: string): { button: HTMLButtonElement; labelEl: HTMLElement } {
+		const button = container.createEl('button', { cls });
+		setIcon(button.createSpan({ cls: 'obsidian-reader-button-icon' }), icon);
+		const labelEl = button.createSpan({ cls: 'obsidian-reader-button-label', text: label });
+		return { button, labelEl };
+	}
+
 	private renderPrimaryActions(container: HTMLElement, active: boolean, pendingGeneration: boolean): void {
 		const actionsRow = container.createDiv({ cls: 'obsidian-reader-primary-actions' });
 
-		const playSavedButton = actionsRow.createEl('button', { cls: 'obsidian-reader-play-saved-button', text: 'Play saved' });
+		const { button: playSavedButton } = this.createLabeledButton(actionsRow, 'obsidian-reader-play-saved-button', 'play', 'Play saved');
 		playSavedButton.disabled = true;
 
-		const readButton = actionsRow.createEl('button', {
-			cls: 'mod-cta obsidian-reader-read-button',
-			text: active ? 'Reading' : 'Read',
-		});
+		const { button: readButton, labelEl: readLabelEl } = this.createLabeledButton(
+			actionsRow,
+			'mod-cta obsidian-reader-read-button',
+			'audio-lines',
+			active ? 'Reading' : 'Read',
+		);
 		readButton.disabled = active;
 		readButton.onclick = () => void this.plugin.reader.readNote(this.getActiveMarkdownView() ?? undefined);
 
-		const cancelButton = actionsRow.createEl('button', { cls: 'obsidian-reader-cancel-button', text: 'Cancel generation' });
+		const { button: cancelButton } = this.createLabeledButton(actionsRow, 'obsidian-reader-cancel-button', 'x', 'Cancel generation');
 		cancelButton.disabled = !pendingGeneration;
 		cancelButton.onclick = () => this.plugin.reader.stop();
 
-		const backgroundButton = actionsRow.createEl('button', { cls: 'obsidian-reader-background-button', text: 'Continue in background' });
+		const { button: backgroundButton } = this.createLabeledButton(actionsRow, 'obsidian-reader-background-button', 'layers', 'Continue in background');
 		backgroundButton.disabled = !pendingGeneration;
 		backgroundButton.setAttribute(
 			'aria-label',
@@ -643,9 +670,9 @@ export class PlayerView extends ItemView {
 			if (!active) {
 				const voiceMismatch = info.voiceId !== undefined && info.voiceId !== this.plugin.settings.voiceId;
 				if (info.status === 'outdated') {
-					readButton.setText('Regenerate');
+					readLabelEl.setText('Regenerate');
 				} else if (voiceMismatch) {
-					readButton.setText('Regenerate with new voice');
+					readLabelEl.setText('Regenerate with new voice');
 				}
 			}
 
