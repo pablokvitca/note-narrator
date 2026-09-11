@@ -131,6 +131,17 @@
 	white-space: nowrap;
 }
 
+/* Explicit disabled look instead of relying on generic opacity dimming, which fades foreground and
+   background toward each other at the same rate and can leave text hard to read against the button
+   itself (as opposed to just looking muted against the panel). */
+.obsidian-reader-primary-actions button:disabled {
+	opacity: 1;
+	cursor: default;
+	color: var(--text-faint);
+	background-color: var(--background-modifier-border);
+	box-shadow: none;
+}
+
 .obsidian-reader-button-icon {
 	display: flex;
 	flex-shrink: 0;
@@ -216,8 +227,10 @@
 	background-color: var(--background-modifier-hover);
 }
 
+/* An explicit muted color rather than opacity, which compounds with the icon's own already-muted fill
+   and can end up too low-contrast to read as "disabled" instead of just "missing". */
 .obsidian-reader-icon-button.is-disabled {
-	opacity: 0.4;
+	color: var(--text-faint);
 	cursor: default;
 }
 
@@ -484,6 +497,10 @@
  */
 .obsidian-reader-marker-gutter {
 	width: 1.6em;
+	/* One line for the whole gutter column (not per-line) -- CodeMirror renders this element once per
+	   editor, spanning its full height, so a border here reads as a single persistent rule rather than
+	   one segment per visible line. */
+	border-right: 1px solid var(--background-modifier-border);
 }
 
 .obsidian-reader-margin-marker {

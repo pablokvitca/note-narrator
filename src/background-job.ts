@@ -19,7 +19,7 @@ export interface BackgroundJobInfo {
 	status: BackgroundJobStatus;
 }
 
-/** Whether a job still has chunks left to generate -- gates both the "Continue in background" and "Cancel generation" buttons. */
+/** Whether a job still has chunks left to generate -- gates both the "Send to Background" and "Cancel" buttons. */
 export function hasPendingGeneration(chunkReady: boolean[]): boolean {
 	return chunkReady.some((ready) => !ready);
 }

@@ -267,7 +267,7 @@ export class PlayerView extends ItemView {
 		this.renderVoiceSelector(scroll);
 		this.renderNoteStats(scroll, selectedFile);
 
-		// 6. Play saved / Read / Cancel generation / Continue in background
+		// 6. Play Saved / Read / Cancel / Send to Background
 		this.renderPrimaryActions(scroll, activeForSelected, pendingGeneration);
 
 		// 7. Progress bars/text
@@ -628,7 +628,7 @@ export class PlayerView extends ItemView {
 	private renderPrimaryActions(container: HTMLElement, active: boolean, pendingGeneration: boolean): void {
 		const actionsRow = container.createDiv({ cls: 'obsidian-reader-primary-actions' });
 
-		const { button: playSavedButton } = this.createLabeledButton(actionsRow, 'obsidian-reader-play-saved-button', 'play', 'Play saved');
+		const { button: playSavedButton } = this.createLabeledButton(actionsRow, 'obsidian-reader-play-saved-button', 'play', 'Play Saved');
 		playSavedButton.disabled = true;
 
 		const { button: readButton, labelEl: readLabelEl } = this.createLabeledButton(
@@ -640,11 +640,12 @@ export class PlayerView extends ItemView {
 		readButton.disabled = active;
 		readButton.onclick = () => void this.plugin.reader.readNote(this.getActiveMarkdownView() ?? undefined);
 
-		const { button: cancelButton } = this.createLabeledButton(actionsRow, 'obsidian-reader-cancel-button', 'x', 'Cancel generation');
+		const { button: cancelButton } = this.createLabeledButton(actionsRow, 'obsidian-reader-cancel-button', 'x', 'Cancel');
 		cancelButton.disabled = !pendingGeneration;
+		cancelButton.setAttribute('aria-label', 'Cancel generation');
 		cancelButton.onclick = () => this.plugin.reader.stop();
 
-		const { button: backgroundButton } = this.createLabeledButton(actionsRow, 'obsidian-reader-background-button', 'layers', 'Continue in background');
+		const { button: backgroundButton } = this.createLabeledButton(actionsRow, 'obsidian-reader-background-button', 'layers', 'Send to Background');
 		backgroundButton.disabled = !pendingGeneration;
 		backgroundButton.setAttribute(
 			'aria-label',

@@ -92,7 +92,7 @@ export interface ReaderSettings {
 	parallelGenerationEnabled: boolean;
 	/** How many chunks may be generating at once when parallelGenerationEnabled is on. */
 	maxParallelGeneration: number;
-	/** How many chunks may generate at once for a note continuing in the background (via "Continue in background"), independent of maxParallelGeneration -- kept low by default so it doesn't compete with an actively-playing read. */
+	/** How many chunks may generate at once for a note continuing in the background (via "Send to Background"), independent of maxParallelGeneration -- kept low by default so it doesn't compete with an actively-playing read. */
 	maxBackgroundParallelGeneration: number;
 	/** How the panel shows queued/generating/done background jobs: a full callout with text buttons, a compact pill row, or a minimal card -- all with icon buttons and click-to-play. */
 	backgroundJobDisplayStyle: BackgroundJobDisplayStyle;
@@ -500,7 +500,7 @@ export class ReaderSettingTab extends PluginSettingTab {
 					},
 					{
 						name: 'Max parallel background chunk generation',
-						desc: `How many chunks may generate at once for a note continuing in the background (via the panel's "Continue in background" button), independent of the setting above. Kept low by default so it doesn't compete with an actively-playing read. Recommended: 1-3. Default: ${DEFAULT_SETTINGS.maxBackgroundParallelGeneration}.`,
+						desc: `How many chunks may generate at once for a note continuing in the background (via the panel's "Send to Background" button), independent of the setting above. Kept low by default so it doesn't compete with an actively-playing read. Recommended: 1-3. Default: ${DEFAULT_SETTINGS.maxBackgroundParallelGeneration}.`,
 						render: (setting) =>
 							this.renderNumberControlWithReset(setting, {
 								get: () => settings.maxBackgroundParallelGeneration,
