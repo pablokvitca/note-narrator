@@ -460,6 +460,11 @@ export class Reader extends Events {
 		let nextIndex = 0;
 
 		const worker = async (workerId: number) => {
+			// Staggered so a high "max parallel chunk generation" setting doesn't dispatch its entire window
+			// of requests in the same instant -- ElevenLabs' concurrent-request limit is otherwise hit by the
+			// burst itself, before any 429 has even come back to flip job.rateLimited for the check below.
+			if (workerId > 0) await new Promise((resolve) => window.setTimeout(resolve, workerId * 150));
+
 			while (nextIndex < job.chunks.length) {
 				if (job.cancelled) return;
 				// Once rate-limited, only the primary worker keeps going; the rest stop claiming new work.
