@@ -498,19 +498,26 @@
  */
 .obsidian-reader-marker-gutter {
 	width: 1.6em;
-	/* One line for the whole gutter column (not per-line) -- CodeMirror renders this element once per
-	   editor, spanning its full height, so a border here reads as a single persistent rule rather than
-	   one segment per visible line. */
-	border-right: 1px solid var(--background-modifier-border);
 }
 
-.obsidian-reader-margin-marker {
+/*
+ * The border lives on each per-line marker cell, not the gutter column itself -- since a marker (icon or
+ * continuation) only occupies the lines from the icon down to wherever the currently-playing chunk/section
+ * actually ends, the border reads as one rule spanning exactly that range, not the whole editor height.
+ */
+.obsidian-reader-margin-marker,
+.obsidian-reader-margin-marker-line {
 	display: flex;
 	align-items: center;
 	justify-content: center;
 	width: 100%;
-	color: var(--interactive-accent);
+	height: 100%;
+	border-right: 1px solid var(--interactive-accent);
 	opacity: 0.85;
+}
+
+.obsidian-reader-margin-marker {
+	color: var(--interactive-accent);
 }
 
 .obsidian-reader-margin-marker svg {

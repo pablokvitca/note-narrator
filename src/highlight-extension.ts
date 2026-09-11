@@ -24,25 +24,45 @@ class SpeakerGutterMarker extends GutterMarker {
 	}
 }
 
-const SPEAKER_MARKER = new SpeakerGutterMarker();
+/** A plain vertical-rule segment for a gutter line between the icon and the end of the active span -- same visual line, no icon repeated on every row. */
+class MarkerContinuationGutterMarker extends GutterMarker {
+	toDOM(): HTMLElement {
+		return createSpan({ cls: 'obsidian-reader-margin-marker-line' });
+	}
 
-/** The mark-decorations for one editor (background/underline styles only -- margin-marker is a left-gutter marker instead, see `createMarkerGutter`), or none if this editor isn't showing the note currently being read. */
-function buildDecorations(view: EditorView, plugin: ObsidianReaderPlugin): DecorationSet {
-	if (!plugin.settings.highlightWhileReading || plugin.settings.highlightStyle === 'margin-marker') return Decoration.none;
+	eq(other: GutterMarker): boolean {
+		return other instanceof MarkerContinuationGutterMarker;
+	}
+}
+
+const SPEAKER_MARKER = new SpeakerGutterMarker();
+const CONTINUATION_MARKER = new MarkerContinuationGutterMarker();
+
+/** Clamps `result.span` to the document and returns it, or null if there's nothing to show (no active span, wrong file, or an empty/out-of-bounds range). Shared by the mark-decorations and the gutter so both agree on exactly the same range. */
+function resolveActiveSpan(view: EditorView, plugin: ObsidianReaderPlugin): { start: number; end: number } | null {
+	if (!plugin.settings.highlightWhileReading) return null;
 
 	const file = view.state.field(editorInfoField, false)?.file ?? null;
-	if (!file) return Decoration.none;
+	if (!file) return null;
 
 	const result = plugin.reader.getSpan(plugin.settings.highlightGranularity, plugin.settings.highlightSectionTitleOnly);
-	if (!result || result.file.path !== file.path) return Decoration.none;
+	if (!result || result.file.path !== file.path) return null;
 
 	const docLength = view.state.doc.length;
 	const start = Math.max(0, Math.min(result.span.start, docLength));
 	const end = Math.max(start, Math.min(result.span.end, docLength));
-	if (end <= start) return Decoration.none;
+	return end > start ? { start, end } : null;
+}
+
+/** The mark-decorations for one editor (background/underline styles only -- margin-marker is a left-gutter marker instead, see `createMarkerGutter`), or none if this editor isn't showing the note currently being read. */
+function buildDecorations(view: EditorView, plugin: ObsidianReaderPlugin): DecorationSet {
+	if (plugin.settings.highlightStyle === 'margin-marker') return Decoration.none;
+
+	const span = resolveActiveSpan(view, plugin);
+	if (!span) return Decoration.none;
 
 	const cls = plugin.settings.highlightStyle === 'underline' ? 'obsidian-reader-highlight-underline' : 'obsidian-reader-highlight-bg';
-	return Decoration.set([Decoration.mark({ class: cls }).range(start, end)]);
+	return Decoration.set([Decoration.mark({ class: cls }).range(span.start, span.end)]);
 }
 
 /**
@@ -85,23 +105,26 @@ function createMarkPlugin(plugin: ObsidianReaderPlugin): Extension {
  * (unlike an inline widget positioned into the text itself). Piggybacks on `createMarkPlugin`'s dispatched
  * refresh transactions (both extensions are registered together) rather than driving its own event
  * subscription.
+ *
+ * The icon sits on the span's first line; every line after it through the span's last line gets a plain
+ * vertical-rule marker instead, so the line drawn by CSS (see styles.css) runs from the icon down to
+ * wherever the currently-playing chunk/section actually ends, rather than down the entire gutter.
  */
 function createMarkerGutter(plugin: ObsidianReaderPlugin): Extension {
 	return gutter({
 		class: 'obsidian-reader-marker-gutter',
 		renderEmptyElements: false,
 		lineMarker(view, line) {
-			if (!plugin.settings.highlightWhileReading || plugin.settings.highlightStyle !== 'margin-marker') return null;
+			if (plugin.settings.highlightStyle !== 'margin-marker') return null;
 
-			const file = view.state.field(editorInfoField, false)?.file ?? null;
-			if (!file) return null;
+			const span = resolveActiveSpan(view, plugin);
+			if (!span) return null;
 
-			const result = plugin.reader.getSpan(plugin.settings.highlightGranularity, plugin.settings.highlightSectionTitleOnly);
-			if (!result || result.file.path !== file.path) return null;
+			const startLine = view.state.doc.lineAt(span.start);
+			const endLine = view.state.doc.lineAt(Math.max(span.start, span.end - 1));
+			if (line.from < startLine.from || line.from > endLine.from) return null;
 
-			const docLength = view.state.doc.length;
-			const pos = Math.max(0, Math.min(result.span.start, docLength));
-			return pos >= line.from && pos <= line.to ? SPEAKER_MARKER : null;
+			return line.from === startLine.from ? SPEAKER_MARKER : CONTINUATION_MARKER;
 		},
 		lineMarkerChange: (update) => update.docChanged || isReaderRefresh(update),
 	});
