@@ -937,6 +937,12 @@ export class Reader extends Events {
 			const onTimeUpdate = () => this.setState({ currentTime: audio.currentTime, duration: audio.duration || 0 });
 
 			const cleanup = () => {
+				// Harmless no-op when the 'ended'/'error' events triggered this (the audio has already
+				// stopped by itself there) -- but essential when nextPart()/previousPart() call finish()
+				// directly while this chunk is still actively playing, which otherwise left it playing on
+				// in the background (revoking the blob URL doesn't stop audio already buffered/playing)
+				// while the next chunk started too, overlapping the two.
+				audio.pause();
 				audio.removeEventListener('timeupdate', onTimeUpdate);
 				URL.revokeObjectURL(url);
 				if (this.audio === audio) this.audio = null;
