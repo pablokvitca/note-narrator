@@ -29,16 +29,20 @@ interface PositionBase {
 }
 
 /**
- * Lets `getSpan()` work during "Play saved" playback, which has no `GenerationJob` (one opaque audio file,
- * not chunks generated live). `cumulativeDurations[i]` is the end time (seconds) of chunk `i` within the
- * concatenated file, from the per-chunk durations saved alongside it -- comparing that against the audio
- * element's current time (which, for a single-file play, already *is* the whole-file elapsed time) finds
- * which chunk is "playing" exactly, the same way a live read's `chunkIndex` is exact.
+ * Lets `getSpan()` and Previous/Next part work during "Play saved" playback, which has no `GenerationJob`.
+ * `chunkByteLengths` is what makes this reliable: it lets the saved file be sliced back into its individual
+ * chunk buffers and played one at a time through the exact same per-chunk path a live read uses, rather
+ * than relying on native `<audio>` seeking within one big multi-chunk MP3 concatenation -- browsers
+ * estimate seek positions from the file's own header, which (being a raw concatenation, not a properly
+ * re-muxed stream) only actually describes the first chunk, so seeking past it isn't reliable.
  */
 interface SavedPlaybackTimeline {
 	file: TFile;
 	positions: ChunkPosition[];
-	cumulativeDurations: number[];
+	/** Each chunk's audio duration (seconds), for the full-read time display -- not used for chunk lookup (that's now the plain index into a sequentially-played buffer, like a live read). */
+	chunkDurations: number[];
+	/** Each chunk's byte length within the saved file, in order -- lets the concatenated file be sliced back into its original per-chunk buffers. */
+	chunkByteLengths: number[];
 }
 
 export type ReaderStatus = 'idle' | 'generating' | 'playing' | 'paused';
@@ -289,12 +293,12 @@ export class Reader extends Events {
 		if (wasGenerating) this.advanceBackgroundQueue();
 	}
 
-	/** Jumps to the next chunk without waiting for the current one to finish playing. No-op past the last chunk. */
+	/**
+	 * Jumps to the next chunk without waiting for the current one to finish playing. No-op past the last
+	 * chunk. Works identically for a live read and "Play saved" playback -- both play one chunk at a time
+	 * through `playChunk()`, which is what sets `resolveCurrentChunk` for whichever one is actually active.
+	 */
 	nextPart(): void {
-		if (this.savedPlaybackTimeline) {
-			this.seekToSavedChunk(this.state.chunkIndex + 1);
-			return;
-		}
 		if (!this.resolveCurrentChunk) return;
 		const resolve = this.resolveCurrentChunk;
 		this.resolveCurrentChunk = null;
@@ -303,28 +307,10 @@ export class Reader extends Events {
 
 	/** Jumps to the previous chunk (or restarts the current one if already on the first). */
 	previousPart(): void {
-		if (this.savedPlaybackTimeline) {
-			this.seekToSavedChunk(this.state.chunkIndex - 1);
-			return;
-		}
 		if (!this.resolveCurrentChunk) return;
 		const resolve = this.resolveCurrentChunk;
 		this.resolveCurrentChunk = null;
 		resolve('previous');
-	}
-
-	/**
-	 * During "Play saved" playback there's no per-chunk audio element to advance through (it's one
-	 * concatenated file) -- Previous/Next part instead seek the single `HTMLAudioElement` to the start of
-	 * the target chunk, per its cumulative saved duration. `index` is clamped into range, same as the
-	 * live-read version clamps at 0 rather than going negative.
-	 */
-	private seekToSavedChunk(index: number): void {
-		const timeline = this.savedPlaybackTimeline;
-		if (!timeline || !this.audio) return;
-		const clamped = Math.max(0, Math.min(index, timeline.cumulativeDurations.length - 1));
-		this.audio.currentTime = clamped === 0 ? 0 : timeline.cumulativeDurations[clamped - 1]!;
-		this.setState({ chunkIndex: clamped });
 	}
 
 	pause(): void {
@@ -392,8 +378,7 @@ export class Reader extends Events {
 
 		if (this.savedPlaybackTimeline) {
 			const timeline = this.savedPlaybackTimeline;
-			const index = this.chunkIndexAtTime(timeline.cumulativeDurations, this.state.currentTime);
-			return this.resolvePositionSpan(timeline.positions[index], timeline.file, granularity, sectionTitleOnly);
+			return this.resolvePositionSpan(timeline.positions[this.state.chunkIndex], timeline.file, granularity, sectionTitleOnly);
 		}
 
 		return null;
@@ -415,14 +400,6 @@ export class Reader extends Events {
 		return position.span ? { file, span: position.span } : null;
 	}
 
-	/** Which chunk index `time` (seconds elapsed in the concatenated file) falls into, per each chunk's cumulative end time. Clamps to the last chunk past the end, rather than returning an out-of-bounds index. */
-	private chunkIndexAtTime(cumulativeDurations: number[], time: number): number {
-		for (let i = 0; i < cumulativeDurations.length; i++) {
-			if (time < cumulativeDurations[i]!) return i;
-		}
-		return Math.max(0, cumulativeDurations.length - 1);
-	}
-
 	/**
 	 * Rebuilds a saved file's chunk timeline for highlighting/scroll-to-current during "Play saved" -- only
 	 * when the note is still up to date with that saved audio (otherwise the note's current structure
@@ -437,10 +414,19 @@ export class Reader extends Events {
 			if (status !== 'up-to-date') return null;
 
 			const frontmatter = this.app.metadataCache.getFileCache(sourceFile)?.frontmatter;
-			const durationsRaw = frontmatter?.[this.settings.audioChunkDurationsProperty] as unknown;
-			if (!Array.isArray(durationsRaw) || durationsRaw.length === 0) return null;
-			const chunkDurations = (durationsRaw as unknown[]).map((value) => (typeof value === 'number' ? value : NaN));
-			if (chunkDurations.some((duration) => !Number.isFinite(duration))) return null;
+			const raw = frontmatter?.[this.settings.audioChunkDurationsProperty] as unknown;
+			if (!Array.isArray(raw) || raw.length === 0) return null;
+
+			// Each entry is a [duration, byteLength] pair -- one property instead of two.
+			const chunkDurations: number[] = [];
+			const chunkByteLengths: number[] = [];
+			for (const entry of raw as unknown[]) {
+				if (!Array.isArray(entry) || entry.length !== 2) return null;
+				const [duration, byteLength] = entry as unknown[];
+				if (typeof duration !== 'number' || typeof byteLength !== 'number' || !Number.isFinite(duration) || !Number.isFinite(byteLength)) return null;
+				chunkDurations.push(duration);
+				chunkByteLengths.push(byteLength);
+			}
 
 			const fullValue = await this.app.vault.cachedRead(sourceFile);
 			const body = stripFrontmatter(fullValue);
@@ -455,14 +441,7 @@ export class Reader extends Events {
 			const { positions } = this.buildChunksAndPositions(rawText, positionBase);
 			if (positions.length !== chunkDurations.length) return null;
 
-			const cumulativeDurations: number[] = [];
-			let sum = 0;
-			for (const duration of chunkDurations) {
-				sum += duration;
-				cumulativeDurations.push(sum);
-			}
-
-			return { file: sourceFile, positions, cumulativeDurations };
+			return { file: sourceFile, positions, chunkDurations, chunkByteLengths };
 		} catch (error) {
 			console.error('Obsidian Reader: failed to build saved-playback highlight timeline', error);
 			return null;
@@ -831,7 +810,8 @@ export class Reader extends Events {
 			}
 
 			if (this.settings.linkAudioInNote && sourceFile) {
-				await this.linkAudioInNote(audioFile, sourceFile, chunkDurations);
+				const chunkMeta = chunkDurations.map((duration, i) => ({ duration, byteLength: chunks[i]?.byteLength ?? 0 }));
+				await this.linkAudioInNote(audioFile, sourceFile, chunkMeta);
 			}
 		} catch (error) {
 			console.error('Obsidian Reader: failed to save audio file', error);
@@ -906,7 +886,7 @@ export class Reader extends Events {
 		});
 	}
 
-	private async linkAudioInNote(audioFile: TFile, sourceFile: TFile, chunkDurations: number[]): Promise<void> {
+	private async linkAudioInNote(audioFile: TFile, sourceFile: TFile, chunkMeta: { duration: number; byteLength: number }[]): Promise<void> {
 		const link = this.app.fileManager.generateMarkdownLink(audioFile, sourceFile.path);
 		const hash = await this.computeStalenessHash(sourceFile);
 
@@ -917,7 +897,9 @@ export class Reader extends Events {
 			frontmatter[this.settings.audioPathProperty] = audioFile.path;
 			frontmatter[this.settings.audioTimestampProperty] = moment().toISOString(true);
 			frontmatter[this.settings.audioVoiceProperty] = this.settings.voiceId;
-			frontmatter[this.settings.audioChunkDurationsProperty] = chunkDurations.map((duration) => Math.round(duration * 100) / 100);
+			// [duration, byteLength] pairs -- one property instead of two. Byte lengths let a saved file be
+			// sliced back into its per-chunk buffers for reliable Previous/Next part; see SavedPlaybackTimeline.
+			frontmatter[this.settings.audioChunkDurationsProperty] = chunkMeta.map((m) => [Math.round(m.duration * 100) / 100, m.byteLength]);
 		});
 		await cacheUpdated;
 
@@ -1085,19 +1067,21 @@ export class Reader extends Events {
 
 		const timeline = sourceFile ? await this.buildSavedPlaybackTimeline(sourceFile) : null;
 		if (session !== this.sessionId) return;
-		this.savedPlaybackTimeline = timeline;
-
-		// Known exactly (not decoded per-chunk like a live read) since these come straight from the
-		// cumulative durations saved alongside the file -- enables real Previous/Next part, an accurate
-		// "Part X of Y", and a correct generation bar (every chunk is already generated, hence saved).
-		const chunkCount = timeline?.cumulativeDurations.length ?? 1;
-		const chunkDurations = timeline
-			? timeline.cumulativeDurations.map((end, i) => end - (i === 0 ? 0 : timeline.cumulativeDurations[i - 1]!))
-			: [undefined];
 
 		try {
 			const data = await this.app.vault.readBinary(audioFile);
 			if (session !== this.sessionId) return;
+
+			// Slicing back into per-chunk buffers -- rather than playing the whole file as one element and
+			// seeking within it -- is what makes Previous/Next part (and highlighting/scroll-to-current)
+			// reliable here: each chunk plays through the exact same per-chunk path a live read uses. If the
+			// byte lengths don't actually add up to this file's size (stale/mismatched metadata), fall back
+			// to playing it as one opaque chunk with no timeline -- no Previous/Next part, no highlighting,
+			// rather than slicing at the wrong offsets.
+			const sliced = timeline ? this.sliceIntoChunks(data, timeline.chunkByteLengths) : null;
+			this.savedPlaybackTimeline = sliced ? timeline : null;
+			const buffers = sliced ?? [data];
+			const chunkCount = buffers.length;
 
 			this.currentPlaybackRate = this.settings.playbackRate;
 			this.setState({
@@ -1108,12 +1092,12 @@ export class Reader extends Events {
 				duration: 0,
 				chunkReady: new Array<boolean>(chunkCount).fill(true),
 				chunkInFlight: new Array<boolean>(chunkCount).fill(false),
-				chunkDurations,
+				chunkDurations: sliced && timeline ? timeline.chunkDurations : [undefined],
 				activeFile: sourceFile,
 			});
 
 			if (session !== this.sessionId) return;
-			await this.playChunk(null, data, 0, chunkCount, timeline ?? undefined);
+			await this.playSavedChunksFromIndex(session, buffers);
 			if (session !== this.sessionId) return;
 			this.savedPlaybackTimeline = null;
 			this.resetToIdle();
@@ -1123,6 +1107,32 @@ export class Reader extends Events {
 			this.savedPlaybackTimeline = null;
 			this.resetToIdle();
 		}
+	}
+
+	/** Plays a saved file's already-sliced chunk buffers sequentially, honoring Previous/Next-part jumps exactly like a live read's `playFromIndex()` -- just with no generation step, since every buffer is already fully formed. */
+	private async playSavedChunksFromIndex(session: number, buffers: ArrayBuffer[]): Promise<void> {
+		let index = 0;
+		while (index >= 0 && index < buffers.length) {
+			if (session !== this.sessionId) return;
+			this.setState({ chunkIndex: index });
+			const outcome = await this.playChunk(null, buffers[index]!, index, buffers.length);
+			if (session !== this.sessionId) return;
+			index = outcome === 'previous' ? Math.max(0, index - 1) : index + 1;
+		}
+	}
+
+	/** Splits a saved file's bytes back into its original per-chunk buffers, in order. Null if the lengths don't add up to the file's actual size -- stale or corrupted metadata, not safe to slice by. */
+	private sliceIntoChunks(data: ArrayBuffer, byteLengths: number[]): ArrayBuffer[] | null {
+		const total = byteLengths.reduce((sum, length) => sum + length, 0);
+		if (total !== data.byteLength) return null;
+
+		const buffers: ArrayBuffer[] = [];
+		let offset = 0;
+		for (const length of byteLengths) {
+			buffers.push(data.slice(offset, offset + length));
+			offset += length;
+		}
+		return buffers;
 	}
 
 	private resolveSaveFolder(sourceFile: TFile | null): string {
@@ -1152,7 +1162,7 @@ export class Reader extends Events {
 
 	/** `job` is null only for direct saved-file playback, which has no generation job and thus nothing to patch chunkDurations onto. */
 	/** `savedTimeline`, when given, is a saved-playback timeline for the whole (single, concatenated) `audioData` -- used to keep `state.chunkIndex` in sync with elapsed time on every tick, since there's no per-chunk audio element to drive it here the way a live read's chunk-by-chunk loop does. */
-	private playChunk(job: GenerationJob | null, audioData: ArrayBuffer, index: number, count: number, savedTimeline?: SavedPlaybackTimeline): Promise<ChunkOutcome> {
+	private playChunk(job: GenerationJob | null, audioData: ArrayBuffer, index: number, count: number): Promise<ChunkOutcome> {
 		return new Promise((resolve) => {
 			const blob = new Blob([audioData], { type: 'audio/mpeg' });
 			const url = URL.createObjectURL(blob);
@@ -1162,11 +1172,7 @@ export class Reader extends Events {
 			audio.muted = this.muted;
 			this.audio = audio;
 
-			const onTimeUpdate = () => {
-				const patch: Partial<ReaderState> = { currentTime: audio.currentTime, duration: audio.duration || 0 };
-				if (savedTimeline) patch.chunkIndex = this.chunkIndexAtTime(savedTimeline.cumulativeDurations, audio.currentTime);
-				this.setState(patch);
-			};
+			const onTimeUpdate = () => this.setState({ currentTime: audio.currentTime, duration: audio.duration || 0 });
 
 			const cleanup = () => {
 				// Harmless no-op when the 'ended'/'error' events triggered this (the audio has already

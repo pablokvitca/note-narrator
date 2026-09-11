@@ -46,7 +46,7 @@ export interface ReaderSettings {
 	audioTimestampProperty: string;
 	/** Frontmatter property the voice ID used to generate the audio is written to. */
 	audioVoiceProperty: string;
-	/** Frontmatter property each chunk's audio duration (seconds) is written to -- lets "Play saved" map elapsed playback time in the concatenated file back to a chunk, for highlighting/scroll-to-current during saved playback. */
+	/** Frontmatter property each chunk's [duration (seconds), byte length] pair is written to -- lets "Play saved" slice the saved file back into its per-chunk buffers, for real Previous/Next part and highlighting/scroll-to-current during saved playback. */
 	audioChunkDurationsProperty: string;
 	/**
 	 * Extra frontmatter property keys (besides the reader's own) to exclude when computing the staleness
@@ -635,7 +635,7 @@ export class ReaderSettingTab extends PluginSettingTab {
 					},
 					{
 						name: 'Chunk durations property',
-						desc: "Frontmatter property each chunk's audio duration is written to. Lets highlighting and scroll-to-current work during \"Play saved\" too, by mapping elapsed time in the concatenated file back to a chunk -- only while the note is up to date with the saved audio.",
+						desc: "Frontmatter property each chunk's [duration, byte length] is written to. Lets the saved file be sliced back into its per-chunk parts, so Previous/Next part and highlighting/scroll-to-current work during \"Play saved\" too -- only while the note is up to date with the saved audio.",
 						control: {
 							type: 'text',
 							key: 'audioChunkDurationsProperty',
