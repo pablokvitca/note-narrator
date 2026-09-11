@@ -153,7 +153,7 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
 	timeDisplayMode: 'current',
 	skipSectionHeadingPatterns: '',
 	highlightWhileReading: false,
-	highlightGranularity: 'sentence',
+	highlightGranularity: 'chunk',
 	highlightStyle: 'margin-marker',
 	highlightSectionTitleOnly: false,
 	showJumpToCurrentButtons: true,
@@ -383,11 +383,11 @@ export class ReaderSettingTab extends PluginSettingTab {
 					},
 					{
 						name: 'Highlight granularity',
-						desc: "How much text lights up at once. Sentence tracks closest to what's actually being spoken. Chunk moves once per generated audio request. Section (Markdown-aware chunker only -- otherwise the whole note counts as one section) moves least often.",
+						desc: "How much text lights up at once. Chunk and Section are exact -- driven by which chunk/section is actually playing. Sentence estimates position from how far through the chunk's audio playback has gotten (there's no per-word timing from the TTS provider), so it can drift out of sync, especially in short chunks.",
 						control: {
 							type: 'dropdown',
 							key: 'highlightGranularity',
-							options: { sentence: 'Sentence', chunk: 'Chunk', section: 'Section' },
+							options: { chunk: 'Chunk (default)', section: 'Section', sentence: 'Sentence (estimated)' },
 							defaultValue: DEFAULT_SETTINGS.highlightGranularity,
 						},
 						visible: () => settings.highlightWhileReading,
@@ -400,7 +400,7 @@ export class ReaderSettingTab extends PluginSettingTab {
 					},
 					{
 						name: 'Highlight style',
-						desc: 'How the active text is marked. Margin marker leaves the text untouched and shows a speaker icon in the right margin next to it. Background/Underline mark the text itself.',
+						desc: 'How the active text is marked. Margin marker leaves the text untouched and inserts a small speaker icon right after it. Background/Underline mark the text itself.',
 						control: {
 							type: 'dropdown',
 							key: 'highlightStyle',

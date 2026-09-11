@@ -431,16 +431,19 @@
 	text-underline-offset: 3px;
 }
 
-.cm-line:has(.obsidian-reader-margin-marker) {
-	position: relative;
-}
-
+/*
+ * Rendered inline, immediately after the highlighted span, rather than absolutely positioned into a
+ * literal right margin -- Obsidian's editor wraps long lines instead of scrolling horizontally, so
+ * anything pushed past a line's own rendered width was silently clipped by the scroller and never
+ * visible at all. Inline guarantees it's always on-screen, at the cost of sitting right after the text
+ * instead of in the page's outer margin.
+ */
 .obsidian-reader-margin-marker {
-	position: absolute;
-	top: 0;
-	right: calc(-1 * var(--size-4-6));
+	display: inline-block;
+	margin-left: var(--size-2-2);
 	font-size: var(--font-ui-small);
 	line-height: var(--line-height-normal);
+	vertical-align: middle;
 	pointer-events: none;
 	opacity: 0.85;
 }

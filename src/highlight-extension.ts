@@ -39,7 +39,7 @@ function buildDecorations(view: EditorView, plugin: ObsidianReaderPlugin): Decor
 
 	if (plugin.settings.highlightStyle === 'margin-marker') {
 		// A widget rather than a marked range -- the source text stays untouched, and a small speaker icon
-		// sits right after it, in the editor's right margin (see the CSS for the absolute positioning).
+		// is inserted right after it (inline, not absolutely positioned -- see the CSS for why).
 		return Decoration.set([Decoration.widget({ widget: new SpeakerMarkerWidget(), side: 1 }).range(end)]);
 	}
 
