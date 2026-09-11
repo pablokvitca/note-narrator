@@ -464,7 +464,7 @@ export class PlayerView extends ItemView {
 		this.renderBackgroundGenerationBar(box, job);
 
 		const actions = box.createDiv({ cls: 'obsidian-reader-background-job-actions' });
-		const playButton = actions.createEl('button', { text: 'Play' });
+		const playButton = actions.createEl('button', { cls: 'mod-cta', text: 'Play' });
 		playButton.onclick = (evt) => {
 			evt.stopPropagation();
 			this.plugin.reader.playBackgroundJob(job.id);
