@@ -2,17 +2,31 @@ import { App, Events, MarkdownView, moment, Notice, normalizePath, TFile } from 
 import { concatArrayBuffers, sanitizeFilenameComponent } from './audio-utils';
 import { buildBackgroundJobInfo, hasPendingGeneration } from './background-job';
 import type { BackgroundJobInfo } from './background-job';
-import { DEFAULT_ELEVENLABS_CHAR_LIMIT, ELEVENLABS_MODEL_CHAR_LIMITS, ReaderSettings } from './settings';
+import { DEFAULT_ELEVENLABS_CHAR_LIMIT, ELEVENLABS_MODEL_CHAR_LIMITS, HighlightGranularity, ReaderSettings } from './settings';
+import { ChunkPosition, computeChunkPositions, estimateSentenceSpans, RawSpan, rebaseSpan, splitChunkPosition } from './text-position';
 import {
 	buildReadingPreamble,
 	chunkByWordCount,
 	chunkBySentence,
 	chunkNote,
 	hashText,
+	parseHeadingSkipPatterns,
 	stripFrontmatter,
 	StripMarkdownOptions,
 } from './text-utils';
 import { ElevenLabsProvider, getElevenLabsVoiceName } from './tts/elevenlabs-provider';
+
+const NULL_CHUNK_POSITION: ChunkPosition = { span: null, sectionSpan: null, sectionHeadingSpan: null };
+
+/** Where in the editor a `readText()` call's raw text corresponds to -- used to rebase estimated chunk spans (computed over that raw text) onto real document offsets. Omitted entirely for a selection read, which has no reliable base offset to rebase onto. */
+interface PositionBase {
+	/** Offset within the raw text passed to `readText()` where trackable (in-editor) content starts -- e.g. past a prepended title/properties preamble that has no corresponding editor text. */
+	rawTextOffset: number;
+	/** Offset within the actual document where that same trackable content starts -- e.g. past frontmatter, which `readText()`'s raw text never includes. */
+	fileOffset: number;
+	/** Length of the trackable content, for clipping spans that would otherwise run past it. */
+	length: number;
+}
 
 export type ReaderStatus = 'idle' | 'generating' | 'playing' | 'paused';
 export type AudioLinkStatus = 'none' | 'up-to-date' | 'outdated';
@@ -70,6 +84,8 @@ interface GenerationJob {
 	chunkReady: boolean[];
 	chunkInFlight: boolean[];
 	chunkDurations: (number | undefined)[];
+	/** Estimated editor position of each chunk (and its section), for highlighting/jump-to-current. See {@link computeChunkPositions}. */
+	positions: ChunkPosition[];
 	provider: ElevenLabsProvider;
 	sourceFileForSave: TFile | null;
 	/** Whether this job's audio has already been saved (triggered once every chunk finishes generating). */
@@ -322,6 +338,41 @@ export class Reader extends Events {
 		if (this.audio) this.audio.muted = muted;
 	}
 
+	/**
+	 * Estimated editor position of whatever's currently playing, at the given granularity -- used for both
+	 * the now-playing highlight and the "jump to current" buttons. Null whenever there's nothing to point
+	 * at: nothing playing, a saved file playing directly (no chunk/section structure at all), a selection
+	 * read (no reliable position to rebase onto), or the active chunk's position estimate is itself null
+	 * (e.g. it's entirely the spoken title/properties preamble).
+	 *
+	 * 'sentence' granularity estimates *which* sentence within the active chunk is playing from the
+	 * fraction of that chunk's audio elapsed so far -- there's no per-word/sentence timing from the TTS
+	 * provider to do better than that.
+	 */
+	getSpan(granularity: HighlightGranularity, sectionTitleOnly = false): { file: TFile; span: RawSpan } | null {
+		const job = this.activeJob;
+		if (!job || !job.file) return null;
+		const position = job.positions[this.state.chunkIndex];
+		if (!position) return null;
+
+		if (granularity === 'section') {
+			const span = sectionTitleOnly ? (position.sectionHeadingSpan ?? position.sectionSpan) : position.sectionSpan;
+			return span ? { file: job.file, span } : null;
+		}
+
+		if (granularity === 'chunk') {
+			return position.span ? { file: job.file, span: position.span } : null;
+		}
+
+		if (!position.span) return null;
+		const chunkText = job.chunks[this.state.chunkIndex] ?? '';
+		const sentenceSpans = estimateSentenceSpans(chunkText, position.span);
+		if (sentenceSpans.length === 0) return null;
+		const elapsedFraction = this.state.duration > 0 ? Math.min(0.999, this.state.currentTime / this.state.duration) : 0;
+		const index = Math.min(sentenceSpans.length - 1, Math.floor(elapsedFraction * sentenceSpans.length));
+		return { file: job.file, span: sentenceSpans[index]! };
+	}
+
 	private getStripMarkdownOptions(): StripMarkdownOptions {
 		return {
 			stripMarkdownComments: this.settings.stripMarkdownComments,
@@ -339,21 +390,40 @@ export class Reader extends Events {
 
 		const selection = target.editor.getSelection();
 		if (this.settings.readSelectionIfPresent && selection.length > 0) {
+			// No reliable offset to rebase estimated spans onto (the selection could start anywhere in the
+			// document) -- selections just don't get highlighting/jump-to-current.
 			await this.readText(selection, target.file, { allowSave: false });
 			return;
 		}
 
-		const body = stripFrontmatter(target.editor.getValue());
+		const fullValue = target.editor.getValue();
+		const body = stripFrontmatter(fullValue);
+		const fileOffset = fullValue.length - body.length;
 		const frontmatter = target.file ? this.app.metadataCache.getFileCache(target.file)?.frontmatter : undefined;
 		const preamble = buildReadingPreamble(target.file?.basename ?? null, frontmatter, {
 			readTitle: this.settings.readTitle,
 			readProperties: this.settings.readProperties,
 		});
 
-		await this.readText(preamble ? `${preamble}\n\n${body}` : body, target.file, { allowSave: true });
+		await this.readText(preamble ? `${preamble}\n\n${body}` : body, target.file, {
+			allowSave: true,
+			positionBase: { rawTextOffset: preamble ? preamble.length + 2 : 0, fileOffset, length: body.length },
+		});
 	}
 
-	private async readText(rawText: string, sourceFile: TFile | null, options: { allowSave: boolean }): Promise<void> {
+	private getSkipHeadingPatterns(): RegExp[] {
+		return parseHeadingSkipPatterns(this.settings.skipSectionHeadingPatterns);
+	}
+
+	private rebasePosition(position: ChunkPosition, base: PositionBase): ChunkPosition {
+		return {
+			span: rebaseSpan(position.span, base.rawTextOffset, base.length, base.fileOffset),
+			sectionSpan: rebaseSpan(position.sectionSpan, base.rawTextOffset, base.length, base.fileOffset),
+			sectionHeadingSpan: rebaseSpan(position.sectionHeadingSpan, base.rawTextOffset, base.length, base.fileOffset),
+		};
+	}
+
+	private async readText(rawText: string, sourceFile: TFile | null, options: { allowSave: boolean; positionBase?: PositionBase }): Promise<void> {
 		const apiKey = this.app.secretStorage.getSecret(this.settings.apiKeySecretId);
 		if (!apiKey) {
 			new Notice('Set an ElevenLabs API key in the Obsidian reader settings.');
@@ -361,7 +431,18 @@ export class Reader extends Events {
 		}
 
 		const charLimit = ELEVENLABS_MODEL_CHAR_LIMITS[this.settings.modelId] ?? DEFAULT_ELEVENLABS_CHAR_LIMIT;
-		let chunks = chunkNote(rawText, charLimit, this.settings.chunkerStyle, this.settings.maxHeadingDepth, this.getStripMarkdownOptions());
+		const built = computeChunkPositions(
+			rawText,
+			charLimit,
+			this.settings.chunkerStyle,
+			this.settings.maxHeadingDepth,
+			this.getStripMarkdownOptions(),
+			this.getSkipHeadingPatterns(),
+		);
+		let chunks = built.chunks;
+		let positions = options.positionBase
+			? built.positions.map((position) => this.rebasePosition(position, options.positionBase!))
+			: built.positions.map(() => NULL_CHUNK_POSITION);
 		if (chunks.length === 0) {
 			new Notice('Nothing to read.');
 			return;
@@ -371,12 +452,14 @@ export class Reader extends Events {
 		// preamble, since it's already part of chunks[0]), so the first TTS request returns sooner.
 		if (this.settings.startPlaybackImmediately && this.settings.quickStart) {
 			const [firstChunk, ...rest] = chunks;
+			const [firstPosition, ...restPositions] = positions;
 			if (firstChunk !== undefined) {
 				const leadPieces =
 					this.settings.quickStartUnit === 'words'
 						? chunkByWordCount(firstChunk, this.settings.quickStartWordCount)
 						: chunkBySentence(firstChunk, this.settings.quickStartCharCount);
 				chunks = [...leadPieces, ...rest];
+				positions = [...splitChunkPosition(firstPosition, leadPieces.map((piece) => piece.length)), ...restPositions];
 			}
 		}
 
@@ -402,6 +485,7 @@ export class Reader extends Events {
 			chunkReady: new Array<boolean>(chunks.length).fill(false),
 			chunkInFlight: new Array<boolean>(chunks.length).fill(false),
 			chunkDurations: new Array<number | undefined>(chunks.length).fill(undefined),
+			positions,
 			provider: new ElevenLabsProvider(apiKey, this.settings, () => this.handleRateLimited(job)),
 			sourceFileForSave: options.allowSave ? sourceFile : null,
 			savedForSession: false,
@@ -781,7 +865,14 @@ export class Reader extends Events {
 			const textToRead = preamble ? `${preamble}\n\n${body}` : body;
 
 			const charLimit = ELEVENLABS_MODEL_CHAR_LIMITS[this.settings.modelId] ?? DEFAULT_ELEVENLABS_CHAR_LIMIT;
-			const chunks = chunkNote(textToRead, charLimit, this.settings.chunkerStyle, this.settings.maxHeadingDepth, this.getStripMarkdownOptions());
+			const chunks = chunkNote(
+				textToRead,
+				charLimit,
+				this.settings.chunkerStyle,
+				this.settings.maxHeadingDepth,
+				this.getStripMarkdownOptions(),
+				this.getSkipHeadingPatterns(),
+			);
 			if (chunks.length === 0) return;
 
 			const provider = new ElevenLabsProvider(apiKey, this.settings);
@@ -818,7 +909,14 @@ export class Reader extends Events {
 		if (!textToRead.trim()) return null;
 
 		const charLimit = ELEVENLABS_MODEL_CHAR_LIMITS[this.settings.modelId] ?? DEFAULT_ELEVENLABS_CHAR_LIMIT;
-		const chunks = chunkNote(textToRead, charLimit, this.settings.chunkerStyle, this.settings.maxHeadingDepth, this.getStripMarkdownOptions());
+		const chunks = chunkNote(
+			textToRead,
+			charLimit,
+			this.settings.chunkerStyle,
+			this.settings.maxHeadingDepth,
+			this.getStripMarkdownOptions(),
+			this.getSkipHeadingPatterns(),
+		);
 		if (chunks.length === 0) return null;
 
 		const totalChars = textToRead.length;

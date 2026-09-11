@@ -19,7 +19,7 @@ export interface StripMarkdownOptions {
 	announceComments: boolean;
 }
 
-const DEFAULT_STRIP_MARKDOWN_OPTIONS: StripMarkdownOptions = {
+export const DEFAULT_STRIP_MARKDOWN_OPTIONS: StripMarkdownOptions = {
 	stripMarkdownComments: true,
 	stripCommentDelimiters: true,
 	announceComments: true,
@@ -73,7 +73,7 @@ export function stripMarkdown(markdown: string, options: StripMarkdownOptions = 
 }
 
 /** Splits text on sentence-ending punctuation without using a lookbehind (unsupported on iOS < 16.4). */
-function splitSentences(text: string): string[] {
+export function splitSentences(text: string): string[] {
 	return text.replace(/([.!?])\s+/g, `$1${SENTENCE_MARKER}`).split(SENTENCE_MARKER);
 }
 
@@ -194,12 +194,48 @@ function splitIntoSections(markdown: string, maxHeadingDepth: number): string[] 
 	return sections;
 }
 
+/** Parses one regex-per-line settings text into compiled (case-insensitive) patterns, silently dropping invalid ones rather than blocking the whole read. */
+export function parseHeadingSkipPatterns(raw: string): RegExp[] {
+	const patterns: RegExp[] = [];
+	for (const line of raw.split('\n')) {
+		const trimmed = line.trim();
+		if (!trimmed) continue;
+		try {
+			patterns.push(new RegExp(trimmed, 'i'));
+		} catch {
+			// Invalid regex -- skip it rather than failing the whole read over one bad pattern.
+		}
+	}
+	return patterns;
+}
+
+/** A section's heading text (the part after the `#`s), or null if it doesn't start with one -- e.g. the leading section before any heading. */
+export function sectionHeadingText(sectionText: string, maxHeadingDepth: number): string | null {
+	const firstLine = sectionText.split('\n', 1)[0] ?? '';
+	const match = new RegExp(`^#{1,${Math.max(1, maxHeadingDepth)}}\\s+(.*)$`).exec(firstLine);
+	return match ? (match[1] ?? '').trim() : null;
+}
+
+/** Whether a section's heading matches any of the "skip sections by heading" patterns -- never true for a section with no heading. */
+export function isHeadingSkipped(sectionText: string, maxHeadingDepth: number, patterns: RegExp[]): boolean {
+	if (patterns.length === 0) return false;
+	const heading = sectionHeadingText(sectionText, maxHeadingDepth);
+	return heading !== null && patterns.some((pattern) => pattern.test(heading));
+}
+
 /** Splits raw markdown by section (heading-delimited, up to maxHeadingDepth), then by sentence within each section. */
-function chunkMarkdownAware(markdown: string, maxLength: number, maxHeadingDepth: number, stripOptions: StripMarkdownOptions): string[] {
+function chunkMarkdownAware(
+	markdown: string,
+	maxLength: number,
+	maxHeadingDepth: number,
+	stripOptions: StripMarkdownOptions,
+	skipHeadingPatterns: RegExp[],
+): string[] {
 	const sections = splitIntoSections(stripComments(stripFrontmatter(markdown), stripOptions), maxHeadingDepth);
 	const chunks: string[] = [];
 
 	for (const section of sections) {
+		if (isHeadingSkipped(section, maxHeadingDepth, skipHeadingPatterns)) continue;
 		const stripped = stripMarkdown(section, stripOptions).trim();
 		if (!stripped) continue;
 		chunks.push(...chunkBySentence(stripped, maxLength));
@@ -208,16 +244,17 @@ function chunkMarkdownAware(markdown: string, maxLength: number, maxHeadingDepth
 	return chunks;
 }
 
-/** Splits raw markdown/text into TTS-request-sized chunks per the given style. */
+/** Splits raw markdown/text into TTS-request-sized chunks per the given style. `skipHeadingPatterns` only applies to the markdown-aware style. */
 export function chunkNote(
 	rawText: string,
 	maxLength: number,
 	style: ChunkerStyle,
 	maxHeadingDepth: number,
 	stripOptions: StripMarkdownOptions = DEFAULT_STRIP_MARKDOWN_OPTIONS,
+	skipHeadingPatterns: RegExp[] = [],
 ): string[] {
 	if (style === 'markdown-aware') {
-		return chunkMarkdownAware(rawText, maxLength, maxHeadingDepth, stripOptions);
+		return chunkMarkdownAware(rawText, maxLength, maxHeadingDepth, stripOptions, skipHeadingPatterns);
 	}
 	return chunkBySentence(stripMarkdown(rawText, stripOptions).trim(), maxLength);
 }

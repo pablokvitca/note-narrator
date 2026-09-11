@@ -417,3 +417,30 @@
 .obsidian-reader-background-job--minimal .obsidian-reader-generation-bar {
 	margin-bottom: 0;
 }
+
+/* --- Now-playing highlight (editor decorations) --- */
+.obsidian-reader-highlight-bg {
+	background-color: var(--text-highlight-bg);
+	border-radius: 2px;
+}
+
+.obsidian-reader-highlight-underline {
+	text-decoration: underline;
+	text-decoration-color: var(--interactive-accent);
+	text-decoration-thickness: 2px;
+	text-underline-offset: 3px;
+}
+
+.cm-line:has(.obsidian-reader-margin-marker) {
+	position: relative;
+}
+
+.obsidian-reader-margin-marker {
+	position: absolute;
+	top: 0;
+	right: calc(-1 * var(--size-4-6));
+	font-size: var(--font-ui-small);
+	line-height: var(--line-height-normal);
+	pointer-events: none;
+	opacity: 0.85;
+}

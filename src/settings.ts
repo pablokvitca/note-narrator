@@ -8,6 +8,8 @@ export type SaveAudioLocation = 'note-folder' | 'custom-folder';
 export type SaveVersioning = 'replace' | 'keep';
 export type QuickStartUnit = 'words' | 'characters';
 export type BackgroundJobDisplayStyle = 'full' | 'compact' | 'minimal';
+export type HighlightGranularity = 'sentence' | 'chunk' | 'section';
+export type HighlightStyle = 'margin-marker' | 'background' | 'underline';
 
 export interface ReaderSettings {
 	/** Name of the secret in Obsidian's SecretStorage holding the ElevenLabs API key. */
@@ -92,6 +94,18 @@ export interface ReaderSettings {
 	showPlaybackSpeedSlider: boolean;
 	/** What the player view's time readout shows: whole-read totals, today's per-chunk-only readout, or both. */
 	timeDisplayMode: TimeDisplayMode;
+	/** One regex pattern per line; a markdown-aware section whose heading matches any of them is skipped entirely when chunking/reading. Only applies to the markdown-aware chunker. */
+	skipSectionHeadingPatterns: string;
+	/** Highlight the currently-playing text in the editor as it's read. */
+	highlightWhileReading: boolean;
+	/** How much text lights up at once while highlighting. */
+	highlightGranularity: HighlightGranularity;
+	/** How the active text is marked in the editor. */
+	highlightStyle: HighlightStyle;
+	/** When highlightGranularity is 'section', highlight only the section's heading instead of its whole body. */
+	highlightSectionTitleOnly: boolean;
+	/** Show the "jump to current section/chunk" buttons in the player view's part-controls row. */
+	showJumpToCurrentButtons: boolean;
 }
 
 export const DEFAULT_SETTINGS: ReaderSettings = {
@@ -137,6 +151,12 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
 	showVolumeSlider: true,
 	showPlaybackSpeedSlider: true,
 	timeDisplayMode: 'current',
+	skipSectionHeadingPatterns: '',
+	highlightWhileReading: false,
+	highlightGranularity: 'sentence',
+	highlightStyle: 'margin-marker',
+	highlightSectionTitleOnly: false,
+	showJumpToCurrentButtons: true,
 };
 
 export const ELEVENLABS_MODELS: Record<string, string> = {
@@ -343,6 +363,56 @@ export class ReaderSettingTab extends PluginSettingTab {
 						desc: 'Headings at or shallower than this depth (1 = #, 2 = ## and shallower, etc.) start a new section. Deeper headings stay within their enclosing section.',
 						control: { type: 'slider', key: 'maxHeadingDepth', min: 1, max: 6, step: 1, defaultValue: DEFAULT_SETTINGS.maxHeadingDepth },
 						visible: () => settings.chunkerStyle === 'markdown-aware',
+					},
+					{
+						name: 'Skip sections by heading',
+						desc: 'One regex pattern per line. Any section whose heading text matches is skipped entirely when chunking/reading -- e.g. to always skip a "Changelog" or "Notes to self" section. Only applies to the Markdown-aware chunker above.',
+						control: { type: 'textarea', key: 'skipSectionHeadingPatterns', placeholder: 'Changelog\nNotes to self', rows: 3 },
+						visible: () => settings.chunkerStyle === 'markdown-aware',
+					},
+				],
+			},
+			{
+				type: 'group',
+				heading: 'Highlighting',
+				items: [
+					{
+						name: 'Highlight while reading',
+						desc: 'Highlight the currently-playing text in the editor as the note is read.',
+						control: { type: 'toggle', key: 'highlightWhileReading', defaultValue: DEFAULT_SETTINGS.highlightWhileReading },
+					},
+					{
+						name: 'Highlight granularity',
+						desc: "How much text lights up at once. Sentence tracks closest to what's actually being spoken. Chunk moves once per generated audio request. Section (Markdown-aware chunker only -- otherwise the whole note counts as one section) moves least often.",
+						control: {
+							type: 'dropdown',
+							key: 'highlightGranularity',
+							options: { sentence: 'Sentence', chunk: 'Chunk', section: 'Section' },
+							defaultValue: DEFAULT_SETTINGS.highlightGranularity,
+						},
+						visible: () => settings.highlightWhileReading,
+					},
+					{
+						name: 'Only highlight the section heading',
+						desc: "When granularity is Section, highlight just the section's heading line instead of its whole body.",
+						control: { type: 'toggle', key: 'highlightSectionTitleOnly', defaultValue: DEFAULT_SETTINGS.highlightSectionTitleOnly },
+						visible: () => settings.highlightWhileReading && settings.highlightGranularity === 'section',
+					},
+					{
+						name: 'Highlight style',
+						desc: 'How the active text is marked. Margin marker leaves the text untouched and shows a speaker icon in the right margin next to it. Background/Underline mark the text itself.',
+						control: {
+							type: 'dropdown',
+							key: 'highlightStyle',
+							options: { 'margin-marker': 'Margin marker (default)', background: 'Background wash', underline: 'Underline' },
+							defaultValue: DEFAULT_SETTINGS.highlightStyle,
+						},
+						visible: () => settings.highlightWhileReading,
+					},
+					{
+						name: 'Jump-to-current buttons',
+						desc: 'Show "Jump to current section" and "Jump to current chunk" buttons alongside Previous/Next part in the player view, to scroll the note to whatever\'s currently playing.',
+						control: { type: 'toggle', key: 'showJumpToCurrentButtons', defaultValue: DEFAULT_SETTINGS.showJumpToCurrentButtons },
 					},
 				],
 			},

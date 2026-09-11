@@ -178,6 +178,33 @@ export class PlayerView extends ItemView {
 		return file instanceof TFile ? file : null;
 	}
 
+	/** Scrolls (and reveals) the note to whatever's currently playing at the given granularity, opening it in a leaf if it isn't already open. No-op if nothing's currently playing there. */
+	private async jumpToCurrent(granularity: 'chunk' | 'section'): Promise<void> {
+		const result = this.plugin.reader.getSpan(granularity);
+		if (!result) return;
+
+		let view: MarkdownView | null = null;
+		for (const leaf of this.app.workspace.getLeavesOfType('markdown')) {
+			if (leaf.view instanceof MarkdownView && leaf.view.file?.path === result.file.path) {
+				view = leaf.view;
+				break;
+			}
+		}
+		if (!view) {
+			const leaf = this.app.workspace.getLeaf(false);
+			await leaf.openFile(result.file);
+			view = leaf.view instanceof MarkdownView ? leaf.view : null;
+		}
+		if (!view) return;
+
+		await this.app.workspace.revealLeaf(view.leaf);
+		const editor = view.editor;
+		const from = editor.offsetToPos(result.span.start);
+		const to = editor.offsetToPos(result.span.end);
+		editor.setSelection(from, to);
+		editor.scrollIntoView({ from, to }, true);
+	}
+
 	private async loadVoices(): Promise<void> {
 		const apiKey = this.app.secretStorage.getSecret(this.plugin.settings.apiKeySecretId);
 		if (!apiKey) return;
@@ -262,6 +289,14 @@ export class PlayerView extends ItemView {
 			const partsDisabled = !active || state.chunkCount <= 1;
 			const partControls = contentEl.createDiv({ cls: 'obsidian-reader-controls' });
 			this.createIconButton(partControls, 'step-back', 'Previous part', partsDisabled, () => this.plugin.reader.previousPart());
+
+			if (this.plugin.settings.showJumpToCurrentButtons) {
+				const sectionSpan = active ? this.plugin.reader.getSpan('section') : null;
+				const chunkSpan = active ? this.plugin.reader.getSpan('chunk') : null;
+				this.createIconButton(partControls, 'heading', 'Jump to current section', !sectionSpan, () => void this.jumpToCurrent('section'));
+				this.createIconButton(partControls, 'locate', 'Jump to current chunk', !chunkSpan, () => void this.jumpToCurrent('chunk'));
+			}
+
 			this.createIconButton(
 				partControls,
 				'step-forward',

@@ -1,4 +1,5 @@
 import { MarkdownView, Plugin, TFile } from 'obsidian';
+import { createHighlightExtension } from './highlight-extension';
 import { PlayerView, READER_VIEW_TYPE } from './player-view';
 import { Reader } from './reader';
 import { DEFAULT_SETTINGS, ReaderSettings, ReaderSettingTab } from './settings';
@@ -17,6 +18,7 @@ export default class ObsidianReaderPlugin extends Plugin {
 		this.reader = new Reader(this.app, this.settings);
 
 		this.registerView(READER_VIEW_TYPE, (leaf) => new PlayerView(leaf, this));
+		this.registerEditorExtension(createHighlightExtension(this));
 
 		this.addRibbonIcon('audio-lines', 'Read note aloud', () => {
 			void this.activateView();
