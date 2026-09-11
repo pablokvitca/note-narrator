@@ -28,6 +28,19 @@ interface PositionBase {
 	length: number;
 }
 
+/**
+ * Lets `getSpan()` work during "Play saved" playback, which has no `GenerationJob` (one opaque audio file,
+ * not chunks generated live). `cumulativeDurations[i]` is the end time (seconds) of chunk `i` within the
+ * concatenated file, from the per-chunk durations saved alongside it -- comparing that against the audio
+ * element's current time (which, for a single-file play, already *is* the whole-file elapsed time) finds
+ * which chunk is "playing" exactly, the same way a live read's `chunkIndex` is exact.
+ */
+interface SavedPlaybackTimeline {
+	file: TFile;
+	positions: ChunkPosition[];
+	cumulativeDurations: number[];
+}
+
 export type ReaderStatus = 'idle' | 'generating' | 'playing' | 'paused';
 export type AudioLinkStatus = 'none' | 'up-to-date' | 'outdated';
 
@@ -114,6 +127,8 @@ export class Reader extends Events {
 	private activeJob: GenerationJob | null = null;
 	/** Jobs generating (or queued to generate, or done) without being bound to playback. At most one has backgroundStatus 'generating' at a time. */
 	private backgroundJobs: GenerationJob[] = [];
+	/** Set while a saved file plays directly (no generation job), so `getSpan()` can still map elapsed playback time back to a chunk/section. Null whenever there's no such timeline (e.g. the note's since changed, or no chunk-durations property was saved). */
+	private savedPlaybackTimeline: SavedPlaybackTimeline | null = null;
 
 	constructor(
 		private app: App,
@@ -178,6 +193,7 @@ export class Reader extends Events {
 	/** Fully stops playback and cancels the active job's generation. Use `continueGeneratingInBackground()` instead to keep generating without playing. */
 	stop(): void {
 		this.sessionId++;
+		this.savedPlaybackTimeline = null;
 		if (this.activeJob) {
 			this.activeJob.cancelled = true;
 			this.activeJob = null;
@@ -347,17 +363,88 @@ export class Reader extends Events {
 	 * is itself null (e.g. it's entirely the spoken title/properties preamble).
 	 */
 	getSpan(granularity: HighlightGranularity, sectionTitleOnly = false): { file: TFile; span: RawSpan } | null {
-		const job = this.activeJob;
-		if (!job || !job.file) return null;
-		const position = job.positions[this.state.chunkIndex];
+		if (this.activeJob?.file) {
+			const position = this.activeJob.positions[this.state.chunkIndex];
+			return this.resolvePositionSpan(position, this.activeJob.file, granularity, sectionTitleOnly);
+		}
+
+		if (this.savedPlaybackTimeline) {
+			const timeline = this.savedPlaybackTimeline;
+			const index = this.chunkIndexAtTime(timeline.cumulativeDurations, this.state.currentTime);
+			return this.resolvePositionSpan(timeline.positions[index], timeline.file, granularity, sectionTitleOnly);
+		}
+
+		return null;
+	}
+
+	private resolvePositionSpan(
+		position: ChunkPosition | undefined,
+		file: TFile,
+		granularity: HighlightGranularity,
+		sectionTitleOnly: boolean,
+	): { file: TFile; span: RawSpan } | null {
 		if (!position) return null;
 
 		if (granularity === 'section') {
 			const span = sectionTitleOnly ? (position.sectionHeadingSpan ?? position.sectionSpan) : position.sectionSpan;
-			return span ? { file: job.file, span } : null;
+			return span ? { file, span } : null;
 		}
 
-		return position.span ? { file: job.file, span: position.span } : null;
+		return position.span ? { file, span: position.span } : null;
+	}
+
+	/** Which chunk index `time` (seconds elapsed in the concatenated file) falls into, per each chunk's cumulative end time. Clamps to the last chunk past the end, rather than returning an out-of-bounds index. */
+	private chunkIndexAtTime(cumulativeDurations: number[], time: number): number {
+		for (let i = 0; i < cumulativeDurations.length; i++) {
+			if (time < cumulativeDurations[i]!) return i;
+		}
+		return Math.max(0, cumulativeDurations.length - 1);
+	}
+
+	/**
+	 * Rebuilds a saved file's chunk timeline for highlighting/jump-to-current during "Play saved" -- only
+	 * when the note is still up to date with that saved audio (otherwise the note's current structure
+	 * can't be trusted to match what was actually generated) and the saved chunk-durations line up in count
+	 * with what re-chunking the note right now produces (a settings change since generation, e.g. a
+	 * different chunker or heading depth, could otherwise silently misalign every chunk after the first).
+	 * Null in any of those cases -- "no highlight during this saved playback" rather than a wrong one.
+	 */
+	private async buildSavedPlaybackTimeline(sourceFile: TFile): Promise<SavedPlaybackTimeline | null> {
+		try {
+			const status = await this.getAudioStatus(sourceFile);
+			if (status !== 'up-to-date') return null;
+
+			const frontmatter = this.app.metadataCache.getFileCache(sourceFile)?.frontmatter;
+			const durationsRaw = frontmatter?.[this.settings.audioChunkDurationsProperty] as unknown;
+			if (!Array.isArray(durationsRaw) || durationsRaw.length === 0) return null;
+			const chunkDurations = (durationsRaw as unknown[]).map((value) => (typeof value === 'number' ? value : NaN));
+			if (chunkDurations.some((duration) => !Number.isFinite(duration))) return null;
+
+			const fullValue = await this.app.vault.cachedRead(sourceFile);
+			const body = stripFrontmatter(fullValue);
+			const fileOffset = fullValue.length - body.length;
+			const preamble = buildReadingPreamble(sourceFile.basename, frontmatter, {
+				readTitle: this.settings.readTitle,
+				readProperties: this.settings.readProperties,
+			});
+			const rawText = preamble ? `${preamble}\n\n${body}` : body;
+			const positionBase: PositionBase = { rawTextOffset: preamble ? preamble.length + 2 : 0, fileOffset, length: body.length };
+
+			const { positions } = this.buildChunksAndPositions(rawText, positionBase);
+			if (positions.length !== chunkDurations.length) return null;
+
+			const cumulativeDurations: number[] = [];
+			let sum = 0;
+			for (const duration of chunkDurations) {
+				sum += duration;
+				cumulativeDurations.push(sum);
+			}
+
+			return { file: sourceFile, positions, cumulativeDurations };
+		} catch (error) {
+			console.error('Obsidian Reader: failed to build saved-playback highlight timeline', error);
+			return null;
+		}
 	}
 
 	private getStripMarkdownOptions(): StripMarkdownOptions {
@@ -410,13 +497,13 @@ export class Reader extends Events {
 		};
 	}
 
-	private async readText(rawText: string, sourceFile: TFile | null, options: { allowSave: boolean; positionBase?: PositionBase }): Promise<void> {
-		const apiKey = this.app.secretStorage.getSecret(this.settings.apiKeySecretId);
-		if (!apiKey) {
-			new Notice('Set an ElevenLabs API key in the Obsidian reader settings.');
-			return;
-		}
-
+	/**
+	 * The chunking + position-estimation pipeline shared by an actual read (`readText()`) and re-deriving
+	 * the same structure later for a saved file's playback (`buildSavedPlaybackTimeline()`) -- kept as one
+	 * implementation so the two can't silently drift apart (e.g. one applying quick-start's chunk-0 split
+	 * and the other not, which would misalign a saved file's chunk index against its content).
+	 */
+	private buildChunksAndPositions(rawText: string, positionBase: PositionBase | undefined): { chunks: string[]; positions: ChunkPosition[] } {
 		const charLimit = ELEVENLABS_MODEL_CHAR_LIMITS[this.settings.modelId] ?? DEFAULT_ELEVENLABS_CHAR_LIMIT;
 		const built = computeChunkPositions(
 			rawText,
@@ -427,13 +514,9 @@ export class Reader extends Events {
 			this.getSkipHeadingPatterns(),
 		);
 		let chunks = built.chunks;
-		let positions = options.positionBase
-			? built.positions.map((position) => this.rebasePosition(position, options.positionBase!))
+		let positions = positionBase
+			? built.positions.map((position) => this.rebasePosition(position, positionBase))
 			: built.positions.map(() => NULL_CHUNK_POSITION);
-		if (chunks.length === 0) {
-			new Notice('Nothing to read.');
-			return;
-		}
 
 		// Quick start: split the first chunk into a short lead-in plus the remainder (including the
 		// preamble, since it's already part of chunks[0]), so the first TTS request returns sooner.
@@ -448,6 +531,22 @@ export class Reader extends Events {
 				chunks = [...leadPieces, ...rest];
 				positions = [...splitChunkPosition(firstPosition, leadPieces.map((piece) => piece.length)), ...restPositions];
 			}
+		}
+
+		return { chunks, positions };
+	}
+
+	private async readText(rawText: string, sourceFile: TFile | null, options: { allowSave: boolean; positionBase?: PositionBase }): Promise<void> {
+		const apiKey = this.app.secretStorage.getSecret(this.settings.apiKeySecretId);
+		if (!apiKey) {
+			new Notice('Set an ElevenLabs API key in the Obsidian reader settings.');
+			return;
+		}
+
+		const { chunks, positions } = this.buildChunksAndPositions(rawText, options.positionBase);
+		if (chunks.length === 0) {
+			new Notice('Nothing to read.');
+			return;
 		}
 
 		this.stop();
@@ -679,10 +778,11 @@ export class Reader extends Events {
 
 		job.savedForSession = true;
 		const buffers = job.chunkBuffers.filter((buffer): buffer is ArrayBuffer => buffer !== undefined);
-		void this.saveAudioFile(buffers, job.sourceFileForSave);
+		const chunkDurations = job.chunkDurations.map((duration) => duration ?? 0);
+		void this.saveAudioFile(buffers, job.sourceFileForSave, chunkDurations);
 	}
 
-	private async saveAudioFile(chunks: ArrayBuffer[], sourceFile: TFile | null): Promise<void> {
+	private async saveAudioFile(chunks: ArrayBuffer[], sourceFile: TFile | null, chunkDurations: number[]): Promise<void> {
 		try {
 			const apiKey = this.app.secretStorage.getSecret(this.settings.apiKeySecretId);
 			const voiceName = apiKey ? await this.resolveVoiceName(apiKey) : this.settings.voiceId;
@@ -709,7 +809,7 @@ export class Reader extends Events {
 			}
 
 			if (this.settings.linkAudioInNote && sourceFile) {
-				await this.linkAudioInNote(audioFile, sourceFile);
+				await this.linkAudioInNote(audioFile, sourceFile, chunkDurations);
 			}
 		} catch (error) {
 			console.error('Obsidian Reader: failed to save audio file', error);
@@ -751,6 +851,7 @@ export class Reader extends Events {
 		delete frontmatter[this.settings.audioPathProperty];
 		delete frontmatter[this.settings.audioTimestampProperty];
 		delete frontmatter[this.settings.audioVoiceProperty];
+		delete frontmatter[this.settings.audioChunkDurationsProperty];
 		for (const key of this.settings.extraStaleHashExcludedProperties.split('\n')) {
 			const trimmed = key.trim();
 			if (trimmed) delete frontmatter[trimmed];
@@ -783,7 +884,7 @@ export class Reader extends Events {
 		});
 	}
 
-	private async linkAudioInNote(audioFile: TFile, sourceFile: TFile): Promise<void> {
+	private async linkAudioInNote(audioFile: TFile, sourceFile: TFile, chunkDurations: number[]): Promise<void> {
 		const link = this.app.fileManager.generateMarkdownLink(audioFile, sourceFile.path);
 		const hash = await this.computeStalenessHash(sourceFile);
 
@@ -794,6 +895,7 @@ export class Reader extends Events {
 			frontmatter[this.settings.audioPathProperty] = audioFile.path;
 			frontmatter[this.settings.audioTimestampProperty] = moment().toISOString(true);
 			frontmatter[this.settings.audioVoiceProperty] = this.settings.voiceId;
+			frontmatter[this.settings.audioChunkDurationsProperty] = chunkDurations.map((duration) => Math.round(duration * 100) / 100);
 		});
 		await cacheUpdated;
 
@@ -809,6 +911,7 @@ export class Reader extends Events {
 			delete frontmatter[this.settings.audioPathProperty];
 			delete frontmatter[this.settings.audioTimestampProperty];
 			delete frontmatter[this.settings.audioVoiceProperty];
+			delete frontmatter[this.settings.audioChunkDurationsProperty];
 		});
 		await cacheUpdated;
 
@@ -865,11 +968,14 @@ export class Reader extends Events {
 			const provider = new ElevenLabsProvider(apiKey, this.settings);
 
 			const buffers: ArrayBuffer[] = [];
+			const chunkDurations: number[] = [];
 			for (const chunk of chunks) {
-				buffers.push(await provider.synthesize(chunk));
+				const buffer = await provider.synthesize(chunk);
+				buffers.push(buffer);
+				chunkDurations.push(await this.decodeAudioDuration(buffer));
 			}
 
-			await this.saveAudioFile(buffers, file);
+			await this.saveAudioFile(buffers, file, chunkDurations);
 		} catch (error) {
 			console.error('Obsidian Reader: auto-generate on open failed', error);
 		}
@@ -955,6 +1061,10 @@ export class Reader extends Events {
 		this.stop();
 		const session = this.sessionId;
 
+		const timeline = sourceFile ? await this.buildSavedPlaybackTimeline(sourceFile) : null;
+		if (session !== this.sessionId) return;
+		this.savedPlaybackTimeline = timeline;
+
 		try {
 			const data = await this.app.vault.readBinary(audioFile);
 			if (session !== this.sessionId) return;
@@ -975,10 +1085,12 @@ export class Reader extends Events {
 			if (session !== this.sessionId) return;
 			await this.playChunk(null, data, 0, 1);
 			if (session !== this.sessionId) return;
+			this.savedPlaybackTimeline = null;
 			this.resetToIdle();
 		} catch (error) {
 			console.error('Obsidian Reader: failed to play saved audio', error);
 			new Notice(`Failed to play saved audio: ${error instanceof Error ? error.message : String(error)}`);
+			this.savedPlaybackTimeline = null;
 			this.resetToIdle();
 		}
 	}

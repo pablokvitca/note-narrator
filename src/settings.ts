@@ -46,6 +46,8 @@ export interface ReaderSettings {
 	audioTimestampProperty: string;
 	/** Frontmatter property the voice ID used to generate the audio is written to. */
 	audioVoiceProperty: string;
+	/** Frontmatter property each chunk's audio duration (seconds) is written to -- lets "Play saved" map elapsed playback time in the concatenated file back to a chunk, for highlighting/jump-to-current during saved playback. */
+	audioChunkDurationsProperty: string;
 	/**
 	 * Extra frontmatter property keys (besides the reader's own) to exclude when computing the staleness
 	 * hash, one per line — for properties other plugins/workflows auto-update that shouldn't count as
@@ -132,6 +134,7 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
 	audioPathProperty: 'reader_audio_path',
 	audioTimestampProperty: 'reader_audio_timestamp',
 	audioVoiceProperty: 'reader_audio_voice',
+	audioChunkDurationsProperty: 'reader_audio_chunk_durations',
 	extraStaleHashExcludedProperties: '',
 	showClearFilesButton: true,
 	autoCleanupMissingAudioProperties: true,
@@ -188,6 +191,7 @@ const FALLBACK_TEXT_KEYS: Partial<Record<keyof ReaderSettings, string>> = {
 	audioPathProperty: DEFAULT_SETTINGS.audioPathProperty,
 	audioTimestampProperty: DEFAULT_SETTINGS.audioTimestampProperty,
 	audioVoiceProperty: DEFAULT_SETTINGS.audioVoiceProperty,
+	audioChunkDurationsProperty: DEFAULT_SETTINGS.audioChunkDurationsProperty,
 };
 
 export class ReaderSettingTab extends PluginSettingTab {
@@ -627,6 +631,17 @@ export class ReaderSettingTab extends PluginSettingTab {
 						name: 'Voice property',
 						desc: "Frontmatter property the voice ID used to generate the audio is written to. Used to detect when the selected voice differs from the saved audio's voice.",
 						control: { type: 'text', key: 'audioVoiceProperty', placeholder: DEFAULT_SETTINGS.audioVoiceProperty, defaultValue: DEFAULT_SETTINGS.audioVoiceProperty },
+						visible: () => settings.saveAudioFile && settings.linkAudioInNote,
+					},
+					{
+						name: 'Chunk durations property',
+						desc: "Frontmatter property each chunk's audio duration is written to. Lets highlighting and jump-to-current work during \"Play saved\" too, by mapping elapsed time in the concatenated file back to a chunk -- only while the note is up to date with the saved audio.",
+						control: {
+							type: 'text',
+							key: 'audioChunkDurationsProperty',
+							placeholder: DEFAULT_SETTINGS.audioChunkDurationsProperty,
+							defaultValue: DEFAULT_SETTINGS.audioChunkDurationsProperty,
+						},
 						visible: () => settings.saveAudioFile && settings.linkAudioInNote,
 					},
 					{
