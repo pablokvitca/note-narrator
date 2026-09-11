@@ -1,4 +1,4 @@
-import { App, Notice, PluginSettingTab, SecretComponent, Setting, SettingDefinitionItem } from 'obsidian';
+import { App, Notice, PluginSettingTab, SecretComponent, Setting, SettingDefinitionItem, TextComponent } from 'obsidian';
 import ObsidianReaderPlugin from './main';
 import { ChunkerStyle } from './text-utils';
 import { TimeDisplayMode } from './time-utils';
@@ -374,9 +374,17 @@ export class ReaderSettingTab extends PluginSettingTab {
 					},
 					{
 						name: 'Quick start word count',
-						desc: 'Target size of the quick-start first chunk, in words.',
-						control: { type: 'number', key: 'quickStartWordCount', min: 1, step: 1, defaultValue: DEFAULT_SETTINGS.quickStartWordCount },
+						desc: `Target size of the quick-start first chunk, in words. Recommended: 50-300. Default: ${DEFAULT_SETTINGS.quickStartWordCount}.`,
 						visible: () => settings.startPlaybackImmediately && settings.quickStart && settings.quickStartUnit === 'words',
+						render: (setting) =>
+							this.renderNumberControlWithReset(setting, {
+								get: () => settings.quickStartWordCount,
+								set: (value) => {
+									settings.quickStartWordCount = value;
+								},
+								min: 1,
+								defaultValue: DEFAULT_SETTINGS.quickStartWordCount,
+							}),
 					},
 					{
 						name: 'Quick start character count',
@@ -398,20 +406,30 @@ export class ReaderSettingTab extends PluginSettingTab {
 					},
 					{
 						name: 'Max parallel chunk generation',
-						desc: 'How many chunks may be generating at the same time. Higher can finish long notes faster but makes more simultaneous ElevenLabs requests (and hits rate limits sooner).',
-						control: { type: 'number', key: 'maxParallelGeneration', min: 2, step: 1, defaultValue: DEFAULT_SETTINGS.maxParallelGeneration },
+						desc: `How many chunks may be generating at the same time. Higher can finish long notes faster but makes more simultaneous ElevenLabs requests (and hits rate limits sooner). Recommended: 2-5. Default: ${DEFAULT_SETTINGS.maxParallelGeneration}.`,
 						visible: () => settings.parallelGenerationEnabled,
+						render: (setting) =>
+							this.renderNumberControlWithReset(setting, {
+								get: () => settings.maxParallelGeneration,
+								set: (value) => {
+									settings.maxParallelGeneration = value;
+								},
+								min: 2,
+								defaultValue: DEFAULT_SETTINGS.maxParallelGeneration,
+							}),
 					},
 					{
 						name: 'Max parallel background chunk generation',
-						desc: 'How many chunks may generate at once for a note continuing in the background (via the panel\'s "Continue in background" button), independent of the setting above. Kept low by default so it doesn\'t compete with an actively-playing read.',
-						control: {
-							type: 'number',
-							key: 'maxBackgroundParallelGeneration',
-							min: 1,
-							step: 1,
-							defaultValue: DEFAULT_SETTINGS.maxBackgroundParallelGeneration,
-						},
+						desc: `How many chunks may generate at once for a note continuing in the background (via the panel's "Continue in background" button), independent of the setting above. Kept low by default so it doesn't compete with an actively-playing read. Recommended: 1-3. Default: ${DEFAULT_SETTINGS.maxBackgroundParallelGeneration}.`,
+						render: (setting) =>
+							this.renderNumberControlWithReset(setting, {
+								get: () => settings.maxBackgroundParallelGeneration,
+								set: (value) => {
+									settings.maxBackgroundParallelGeneration = value;
+								},
+								min: 1,
+								defaultValue: DEFAULT_SETTINGS.maxBackgroundParallelGeneration,
+							}),
 					},
 					{
 						name: 'Background job display',
@@ -435,8 +453,16 @@ export class ReaderSettingTab extends PluginSettingTab {
 					},
 					{
 						name: 'Skip button seconds',
-						desc: 'How many seconds the skip-forward and rewind buttons in the player view jump by.',
-						control: { type: 'number', key: 'skipSeconds', min: 1, step: 1, defaultValue: DEFAULT_SETTINGS.skipSeconds },
+						desc: `How many seconds the skip-forward and rewind buttons in the player view jump by. Recommended: 5-30. Default: ${DEFAULT_SETTINGS.skipSeconds}.`,
+						render: (setting) =>
+							this.renderNumberControlWithReset(setting, {
+								get: () => settings.skipSeconds,
+								set: (value) => {
+									settings.skipSeconds = value;
+								},
+								min: 1,
+								defaultValue: DEFAULT_SETTINGS.skipSeconds,
+							}),
 					},
 					{
 						name: 'Show volume slider in panel',
@@ -565,6 +591,40 @@ export class ReaderSettingTab extends PluginSettingTab {
 				],
 			},
 		];
+	}
+
+	/**
+	 * A numeric text input plus a "reset to default" extra button, for settings that need a value
+	 * unbounded above (so declarative `control: { type: 'number' }`, which can't add an extra button
+	 * alongside it, isn't enough here). Falls back to `defaultValue` on empty/invalid/below-`min` input,
+	 * same as the declarative number control does.
+	 */
+	private renderNumberControlWithReset(setting: Setting, options: { get: () => number; set: (value: number) => void; min: number; defaultValue: number }): void {
+		const { get, set, min, defaultValue } = options;
+		let textComponent: TextComponent;
+
+		setting.addText((text) => {
+			textComponent = text;
+			text.inputEl.type = 'number';
+			text.inputEl.min = String(min);
+			text.setValue(String(get()));
+			text.onChange(async (raw) => {
+				const parsed = Number(raw);
+				set(Number.isFinite(parsed) && parsed >= min ? Math.round(parsed) : defaultValue);
+				await this.plugin.saveSettings();
+			});
+		});
+
+		setting.addExtraButton((button) =>
+			button
+				.setIcon('rotate-ccw')
+				.setTooltip('Reset to default')
+				.onClick(async () => {
+					set(defaultValue);
+					textComponent.setValue(String(defaultValue));
+					await this.plugin.saveSettings();
+				}),
+		);
 	}
 
 	private async loadVoices(): Promise<void> {
