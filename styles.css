@@ -287,6 +287,7 @@
 .obsidian-reader-audio-status.is-up-to-date {
 	background-color: color-mix(in oklch, var(--color-green) 12%, transparent);
 	border-left-color: var(--text-success);
+	margin-bottom: var(--size-4-4);
 }
 
 .obsidian-reader-audio-status.is-outdated {
