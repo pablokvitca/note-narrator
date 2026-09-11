@@ -375,7 +375,7 @@ export class ReaderSettingTab extends PluginSettingTab {
 					{
 						name: 'Quick start word count',
 						desc: 'Target size of the quick-start first chunk, in words.',
-						control: { type: 'slider', key: 'quickStartWordCount', min: 20, max: 500, step: 10, defaultValue: DEFAULT_SETTINGS.quickStartWordCount },
+						control: { type: 'number', key: 'quickStartWordCount', min: 1, step: 1, defaultValue: DEFAULT_SETTINGS.quickStartWordCount },
 						visible: () => settings.startPlaybackImmediately && settings.quickStart && settings.quickStartUnit === 'words',
 					},
 					{
@@ -398,18 +398,17 @@ export class ReaderSettingTab extends PluginSettingTab {
 					},
 					{
 						name: 'Max parallel chunk generation',
-						desc: 'How many chunks may be generating at the same time. Higher can finish long notes faster but makes more simultaneous ElevenLabs requests.',
-						control: { type: 'slider', key: 'maxParallelGeneration', min: 2, max: 5, step: 1, defaultValue: DEFAULT_SETTINGS.maxParallelGeneration },
+						desc: 'How many chunks may be generating at the same time. Higher can finish long notes faster but makes more simultaneous ElevenLabs requests (and hits rate limits sooner).',
+						control: { type: 'number', key: 'maxParallelGeneration', min: 2, step: 1, defaultValue: DEFAULT_SETTINGS.maxParallelGeneration },
 						visible: () => settings.parallelGenerationEnabled,
 					},
 					{
 						name: 'Max parallel background chunk generation',
 						desc: 'How many chunks may generate at once for a note continuing in the background (via the panel\'s "Continue in background" button), independent of the setting above. Kept low by default so it doesn\'t compete with an actively-playing read.',
 						control: {
-							type: 'slider',
+							type: 'number',
 							key: 'maxBackgroundParallelGeneration',
 							min: 1,
-							max: 5,
 							step: 1,
 							defaultValue: DEFAULT_SETTINGS.maxBackgroundParallelGeneration,
 						},
@@ -435,9 +434,9 @@ export class ReaderSettingTab extends PluginSettingTab {
 						control: { type: 'slider', key: 'playbackRate', min: 0.5, max: 3, step: 0.05, defaultValue: DEFAULT_SETTINGS.playbackRate },
 					},
 					{
-						name: 'Skip amount',
+						name: 'Skip button seconds',
 						desc: 'How many seconds the skip-forward and rewind buttons in the player view jump by.',
-						control: { type: 'slider', key: 'skipSeconds', min: 5, max: 60, step: 5, defaultValue: DEFAULT_SETTINGS.skipSeconds },
+						control: { type: 'number', key: 'skipSeconds', min: 1, step: 1, defaultValue: DEFAULT_SETTINGS.skipSeconds },
 					},
 					{
 						name: 'Show volume slider in panel',
