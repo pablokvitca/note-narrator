@@ -97,7 +97,7 @@ interface GenerationJob {
 	chunkReady: boolean[];
 	chunkInFlight: boolean[];
 	chunkDurations: (number | undefined)[];
-	/** Estimated editor position of each chunk (and its section), for highlighting/jump-to-current. See {@link computeChunkPositions}. */
+	/** Estimated editor position of each chunk (and its section), for highlighting/scroll-to-current. See {@link computeChunkPositions}. */
 	positions: ChunkPosition[];
 	provider: ElevenLabsProvider;
 	sourceFileForSave: TFile | null;
@@ -356,7 +356,7 @@ export class Reader extends Events {
 
 	/**
 	 * Estimated editor position of whatever's currently playing, at the given granularity -- used for both
-	 * the now-playing highlight and the "jump to current" buttons. Both granularities are exact (driven by
+	 * the now-playing highlight and the "scroll to current" buttons. Both granularities are exact (driven by
 	 * which chunk is actually playing, a real event), not a time-based estimate. Null whenever there's
 	 * nothing to point at: nothing playing, a saved file playing directly (no chunk/section structure at
 	 * all), a selection read (no reliable position to rebase onto), or the active chunk's position estimate
@@ -402,7 +402,7 @@ export class Reader extends Events {
 	}
 
 	/**
-	 * Rebuilds a saved file's chunk timeline for highlighting/jump-to-current during "Play saved" -- only
+	 * Rebuilds a saved file's chunk timeline for highlighting/scroll-to-current during "Play saved" -- only
 	 * when the note is still up to date with that saved audio (otherwise the note's current structure
 	 * can't be trusted to match what was actually generated) and the saved chunk-durations line up in count
 	 * with what re-chunking the note right now produces (a settings change since generation, e.g. a
@@ -465,7 +465,7 @@ export class Reader extends Events {
 		const selection = target.editor.getSelection();
 		if (this.settings.readSelectionIfPresent && selection.length > 0) {
 			// No reliable offset to rebase estimated spans onto (the selection could start anywhere in the
-			// document) -- selections just don't get highlighting/jump-to-current.
+			// document) -- selections just don't get highlighting/scroll-to-current.
 			await this.readText(selection, target.file, { allowSave: false });
 			return;
 		}

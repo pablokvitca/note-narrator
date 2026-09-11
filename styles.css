@@ -187,10 +187,18 @@
 
 .obsidian-reader-controls {
 	display: flex;
+	flex-wrap: wrap;
 	align-items: center;
 	justify-content: center;
 	gap: var(--size-4-2);
 	margin-bottom: var(--size-4-4);
+}
+
+.obsidian-reader-controls-separator {
+	width: 1px;
+	height: var(--size-4-6);
+	background-color: var(--background-modifier-border);
+	flex-shrink: 0;
 }
 
 .obsidian-reader-icon-button {

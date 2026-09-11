@@ -178,8 +178,8 @@ export class PlayerView extends ItemView {
 		return file instanceof TFile ? file : null;
 	}
 
-	/** Scrolls (and reveals) the note to whatever's currently playing at the given granularity, opening it in a leaf if it isn't already open. No-op if nothing's currently playing there. */
-	private async jumpToCurrent(granularity: 'chunk' | 'section'): Promise<void> {
+	/** Scrolls (and reveals) the note to whatever's currently playing at the given granularity, opening it in a leaf if it isn't already open. No-op if nothing's currently playing there. Doesn't touch playback -- unlike Previous/Next part, it only moves the editor. */
+	private async scrollToCurrent(granularity: 'chunk' | 'section'): Promise<void> {
 		const result = this.plugin.reader.getSpan(granularity);
 		if (!result) return;
 
@@ -294,45 +294,41 @@ export class PlayerView extends ItemView {
 		this.timeEl = scroll.createDiv({ cls: 'obsidian-reader-time' });
 		this.updateProgress(state);
 
-		// 8. Previous/Next part + jump-to-current-section/chunk
+		// 8/9. Every playback control in one row: previous part, rewind, pause, skip, next part, stop, then
+		// (separated, since these scroll the note rather than affect playback) scroll-to-current-section/chunk.
 		{
 			const partsDisabled = !active || state.chunkCount <= 1;
-			const partControls = scroll.createDiv({ cls: 'obsidian-reader-controls' });
-			this.createIconButton(partControls, 'step-back', 'Previous part', partsDisabled, () => this.plugin.reader.previousPart());
+			const controls = scroll.createDiv({ cls: 'obsidian-reader-controls' });
 
-			if (this.plugin.settings.showJumpToCurrentButtons) {
-				const sectionSpan = active ? this.plugin.reader.getSpan('section') : null;
-				const chunkSpan = active ? this.plugin.reader.getSpan('chunk') : null;
-				this.createIconButton(partControls, 'heading', 'Jump to current section', !sectionSpan, () => void this.jumpToCurrent('section'));
-				this.createIconButton(partControls, 'locate', 'Jump to current chunk', !chunkSpan, () => void this.jumpToCurrent('chunk'));
-			}
+			this.createIconButton(controls, 'step-back', 'Previous part', partsDisabled, () => this.plugin.reader.previousPart());
+
+			this.createIconButton(controls, 'skip-back', `Rewind ${skipSeconds}s`, !active, () => this.plugin.reader.skip(-skipSeconds));
+
+			this.createIconButton(controls, state.status === 'paused' ? 'circle-play' : 'circle-pause', state.status === 'paused' ? 'Resume' : 'Pause', !active, () => {
+				if (state.status === 'playing') this.plugin.reader.pause();
+				else if (state.status === 'paused') this.plugin.reader.resume();
+			}).addClass('obsidian-reader-control-primary');
+
+			this.createIconButton(controls, 'skip-forward', `Skip forward ${skipSeconds}s`, !active, () => this.plugin.reader.skip(skipSeconds));
 
 			this.createIconButton(
-				partControls,
+				controls,
 				'step-forward',
 				'Next part',
 				partsDisabled || state.chunkIndex >= state.chunkCount - 1,
 				() => this.plugin.reader.nextPart(),
 			);
+
+			this.createIconButton(controls, 'square-stop', 'Stop', !active, () => this.plugin.reader.stop());
+
+			if (this.plugin.settings.showJumpToCurrentButtons) {
+				controls.createDiv({ cls: 'obsidian-reader-controls-separator' });
+				const sectionSpan = active ? this.plugin.reader.getSpan('section') : null;
+				const chunkSpan = active ? this.plugin.reader.getSpan('chunk') : null;
+				this.createIconButton(controls, 'heading', 'Scroll to current section', !sectionSpan, () => void this.scrollToCurrent('section'));
+				this.createIconButton(controls, 'locate', 'Scroll to current chunk', !chunkSpan, () => void this.scrollToCurrent('chunk'));
+			}
 		}
-
-		// 9. Rewind/Pause/Skip forward/Stop
-		const controls = scroll.createDiv({ cls: 'obsidian-reader-controls' });
-
-		this.createIconButton(controls, 'skip-back', `Rewind ${skipSeconds}s`, !active, () =>
-			this.plugin.reader.skip(-skipSeconds),
-		);
-
-		this.createIconButton(controls, state.status === 'paused' ? 'circle-play' : 'circle-pause', state.status === 'paused' ? 'Resume' : 'Pause', !active, () => {
-			if (state.status === 'playing') this.plugin.reader.pause();
-			else if (state.status === 'paused') this.plugin.reader.resume();
-		}).addClass('obsidian-reader-control-primary');
-
-		this.createIconButton(controls, 'skip-forward', `Skip forward ${skipSeconds}s`, !active, () =>
-			this.plugin.reader.skip(skipSeconds),
-		);
-
-		this.createIconButton(controls, 'square-stop', 'Stop', !active, () => this.plugin.reader.stop());
 
 		// 10. Playback speed
 		if (this.plugin.settings.showPlaybackSpeedSlider) {

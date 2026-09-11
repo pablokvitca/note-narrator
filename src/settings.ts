@@ -46,7 +46,7 @@ export interface ReaderSettings {
 	audioTimestampProperty: string;
 	/** Frontmatter property the voice ID used to generate the audio is written to. */
 	audioVoiceProperty: string;
-	/** Frontmatter property each chunk's audio duration (seconds) is written to -- lets "Play saved" map elapsed playback time in the concatenated file back to a chunk, for highlighting/jump-to-current during saved playback. */
+	/** Frontmatter property each chunk's audio duration (seconds) is written to -- lets "Play saved" map elapsed playback time in the concatenated file back to a chunk, for highlighting/scroll-to-current during saved playback. */
 	audioChunkDurationsProperty: string;
 	/**
 	 * Extra frontmatter property keys (besides the reader's own) to exclude when computing the staleness
@@ -112,7 +112,7 @@ export interface ReaderSettings {
 	highlightStyle: HighlightStyle;
 	/** When highlightGranularity is 'section', highlight only the section's heading instead of its whole body. */
 	highlightSectionTitleOnly: boolean;
-	/** Show the "jump to current section/chunk" buttons in the player view's part-controls row. */
+	/** Show the "scroll to current section/chunk" buttons in the player view's playback controls row. */
 	showJumpToCurrentButtons: boolean;
 }
 
@@ -420,8 +420,8 @@ export class ReaderSettingTab extends PluginSettingTab {
 						visible: () => settings.highlightWhileReading,
 					},
 					{
-						name: 'Jump-to-current buttons',
-						desc: 'Show "Jump to current section" and "Jump to current chunk" buttons alongside Previous/Next part in the player view, to scroll the note to whatever\'s currently playing.',
+						name: 'Scroll-to-current buttons',
+						desc: 'Show "Scroll to current section" and "Scroll to current chunk" buttons in the player view\'s playback controls, to scroll the note to whatever\'s currently playing without affecting playback itself.',
 						control: { type: 'toggle', key: 'showJumpToCurrentButtons', defaultValue: DEFAULT_SETTINGS.showJumpToCurrentButtons },
 					},
 				],
@@ -635,7 +635,7 @@ export class ReaderSettingTab extends PluginSettingTab {
 					},
 					{
 						name: 'Chunk durations property',
-						desc: "Frontmatter property each chunk's audio duration is written to. Lets highlighting and jump-to-current work during \"Play saved\" too, by mapping elapsed time in the concatenated file back to a chunk -- only while the note is up to date with the saved audio.",
+						desc: "Frontmatter property each chunk's audio duration is written to. Lets highlighting and scroll-to-current work during \"Play saved\" too, by mapping elapsed time in the concatenated file back to a chunk -- only while the note is up to date with the saved audio.",
 						control: {
 							type: 'text',
 							key: 'audioChunkDurationsProperty',
