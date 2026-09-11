@@ -423,10 +423,20 @@ export class Reader extends Events {
 			activeFile: sourceFile,
 		});
 
+		// Kicked off now and left running for the rest of the read -- runGenerationWorkerPool() is a
+		// continuous worker pool that claims the next not-yet-ready chunk as soon as a worker frees up,
+		// regardless of playback position, instead of the old fixed-lookahead prefetch scheme that stalled
+		// once its small window finished generating early and nothing re-triggered more until the play
+		// index itself advanced. It never touches playback's status/chunkIndex, so it can't fight with
+		// playFromIndex()'s own tracking of what's actually playing.
+		const windowSize = this.settings.parallelGenerationEnabled ? Math.max(1, this.settings.maxParallelGeneration) : 1;
+		const generation = this.runGenerationWorkerPool(job, windowSize);
+
 		if (!this.settings.startPlaybackImmediately) {
-			const windowSize = this.settings.parallelGenerationEnabled ? Math.max(1, this.settings.maxParallelGeneration) : 1;
-			const ok = await this.runGenerationWorkerPool(job, windowSize);
+			const ok = await generation;
 			if (!ok || job.cancelled || session !== this.sessionId) return;
+		} else {
+			void generation;
 		}
 
 		await this.playFromIndex(session, job, 0);
@@ -465,6 +475,9 @@ export class Reader extends Events {
 			return true;
 		} catch (error) {
 			if (job.cancelled) return false;
+			// Set before notifying (not just checked) so playFromIndex(), which can independently catch this
+			// same rejection concurrently, knows this failure was already handled and skips its own notice.
+			job.cancelled = true;
 			console.error('Obsidian Reader: failed to generate audio', error);
 			new Notice(`Failed to generate audio${job.file ? ` for "${job.file.basename}"` : ''}: ${error instanceof Error ? error.message : String(error)}`);
 			if (job === this.activeJob) {
@@ -493,7 +506,10 @@ export class Reader extends Events {
 			try {
 				audioData = await this.ensureChunkBuffer(job, index);
 			} catch (error) {
-				if (session !== this.sessionId) return;
+				// runGenerationWorkerPool() runs concurrently and can independently catch this same
+				// rejection -- the cancelled check lets only the first one to get here actually
+				// notify/reset, instead of showing the same failure twice.
+				if (session !== this.sessionId || job.cancelled) return;
 				console.error('Obsidian Reader: failed to read note aloud', error);
 				new Notice(`Failed to read note aloud: ${error instanceof Error ? error.message : String(error)}`);
 				job.cancelled = true;
@@ -502,12 +518,7 @@ export class Reader extends Events {
 				return;
 			}
 
-			// Checked before prefetching (not just after) so that if this job was just detached into the
-			// background (a lower parallel-generation window) while this await was in flight, this stale
-			// continuation doesn't still prefetch one more wave at the foreground window size.
 			if (session !== this.sessionId) return;
-			this.prefetchAhead(job, index);
-
 			const outcome = await this.playChunk(job, audioData, index, job.chunks.length);
 			if (session !== this.sessionId) return;
 
@@ -517,15 +528,6 @@ export class Reader extends Events {
 		if (session !== this.sessionId) return;
 		if (job === this.activeJob) this.activeJob = null;
 		this.resetToIdle();
-	}
-
-	/** Kicks off generation for the next chunks within the configured parallel-generation window (a no-op if disabled). */
-	private prefetchAhead(job: GenerationJob, fromIndex: number): void {
-		if (!this.settings.parallelGenerationEnabled || job.rateLimited) return;
-		const windowSize = Math.max(1, this.settings.maxParallelGeneration);
-		for (let offset = 1; offset < windowSize; offset++) {
-			this.prefetchChunkBuffer(job, fromIndex + offset);
-		}
 	}
 
 	private ensureChunkBuffer(job: GenerationJob, index: number): Promise<ArrayBuffer> {
@@ -602,13 +604,6 @@ export class Reader extends Events {
 		job.savedForSession = true;
 		const buffers = job.chunkBuffers.filter((buffer): buffer is ArrayBuffer => buffer !== undefined);
 		void this.saveAudioFile(buffers, job.sourceFileForSave);
-	}
-
-	private prefetchChunkBuffer(job: GenerationJob, index: number): void {
-		if (index < 0 || index >= job.chunks.length || job.chunkBuffers[index] || job.chunkPromises[index]) return;
-		void this.ensureChunkBuffer(job, index).catch((error: unknown) => {
-			console.error('Obsidian Reader: failed to prefetch chunk', error);
-		});
 	}
 
 	private async saveAudioFile(chunks: ArrayBuffer[], sourceFile: TFile | null): Promise<void> {

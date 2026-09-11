@@ -397,6 +397,15 @@ export class PlayerView extends ItemView {
 		return 'loader-2';
 	}
 
+	/** "X" for clearing a finished job from the list -- a trash can there would read as deleting the generated audio, not just the list entry. Queued/generating jobs still get the trash can, since discarding those really does cancel/throw away in-progress work. */
+	private backgroundJobRemoveIcon(job: BackgroundJobInfo): string {
+		return job.status === 'done' ? 'x' : 'trash-2';
+	}
+
+	private backgroundJobRemoveLabel(job: BackgroundJobInfo): string {
+		return job.status === 'done' ? 'Clear from list' : 'Discard background generation';
+	}
+
 	/** Makes a background-job row/card play that job on click or on Enter/Space when focused, like a real button. */
 	private makeBackgroundJobClickable(el: HTMLElement, jobId: number): void {
 		el.setAttribute('role', 'button');
@@ -462,8 +471,8 @@ export class PlayerView extends ItemView {
 		};
 
 		const discardButton = actions.createDiv({ cls: 'clickable-icon obsidian-reader-background-job-discard' });
-		setIcon(discardButton, 'trash-2');
-		discardButton.setAttribute('aria-label', job.status === 'done' ? 'Clear from list' : 'Discard background generation');
+		setIcon(discardButton, this.backgroundJobRemoveIcon(job));
+		discardButton.setAttribute('aria-label', this.backgroundJobRemoveLabel(job));
 		discardButton.onclick = (evt) => {
 			evt.stopPropagation();
 			this.plugin.reader.discardBackgroundJob(job.id);
@@ -486,7 +495,7 @@ export class PlayerView extends ItemView {
 		}
 
 		this.createBackgroundJobIconButton(row, 'play', 'Play', () => this.plugin.reader.playBackgroundJob(job.id));
-		this.createBackgroundJobIconButton(row, 'trash-2', job.status === 'done' ? 'Clear from list' : 'Discard background generation', () =>
+		this.createBackgroundJobIconButton(row, this.backgroundJobRemoveIcon(job), this.backgroundJobRemoveLabel(job), () =>
 			this.plugin.reader.discardBackgroundJob(job.id),
 		);
 	}
@@ -503,7 +512,7 @@ export class PlayerView extends ItemView {
 
 		const buttons = titleRow.createDiv({ cls: 'obsidian-reader-background-job-minimal-buttons' });
 		this.createBackgroundJobIconButton(buttons, 'play', 'Play', () => this.plugin.reader.playBackgroundJob(job.id));
-		this.createBackgroundJobIconButton(buttons, 'trash-2', job.status === 'done' ? 'Clear from list' : 'Discard background generation', () =>
+		this.createBackgroundJobIconButton(buttons, this.backgroundJobRemoveIcon(job), this.backgroundJobRemoveLabel(job), () =>
 			this.plugin.reader.discardBackgroundJob(job.id),
 		);
 
