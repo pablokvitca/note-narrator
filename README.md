@@ -15,7 +15,7 @@ An Obsidian plugin that reads your notes aloud using text-to-speech. MVP ships w
 
 ### Playback
 
-- One row of icon controls, in order: **Previous part**, **Rewind** (seconds configurable), **Pause/Resume**, **Skip forward**, **Next part**, **Stop**, then -- separated, since these scroll the note rather than touch playback -- **Scroll to current section** and **Scroll to current chunk** (see below). Previous/Next part jump immediately between chunks rather than waiting for the current one to finish.
+- One row of icon controls, in order: **Previous part**, **Rewind** (seconds configurable), **Pause/Resume**, **Skip forward**, **Next part**, **Stop**, then -- separated, since these scroll the note rather than touch playback -- **Scroll to current section** and **Scroll to current chunk** (see below). Previous/Next part jump immediately between chunks rather than waiting for the current one to finish. During **Play Saved**, they seek the saved file to the start of the next/previous chunk using its saved per-chunk durations, instead of being disabled the way they were before that data existed.
 - A live **Playback speed** slider (0.5x–3x, min/max and current value shown) that adjusts the current/next read without changing your configured default speed.
 - Progress display: elapsed / total / remaining time (remaining divides by playback speed), a "Part X of Y · Z% complete" line, and a segmented bar showing which chunks have finished generating.
 

@@ -291,6 +291,10 @@ export class Reader extends Events {
 
 	/** Jumps to the next chunk without waiting for the current one to finish playing. No-op past the last chunk. */
 	nextPart(): void {
+		if (this.savedPlaybackTimeline) {
+			this.seekToSavedChunk(this.state.chunkIndex + 1);
+			return;
+		}
 		if (!this.resolveCurrentChunk) return;
 		const resolve = this.resolveCurrentChunk;
 		this.resolveCurrentChunk = null;
@@ -299,10 +303,28 @@ export class Reader extends Events {
 
 	/** Jumps to the previous chunk (or restarts the current one if already on the first). */
 	previousPart(): void {
+		if (this.savedPlaybackTimeline) {
+			this.seekToSavedChunk(this.state.chunkIndex - 1);
+			return;
+		}
 		if (!this.resolveCurrentChunk) return;
 		const resolve = this.resolveCurrentChunk;
 		this.resolveCurrentChunk = null;
 		resolve('previous');
+	}
+
+	/**
+	 * During "Play saved" playback there's no per-chunk audio element to advance through (it's one
+	 * concatenated file) -- Previous/Next part instead seek the single `HTMLAudioElement` to the start of
+	 * the target chunk, per its cumulative saved duration. `index` is clamped into range, same as the
+	 * live-read version clamps at 0 rather than going negative.
+	 */
+	private seekToSavedChunk(index: number): void {
+		const timeline = this.savedPlaybackTimeline;
+		if (!timeline || !this.audio) return;
+		const clamped = Math.max(0, Math.min(index, timeline.cumulativeDurations.length - 1));
+		this.audio.currentTime = clamped === 0 ? 0 : timeline.cumulativeDurations[clamped - 1]!;
+		this.setState({ chunkIndex: clamped });
 	}
 
 	pause(): void {
@@ -1065,6 +1087,14 @@ export class Reader extends Events {
 		if (session !== this.sessionId) return;
 		this.savedPlaybackTimeline = timeline;
 
+		// Known exactly (not decoded per-chunk like a live read) since these come straight from the
+		// cumulative durations saved alongside the file -- enables real Previous/Next part, an accurate
+		// "Part X of Y", and a correct generation bar (every chunk is already generated, hence saved).
+		const chunkCount = timeline?.cumulativeDurations.length ?? 1;
+		const chunkDurations = timeline
+			? timeline.cumulativeDurations.map((end, i) => end - (i === 0 ? 0 : timeline.cumulativeDurations[i - 1]!))
+			: [undefined];
+
 		try {
 			const data = await this.app.vault.readBinary(audioFile);
 			if (session !== this.sessionId) return;
@@ -1073,17 +1103,17 @@ export class Reader extends Events {
 			this.setState({
 				status: 'playing',
 				chunkIndex: 0,
-				chunkCount: 1,
+				chunkCount,
 				currentTime: 0,
 				duration: 0,
-				chunkReady: [true],
-				chunkInFlight: [false],
-				chunkDurations: [undefined],
+				chunkReady: new Array<boolean>(chunkCount).fill(true),
+				chunkInFlight: new Array<boolean>(chunkCount).fill(false),
+				chunkDurations,
 				activeFile: sourceFile,
 			});
 
 			if (session !== this.sessionId) return;
-			await this.playChunk(null, data, 0, 1);
+			await this.playChunk(null, data, 0, chunkCount, timeline ?? undefined);
 			if (session !== this.sessionId) return;
 			this.savedPlaybackTimeline = null;
 			this.resetToIdle();
@@ -1121,7 +1151,8 @@ export class Reader extends Events {
 	}
 
 	/** `job` is null only for direct saved-file playback, which has no generation job and thus nothing to patch chunkDurations onto. */
-	private playChunk(job: GenerationJob | null, audioData: ArrayBuffer, index: number, count: number): Promise<ChunkOutcome> {
+	/** `savedTimeline`, when given, is a saved-playback timeline for the whole (single, concatenated) `audioData` -- used to keep `state.chunkIndex` in sync with elapsed time on every tick, since there's no per-chunk audio element to drive it here the way a live read's chunk-by-chunk loop does. */
+	private playChunk(job: GenerationJob | null, audioData: ArrayBuffer, index: number, count: number, savedTimeline?: SavedPlaybackTimeline): Promise<ChunkOutcome> {
 		return new Promise((resolve) => {
 			const blob = new Blob([audioData], { type: 'audio/mpeg' });
 			const url = URL.createObjectURL(blob);
@@ -1131,7 +1162,11 @@ export class Reader extends Events {
 			audio.muted = this.muted;
 			this.audio = audio;
 
-			const onTimeUpdate = () => this.setState({ currentTime: audio.currentTime, duration: audio.duration || 0 });
+			const onTimeUpdate = () => {
+				const patch: Partial<ReaderState> = { currentTime: audio.currentTime, duration: audio.duration || 0 };
+				if (savedTimeline) patch.chunkIndex = this.chunkIndexAtTime(savedTimeline.cumulativeDurations, audio.currentTime);
+				this.setState(patch);
+			};
 
 			const cleanup = () => {
 				// Harmless no-op when the 'ended'/'error' events triggered this (the audio has already
