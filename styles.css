@@ -432,18 +432,20 @@
 }
 
 /*
- * Rendered inline, immediately after the highlighted span, rather than absolutely positioned into a
- * literal right margin -- Obsidian's editor wraps long lines instead of scrolling horizontally, so
- * anything pushed past a line's own rendered width was silently clipped by the scroller and never
- * visible at all. Inline guarantees it's always on-screen, at the cost of sitting right after the text
- * instead of in the page's outer margin.
+ * A left-gutter marker (same mechanism as line-number/blame/diff gutters), not an inline widget --
+ * pushing content into a literal right margin got silently clipped by the editor's line-wrap scrolling,
+ * since that space doesn't actually exist as a real render target. The gutter column does.
  */
+.obsidian-reader-marker-gutter {
+	width: 1.4em;
+}
+
 .obsidian-reader-margin-marker {
-	display: inline-block;
-	margin-left: var(--size-2-2);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 100%;
 	font-size: var(--font-ui-small);
 	line-height: var(--line-height-normal);
-	vertical-align: middle;
-	pointer-events: none;
 	opacity: 0.85;
 }

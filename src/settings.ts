@@ -406,7 +406,7 @@ export class ReaderSettingTab extends PluginSettingTab {
 					},
 					{
 						name: 'Highlight style',
-						desc: 'How the active text is marked. Margin marker leaves the text untouched and inserts a small speaker icon right after it. Background/Underline mark the text itself.',
+						desc: 'How the active text is marked. Margin marker leaves the text untouched and shows a small speaker icon in the editor\'s left gutter next to it (same place line numbers show). Background/Underline mark the text itself.',
 						control: {
 							type: 'dropdown',
 							key: 'highlightStyle',
