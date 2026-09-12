@@ -4,6 +4,7 @@ import { registerCustomIcons } from './icons';
 import { PlayerView, READER_VIEW_TYPE } from './player-view';
 import { Reader } from './reader';
 import { DEFAULT_SETTINGS, ReaderSettings, ReaderSettingTab } from './settings';
+import { initTouchTooltipSupport } from './touch-tooltip';
 
 export default class ObsidianReaderPlugin extends Plugin {
 	settings!: ReaderSettings;
@@ -16,6 +17,7 @@ export default class ObsidianReaderPlugin extends Plugin {
 
 	async onload() {
 		registerCustomIcons();
+		initTouchTooltipSupport(this);
 		await this.loadSettings();
 		this.reader = new Reader(this.app, this.settings);
 

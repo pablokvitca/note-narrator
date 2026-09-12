@@ -1,4 +1,4 @@
-import { debounce, ItemView, MarkdownView, Menu, setIcon, setTooltip, Setting, TFile, WorkspaceLeaf } from 'obsidian';
+import { debounce, ItemView, MarkdownView, Menu, setIcon, Setting, TFile, WorkspaceLeaf } from 'obsidian';
 import { ConfirmModal } from './confirm-modal';
 import ObsidianReaderPlugin from './main';
 import { hasPendingGeneration, queuePosition } from './background-job';
@@ -6,6 +6,7 @@ import type { BackgroundJobInfo } from './background-job';
 import { PLAY_SAVED_ICON_ID } from './icons';
 import { AudioLinkStatus, ReaderState } from './reader';
 import { computeFullReadTimes, formatTimeDisplay } from './time-utils';
+import { attachTooltip } from './touch-tooltip';
 import { ElevenLabsVoice, listElevenLabsVoices } from './tts/elevenlabs-provider';
 
 export const READER_VIEW_TYPE = 'obsidian-reader-player';
@@ -376,12 +377,10 @@ export class PlayerView extends ItemView {
 					await this.plugin.saveSettings();
 				});
 			})
-			.addExtraButton((button) =>
-				button
-					.setIcon('refresh-cw')
-					.setTooltip('Refresh voice list from ElevenLabs')
-					.onClick(() => void this.loadVoices()),
-			);
+			.addExtraButton((button) => {
+				button.setIcon('refresh-cw').onClick(() => void this.loadVoices());
+				attachTooltip(button.extraSettingsEl, 'Refresh voice list from ElevenLabs');
+			});
 	}
 
 	private renderSpeedControl(container: HTMLElement): void {
@@ -414,15 +413,13 @@ export class PlayerView extends ItemView {
 					volumeSetting.setName(`Volume: ${this.plugin.reader.isMuted() ? 'Muted' : `${Math.round(value * 100)}%`}`);
 				}),
 		);
-		volumeSetting.addExtraButton((button) =>
-			button
-				.setIcon(isMuted ? 'volume-x' : 'volume-2')
-				.setTooltip(isMuted ? 'Unmute' : 'Mute')
-				.onClick(() => {
-					this.plugin.reader.setMuted(!this.plugin.reader.isMuted());
-					this.render();
-				}),
-		);
+		volumeSetting.addExtraButton((button) => {
+			button.setIcon(isMuted ? 'volume-x' : 'volume-2').onClick(() => {
+				this.plugin.reader.setMuted(!this.plugin.reader.isMuted());
+				this.render();
+			});
+			attachTooltip(button.extraSettingsEl, isMuted ? 'Unmute' : 'Mute');
+		});
 	}
 
 	private createIconButton(
@@ -434,7 +431,7 @@ export class PlayerView extends ItemView {
 	): HTMLElement {
 		const button = container.createDiv({ cls: 'clickable-icon obsidian-reader-icon-button' });
 		setIcon(button, icon);
-		setTooltip(button, label);
+		attachTooltip(button, label);
 		if (disabled) {
 			button.addClass('is-disabled');
 		} else {
@@ -483,7 +480,7 @@ export class PlayerView extends ItemView {
 	private createBackgroundJobIconButton(container: HTMLElement, icon: string, label: string, onClick: () => void): HTMLElement {
 		const button = container.createDiv({ cls: 'clickable-icon obsidian-reader-bgjob-icon-button' });
 		setIcon(button, icon);
-		setTooltip(button, label);
+		attachTooltip(button, label);
 		button.onclick = (evt) => {
 			evt.stopPropagation();
 			onClick();
@@ -533,7 +530,7 @@ export class PlayerView extends ItemView {
 
 		const discardButton = actions.createDiv({ cls: 'clickable-icon obsidian-reader-background-job-discard' });
 		setIcon(discardButton, this.backgroundJobRemoveIcon(job));
-		setTooltip(discardButton, this.backgroundJobRemoveLabel(job));
+		attachTooltip(discardButton, this.backgroundJobRemoveLabel(job));
 		discardButton.onclick = (evt) => {
 			evt.stopPropagation();
 			this.plugin.reader.discardBackgroundJob(job.id);
@@ -543,7 +540,7 @@ export class PlayerView extends ItemView {
 	private renderBackgroundJobCompact(container: HTMLElement, job: BackgroundJobInfo, allJobs: BackgroundJobInfo[]): void {
 		const row = container.createDiv({ cls: 'obsidian-reader-background-job obsidian-reader-background-job--compact' });
 		row.addClass(`is-${job.status}`);
-		setTooltip(row, this.backgroundJobLabel(job, allJobs));
+		attachTooltip(row, this.backgroundJobLabel(job, allJobs));
 		this.makeBackgroundJobClickable(row, job.id);
 
 		row.createSpan({ cls: 'obsidian-reader-background-job-icon' }, (el) => setIcon(el, this.backgroundJobIcon(job)));
@@ -564,7 +561,7 @@ export class PlayerView extends ItemView {
 	private renderBackgroundJobMinimal(container: HTMLElement, job: BackgroundJobInfo, allJobs: BackgroundJobInfo[]): void {
 		const card = container.createDiv({ cls: 'obsidian-reader-background-job obsidian-reader-background-job--minimal' });
 		card.addClass(`is-${job.status}`);
-		setTooltip(card, this.backgroundJobLabel(job, allJobs));
+		attachTooltip(card, this.backgroundJobLabel(job, allJobs));
 		this.makeBackgroundJobClickable(card, job.id);
 
 		const titleRow = card.createDiv({ cls: 'obsidian-reader-background-job-title-row' });
@@ -593,7 +590,7 @@ export class PlayerView extends ItemView {
 			if (this.plugin.settings.showClearFilesButton) {
 				const deleteButton = statusEl.createDiv({ cls: 'clickable-icon obsidian-reader-audio-status-delete' });
 				setIcon(deleteButton, 'trash-2');
-				setTooltip(deleteButton, 'Delete saved audio file');
+				attachTooltip(deleteButton, 'Delete saved audio file');
 				deleteButton.onclick = () => this.confirmClearReaderFiles(activeFile);
 			}
 		});
@@ -633,22 +630,29 @@ export class PlayerView extends ItemView {
 	/**
 	 * An icon + text label button for the primary-actions row. Returns the label span separately so
 	 * callers can update just the text later (e.g. Read -> Regenerate) via {@link setButtonLabel}
-	 * without disturbing the icon. Also sets `aria-label` from the same text -- the label itself is
-	 * hidden at narrow container widths (icon-only), and Obsidian shows a tooltip (hover, or long-press
-	 * on mobile) from a button's `aria-label`, so the accessible name doubles as that tooltip text.
+	 * without disturbing the icon. `tooltip` (defaulting to `label`) is attached once via
+	 * {@link attachTooltip} -- callers that need a longer/different tooltip than the visible label
+	 * (Cancel, Send to Background) must pass it here rather than calling attachTooltip again
+	 * themselves, which would double up its long-press listeners on the same button.
 	 */
-	private createLabeledButton(container: HTMLElement, cls: string, icon: string, label: string): { button: HTMLButtonElement; labelEl: HTMLElement } {
+	private createLabeledButton(
+		container: HTMLElement,
+		cls: string,
+		icon: string,
+		label: string,
+		tooltip: string = label,
+	): { button: HTMLButtonElement; labelEl: HTMLElement } {
 		const button = container.createEl('button', { cls });
 		setIcon(button.createSpan({ cls: 'obsidian-reader-button-icon' }), icon);
 		const labelEl = button.createSpan({ cls: 'obsidian-reader-button-label', text: label });
-		setTooltip(button, label);
+		attachTooltip(button, tooltip);
 		return { button, labelEl };
 	}
 
-	/** Updates both a labeled button's visible text and its tooltip (see {@link createLabeledButton}) together, so the icon-only tooltip never drifts from what a wide layout shows as text. */
+	/** Updates both a labeled button's visible text and its tooltip (see {@link createLabeledButton}) together, so the icon-only tooltip never drifts from what a wide layout shows as text. Only for buttons whose tooltip always matches their label -- Cancel/Send to Background set theirs once at creation instead. */
 	private setButtonLabel(button: HTMLButtonElement, labelEl: HTMLElement, text: string): void {
 		labelEl.setText(text);
-		setTooltip(button, text);
+		attachTooltip(button, text);
 	}
 
 	private renderPrimaryActions(container: HTMLElement, active: boolean, pendingGeneration: boolean): void {
@@ -669,12 +673,12 @@ export class PlayerView extends ItemView {
 
 		const { button: cancelButton } = this.createLabeledButton(actionsRow, 'obsidian-reader-cancel-button', 'octagon-x', 'Cancel');
 		cancelButton.disabled = !pendingGeneration;
-		setTooltip(cancelButton, 'Cancel generation');
+		attachTooltip(cancelButton, 'Cancel generation');
 		cancelButton.onclick = () => this.plugin.reader.stop();
 
 		const { button: backgroundButton } = this.createLabeledButton(actionsRow, 'obsidian-reader-background-button', 'layers', 'Send to Background');
 		backgroundButton.disabled = !pendingGeneration;
-		setTooltip(backgroundButton, 'Stop playback but keep generating the rest of this note in the background, so you can jump back into it later.');
+		attachTooltip(backgroundButton, 'Stop playback but keep generating the rest of this note in the background, so you can jump back into it later.');
 		backgroundButton.onclick = () => this.plugin.reader.continueGeneratingInBackground();
 
 		const activeFile = this.getActiveFile();
