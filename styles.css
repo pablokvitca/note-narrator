@@ -53,14 +53,21 @@
  * of pushing the main scroll area (above) down to nothing -- max-height keeps at least ~60% of the
  * panel available to everything else regardless of how many background jobs pile up.
  */
+/*
+ * Transparent rather than a matched color: --background-primary can differ from whatever the
+ * surrounding view container actually renders (e.g. it's pure black on mobile dark theme), which
+ * showed up as a mismatched black band around this region. Transparent always matches exactly, on
+ * every platform/theme, with nothing to keep in sync. The top border only ever shows when this
+ * element exists at all, which player-view.ts only does once there's at least one background job.
+ */
 .obsidian-reader-background-jobs-pinned {
 	flex: 0 1 auto;
 	max-height: 40%;
 	overflow-y: auto;
 	overflow-x: hidden;
-	padding: var(--rd-space-tight) var(--rd-scroll-padding);
+	padding: var(--rd-space-tight) 0;
 	border-top: 1px solid var(--background-modifier-border);
-	background-color: var(--background-primary);
+	background-color: transparent;
 }
 
 .obsidian-reader-background-jobs-pinned .obsidian-reader-background-jobs {
