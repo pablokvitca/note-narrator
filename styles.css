@@ -240,6 +240,31 @@
 	color: var(--interactive-accent);
 }
 
+/*
+ * These transport/queue controls are `clickable-icon` divs, not real `<button>` elements, so they
+ * never pick up Obsidian's own `button { height: var(--input-height) }` rule, which is what bumps
+ * a real button to `--touch-size-m` (44px) on mobile automatically. Bumped explicitly here to the
+ * same touch-size scale Obsidian's own native mobile controls use (e.g. the workspace drawer's
+ * nav-action-button, also sized off --touch-size-m) -- verified against the installed app's own
+ * app.css, not assumed.
+ */
+.is-mobile .obsidian-reader-icon-button {
+	width: var(--touch-size-m);
+	height: var(--touch-size-m);
+}
+
+.is-mobile .obsidian-reader-icon-button.obsidian-reader-control-primary {
+	width: var(--touch-size-l);
+	height: var(--touch-size-l);
+}
+
+.is-mobile .obsidian-reader-bgjob-icon-button,
+.is-mobile .obsidian-reader-audio-status-delete,
+.is-mobile .obsidian-reader-background-job-discard {
+	width: var(--touch-size-s);
+	height: var(--touch-size-s);
+}
+
 .obsidian-reader-icon-button.obsidian-reader-control-primary:hover:not(.is-disabled) {
 	color: var(--interactive-accent-hover);
 }
