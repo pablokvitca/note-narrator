@@ -1,6 +1,6 @@
 import { addIcon } from 'obsidian';
 
-/** A saved-audio file with a small play badge, for the "Play saved" action -- distinct from the plain `play` triangle used for playback controls. */
+/** A saved-audio file with a play triangle on its corner, for the "Play saved" action -- distinct from the plain `play` triangle used for playback controls. */
 export const PLAY_SAVED_ICON_ID = 'obsidian-reader-play-saved';
 
 /*
@@ -14,18 +14,22 @@ export const PLAY_SAVED_ICON_ID = 'obsidian-reader-play-saved';
  */
 const PLAY_SAVED_ICON_SVG = `
 <g transform="scale(4.1667)">
-<path d="M4 3h8l5 5v11a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-<path d="M12 3v5h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-<!-- A centered waveform (six bars), not a speaker glyph -- the file's main content. -->
-<path d="M6 12.5V15.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
-<path d="M8 11V17" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
-<path d="M10 10V18" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
-<path d="M12 10V18" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
-<path d="M14 11V17" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
-<path d="M16 12.5V15.5" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
-<!-- The play badge: a small circle + triangle, sitting on the file's bottom-right corner. -->
-<circle cx="17" cy="20" r="2.3" fill="none" stroke="currentColor" stroke-width="1.6"/>
-<path d="M18.6 20L16.2 21.4L16.2 18.6Z" fill="currentColor" stroke="none"/>
+<!-- File + waveform are shifted 1 unit up-left from the "natural" 24-unit layout (corner would
+     otherwise sit at (17,21)), purely to leave enough headroom in the bottom-right corner for a
+     play triangle large enough to read clearly without its tip clipping the 24-unit canvas edge. -->
+<path d="M3 2h8l5 5v11a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M11 2v5h5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+<!-- A centered two-peak waveform (seven bars), not a speaker glyph -- the file's main content. -->
+<path d="M3 12.5V14.5" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round"/>
+<path d="M4.8 10.3V16.7" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round"/>
+<path d="M6.7 11.7V15.3" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round"/>
+<path d="M8.5 12.5V14.5" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round"/>
+<path d="M10.3 11.7V15.3" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round"/>
+<path d="M12.2 10.3V16.7" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round"/>
+<path d="M14 12.5V14.5" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round"/>
+<!-- The play triangle: no circle around it, centroid at (16,20) -- the (shifted) file outline's
+     exact bottom-right corner. Enlarged (r 3.4 -> 4.2) now that the shift above gives it room. -->
+<path d="M20.2 20L13.9 23.6L13.9 16.4Z" fill="currentColor" stroke="none"/>
 </g>
 `;
 
