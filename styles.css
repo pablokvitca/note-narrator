@@ -44,8 +44,14 @@
 	}
 }
 
+/* Only the vertical spacing is compacted here -- horizontal stays Obsidian's own default (16px),
+   which the earlier `padding: var(--rd-space-tight) 0` accidentally zeroed out entirely, on every
+   width, for the Voice/Speed/Volume rows. */
 .obsidian-reader-player-view .setting-item {
-	padding: var(--rd-space-tight) 0;
+	padding-top: var(--rd-space-tight);
+	padding-bottom: var(--rd-space-tight);
+	padding-left: var(--size-4-4);
+	padding-right: var(--size-4-4);
 }
 
 /* Everything except the background-jobs queue scrolls in here; the queue itself stays pinned below it. */
