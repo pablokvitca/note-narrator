@@ -96,6 +96,8 @@ export interface ReaderSettings {
 	maxBackgroundParallelGeneration: number;
 	/** How the panel shows queued/generating/done background jobs: a full callout with text buttons, a compact pill row, or a minimal card -- all with icon buttons and click-to-play. */
 	backgroundJobDisplayStyle: BackgroundJobDisplayStyle;
+	/** Show Play Saved/Read/Cancel/Send to Background as icon-only buttons (with the label as a tooltip) at every panel size, instead of icon + text. */
+	compactButtons: boolean;
 	/** Show the volume slider + mute button row in the player view. */
 	showVolumeSlider: boolean;
 	/** Show the playback speed slider row in the player view. */
@@ -157,6 +159,7 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
 	maxParallelGeneration: 2,
 	maxBackgroundParallelGeneration: 1,
 	backgroundJobDisplayStyle: 'minimal',
+	compactButtons: false,
 	showVolumeSlider: true,
 	showPlaybackSpeedSlider: true,
 	timeDisplayMode: 'current',
@@ -543,6 +546,11 @@ export class ReaderSettingTab extends PluginSettingTab {
 								min: 1,
 								defaultValue: DEFAULT_SETTINGS.skipSeconds,
 							}),
+					},
+					{
+						name: 'Compact buttons',
+						desc: 'Show Play Saved, Read, Cancel, and Send to Background as icon-only buttons, with the full name as a tooltip on hover/long-press, instead of icon + text. Applies at every panel size, not just narrow ones.',
+						control: { type: 'toggle', key: 'compactButtons', defaultValue: DEFAULT_SETTINGS.compactButtons },
 					},
 					{
 						name: 'Show volume slider in panel',

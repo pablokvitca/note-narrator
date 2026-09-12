@@ -24,20 +24,15 @@
 		--rd-space-tight: var(--size-4-1);
 		--rd-scroll-padding: var(--size-4-3);
 	}
+}
 
-	/* Icon-only primary actions -- the button keeps its full text as `aria-label`, so Obsidian still
-	   shows it as a tooltip on hover/long-press even with the visible label hidden. */
-	.obsidian-reader-primary-actions .obsidian-reader-button-label {
-		display: none;
-	}
-
-	.obsidian-reader-slider-setting {
-		display: none;
-	}
-
-	.obsidian-reader-slider-compact {
-		display: inline-flex;
-	}
+/*
+ * Icon-only primary actions -- opt-in via the "Compact buttons" setting, at every panel size (not
+ * width-triggered). The button keeps its full text as `aria-label` regardless, so Obsidian still
+ * shows it as a tooltip on hover/long-press even with the visible label hidden.
+ */
+.obsidian-reader-primary-actions.is-compact .obsidian-reader-button-label {
+	display: none;
 }
 
 .obsidian-reader-player-view .setting-item {
@@ -314,8 +309,7 @@
 
 .is-mobile .obsidian-reader-bgjob-icon-button,
 .is-mobile .obsidian-reader-audio-status-delete,
-.is-mobile .obsidian-reader-background-job-discard,
-.is-mobile .obsidian-reader-slider-popover-extra {
+.is-mobile .obsidian-reader-background-job-discard {
 	width: var(--touch-size-s);
 	height: var(--touch-size-s);
 }
@@ -337,90 +331,6 @@
 	background-color: var(--background-modifier-hover);
 	border-radius: var(--radius-s);
 	padding: 1px var(--size-2-2);
-}
-
-/*
- * The narrow-layout icon+value pill for playback speed/volume -- hidden by default, shown only under
- * the container query's narrow breakpoint (see the top of this file), where it replaces the full
- * Setting row (.obsidian-reader-slider-setting, hidden there instead).
- */
-.obsidian-reader-slider-compact {
-	display: none;
-	align-items: center;
-	gap: var(--size-2-2);
-	width: 100%;
-	padding: var(--size-2-3) var(--size-4-2);
-	margin-bottom: var(--size-2-2);
-	border-radius: var(--radius-s);
-	color: var(--text-normal);
-	cursor: pointer;
-}
-
-.obsidian-reader-slider-compact:hover {
-	background-color: var(--background-modifier-hover);
-}
-
-.obsidian-reader-slider-compact-icon {
-	display: flex;
-	flex-shrink: 0;
-	color: var(--text-muted);
-}
-
-.obsidian-reader-slider-compact-icon svg {
-	width: var(--icon-s);
-	height: var(--icon-s);
-}
-
-.obsidian-reader-slider-compact-value {
-	font-size: var(--font-ui-smaller);
-	font-variant-numeric: tabular-nums;
-	color: var(--text-muted);
-}
-
-/* A vertical pill slider (à la iOS Control Center), floated above/below its trigger pill. Appended
-   to document.body, so it's positioned in fixed/viewport coordinates, not relative to the panel. */
-.obsidian-reader-slider-popover {
-	position: fixed;
-	z-index: var(--layer-popover, 70);
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	gap: var(--size-4-2);
-	padding: var(--size-4-2) var(--size-2-2);
-	border-radius: var(--radius-l, 12px);
-	background-color: var(--background-secondary);
-	box-shadow: var(--shadow-l, 0 8px 24px rgba(0, 0, 0, 0.35));
-	border: 1px solid var(--background-modifier-border);
-}
-
-.obsidian-reader-slider-popover-value {
-	font-size: var(--font-ui-smaller);
-	font-variant-numeric: tabular-nums;
-	color: var(--text-muted);
-}
-
-.obsidian-reader-slider-track {
-	position: relative;
-	width: var(--size-4-8);
-	height: 140px;
-	border-radius: var(--size-4-4);
-	background-color: var(--background-modifier-border);
-	overflow: hidden;
-	touch-action: none;
-	cursor: pointer;
-}
-
-.obsidian-reader-slider-fill {
-	position: absolute;
-	bottom: 0;
-	left: 0;
-	width: 100%;
-	background-color: var(--interactive-accent);
-}
-
-.obsidian-reader-slider-popover-extra {
-	width: var(--size-4-6);
-	height: var(--size-4-6);
 }
 
 .obsidian-reader-audio-status {
