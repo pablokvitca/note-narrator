@@ -18,7 +18,7 @@ const PLAY_SAVED_ICON_SVG = `
 <path d="M12 3v5h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
 <path d="M6.5 10.3h1.3l2-1.5v6.4l-2-1.5H6.5z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
 <!-- Just the play triangle, no badge circle -- centered exactly on the file's bottom-right corner (17,21), so it reads as a small marker sitting on that corner rather than a separate badge. -->
-<path d="M19.2 21L15.9 22.9L15.9 19.1Z" fill="currentColor" stroke="none"/>
+<path d="M20.2 21L15.4 23.8L15.4 18.2Z" fill="currentColor" stroke="none"/>
 </g>
 `;
 
