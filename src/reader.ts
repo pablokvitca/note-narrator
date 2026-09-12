@@ -254,6 +254,11 @@ export class Reader extends Events {
 	playBackgroundJob(jobId: number): void {
 		const job = this.backgroundJobs.find((j) => j.id === jobId);
 		if (!job) return;
+		this.adoptBackgroundJob(job);
+	}
+
+	/** Shared by `playBackgroundJob()` and `readText()` re-adopting a matching in-progress job: promotes a background job to active and starts playing it from the beginning. */
+	private adoptBackgroundJob(job: GenerationJob): void {
 		this.backgroundJobs = this.backgroundJobs.filter((j) => j !== job);
 		const wasGenerating = job.backgroundStatus === 'generating';
 		this.publishBackgroundJobs();
@@ -550,9 +555,19 @@ export class Reader extends Events {
 			return;
 		}
 
+		// Re-reading a note that already has a background job (queued, generating, or done) adopts that job
+		// in place rather than discarding its progress -- the same outcome as clicking the job's card, just
+		// triggered from Read instead. Only for a full-note read: a selection read's text won't match the
+		// background job's chunks, so that case still falls through to discarding below.
+		if (sourceFile && options.allowSave) {
+			const existing = this.backgroundJobs.find((job) => job.file?.path === sourceFile.path);
+			if (existing) {
+				this.adoptBackgroundJob(existing);
+				return;
+			}
+		}
+
 		this.stop();
-		// Notes already queued/generating in the background can't be adopted mid-flight -- starting a
-		// fresh read for the same file discards them rather than trying to merge in-progress buffers.
 		if (sourceFile) {
 			for (const existing of this.backgroundJobs.filter((job) => job.file?.path === sourceFile.path)) {
 				this.discardBackgroundJob(existing.id);
