@@ -41,6 +41,9 @@ export class PlayerView extends ItemView {
 	private chunkProgressEl: HTMLElement | null = null;
 	private lastStructuralKey: string | null = null;
 
+	/** The currently-open compact speed/volume slider popover (narrow-width layout only), if any. Its anchor button is torn down by every render(), so it's simplest to always dismiss on render() rather than try to keep it pinned to a since-replaced element -- see {@link dismissPopover}. */
+	private openPopover: { el: HTMLElement; cleanup: () => void } | null = null;
+
 	constructor(
 		leaf: WorkspaceLeaf,
 		private plugin: ObsidianReaderPlugin,
@@ -58,6 +61,10 @@ export class PlayerView extends ItemView {
 
 	getIcon(): string {
 		return 'audio-lines';
+	}
+
+	async onClose(): Promise<void> {
+		this.dismissPopover();
 	}
 
 	async onOpen(): Promise<void> {
@@ -226,6 +233,8 @@ export class PlayerView extends ItemView {
 	}
 
 	private render(): void {
+		this.dismissPopover();
+
 		const { contentEl } = this;
 		contentEl.empty();
 		contentEl.addClass('obsidian-reader-player-view');
@@ -383,35 +392,63 @@ export class PlayerView extends ItemView {
 			});
 	}
 
+	/** Builds a Setting name as [icon][label] -- always in that order, at every width. The label itself hides at the narrow container breakpoint (see the `.obsidian-reader-setting-label` CSS rule); the icon never does, so there's always something to the left of it identifying the row. */
+	private buildSettingNameWithIcon(icon: string, label: string): DocumentFragment {
+		return createFragment((frag) => {
+			const wrapper = frag.createSpan({ cls: 'obsidian-reader-setting-name' });
+			setIcon(wrapper.createSpan({ cls: 'obsidian-reader-setting-icon' }), icon);
+			wrapper.createSpan({ cls: 'obsidian-reader-setting-label', text: label });
+		});
+	}
+
+	/**
+	 * Playback speed: icon + "Playback speed" (no baked-in value -- Obsidian's own SliderComponent
+	 * already shows the current value inline next to the slider by default, so repeating it in the
+	 * label would just be redundant text to keep in sync). Full row visible on wide layouts;
+	 * collapses to just the icon (opening a vertical popover slider on tap) under the narrow
+	 * container breakpoint, where the horizontal slider doesn't have room to be usable.
+	 */
 	private renderSpeedControl(container: HTMLElement): void {
 		const currentRate = this.plugin.reader.getPlaybackRate();
-		const speedSetting = new Setting(container).setName(`Playback speed: ${currentRate.toFixed(2)}x`);
+		const formatSpeed = (value: number) => `${value.toFixed(2)}x`;
+
+		const speedSetting = new Setting(container).setName(this.buildSettingNameWithIcon('gauge', 'Playback speed'));
+		speedSetting.settingEl.addClass('obsidian-reader-slider-setting');
 		speedSetting.addSlider((slider) =>
 			slider
 				.setLimits(SPEED_MIN, SPEED_MAX, 0.05)
 				.setValue(currentRate)
-				.onChange((value) => {
-					this.plugin.reader.setPlaybackRate(value);
-					speedSetting.setName(`Playback speed: ${value.toFixed(2)}x`);
-				}),
+				.onChange((value) => this.plugin.reader.setPlaybackRate(value)),
 		);
 		const speedRange = speedSetting.controlEl.createDiv({ cls: 'obsidian-reader-speed-range' });
-		speedRange.createSpan({ cls: 'obsidian-reader-speed-bound', text: `${SPEED_MIN.toFixed(2)}x` });
-		speedRange.createSpan({ cls: 'obsidian-reader-speed-bound', text: `${SPEED_MAX.toFixed(2)}x` });
+		speedRange.createSpan({ cls: 'obsidian-reader-speed-bound', text: formatSpeed(SPEED_MIN) });
+		speedRange.createSpan({ cls: 'obsidian-reader-speed-bound', text: formatSpeed(SPEED_MAX) });
+
+		this.renderCompactPill(container, 'gauge', 'Playback speed', (anchor) =>
+			this.openSliderPopover(anchor, {
+				min: SPEED_MIN,
+				max: SPEED_MAX,
+				step: 0.05,
+				value: this.plugin.reader.getPlaybackRate(),
+				format: formatSpeed,
+				onChange: (value) => this.plugin.reader.setPlaybackRate(value),
+			}),
+		);
 	}
 
+	/** Volume: same icon/label/popover split as {@link renderSpeedControl}. The mute extra-button stays visible at every width (it's already icon-only and touch-sized) regardless of whether the row is showing its full slider or its compact pill. */
 	private renderVolumeControl(container: HTMLElement): void {
 		const isMuted = this.plugin.reader.isMuted();
 		const currentVolume = this.plugin.reader.getVolume();
-		const volumeSetting = new Setting(container).setName(`Volume: ${isMuted ? 'Muted' : `${Math.round(currentVolume * 100)}%`}`);
+		const formatVolume = (value: number) => (this.plugin.reader.isMuted() ? 'Muted' : `${Math.round(value * 100)}%`);
+
+		const volumeSetting = new Setting(container).setName(this.buildSettingNameWithIcon(isMuted ? 'volume-x' : 'volume-2', 'Volume'));
+		volumeSetting.settingEl.addClass('obsidian-reader-slider-setting');
 		volumeSetting.addSlider((slider) =>
 			slider
 				.setLimits(VOLUME_MIN, VOLUME_MAX, 0.05)
 				.setValue(currentVolume)
-				.onChange((value) => {
-					this.plugin.reader.setVolume(value);
-					volumeSetting.setName(`Volume: ${this.plugin.reader.isMuted() ? 'Muted' : `${Math.round(value * 100)}%`}`);
-				}),
+				.onChange((value) => this.plugin.reader.setVolume(value)),
 		);
 		volumeSetting.addExtraButton((button) => {
 			button.setIcon(isMuted ? 'volume-x' : 'volume-2').onClick(() => {
@@ -420,6 +457,156 @@ export class PlayerView extends ItemView {
 			});
 			attachTooltip(button.extraSettingsEl, isMuted ? 'Unmute' : 'Mute');
 		});
+
+		this.renderCompactPill(container, isMuted ? 'volume-x' : 'volume-2', 'Volume', (anchor) =>
+			this.openSliderPopover(anchor, {
+				min: VOLUME_MIN,
+				max: VOLUME_MAX,
+				step: 0.05,
+				value: this.plugin.reader.getVolume(),
+				format: formatVolume,
+				onChange: (value) => this.plugin.reader.setVolume(value),
+			}),
+		);
+	}
+
+	/** The narrow-layout pill: icon only (no value text -- the popover it opens shows that live), opening a popover slider on click. Hidden except under the container query's narrow breakpoint -- see the `.obsidian-reader-slider-compact` CSS rule. */
+	private renderCompactPill(container: HTMLElement, icon: string, label: string, onOpen: (anchor: HTMLElement) => void): HTMLElement {
+		const pill = container.createDiv({ cls: 'obsidian-reader-slider-compact' });
+		pill.setAttribute('role', 'button');
+		pill.setAttribute('tabindex', '0');
+		attachTooltip(pill, label);
+		setIcon(pill.createSpan({ cls: 'obsidian-reader-slider-compact-icon' }), icon);
+
+		const toggle = () => {
+			if (this.openPopover) {
+				this.dismissPopover();
+				return;
+			}
+			onOpen(pill);
+		};
+		pill.onclick = toggle;
+		pill.onkeydown = (evt) => {
+			if (evt.key !== 'Enter' && evt.key !== ' ') return;
+			evt.preventDefault();
+			toggle();
+		};
+
+		return pill;
+	}
+
+	/** Removes the currently-open slider popover (if any) and its document-level listeners. Safe to call when nothing is open. */
+	private dismissPopover(): void {
+		if (!this.openPopover) return;
+		this.openPopover.cleanup();
+		this.openPopover.el.remove();
+		this.openPopover = null;
+	}
+
+	/**
+	 * A vertical pill-shaped slider (à la iOS Control Center's volume/brightness sliders), floated as
+	 * a fixed-position popover anchored above (or below, if there's no room) the given element.
+	 * Appended to `document.body` rather than the panel itself so it's never clipped by the panel's
+	 * own scroll/overflow containers regardless of where the anchor sits.
+	 */
+	private openSliderPopover(
+		anchor: HTMLElement,
+		opts: { min: number; max: number; step: number; value: number; format: (value: number) => string; onChange: (value: number) => void },
+	): void {
+		this.dismissPopover();
+
+		const doc = anchor.ownerDocument;
+		const popover = doc.body.createDiv({ cls: 'obsidian-reader-slider-popover' });
+
+		const valueLabel = popover.createDiv({ cls: 'obsidian-reader-slider-popover-value', text: opts.format(opts.value) });
+
+		const track = popover.createDiv({ cls: 'obsidian-reader-slider-track' });
+		track.setAttribute('role', 'slider');
+		track.setAttribute('aria-valuemin', String(opts.min));
+		track.setAttribute('aria-valuemax', String(opts.max));
+		track.setAttribute('tabindex', '0');
+		const fill = track.createDiv({ cls: 'obsidian-reader-slider-fill' });
+
+		let value = opts.value;
+		const clampToStep = (raw: number) => {
+			const stepped = Math.round(raw / opts.step) * opts.step;
+			return Math.min(opts.max, Math.max(opts.min, stepped));
+		};
+		const applyValue = (next: number) => {
+			value = clampToStep(next);
+			const fraction = (value - opts.min) / (opts.max - opts.min);
+			fill.setCssStyles({ height: `${fraction * 100}%` });
+			track.setAttribute('aria-valuenow', value.toFixed(2));
+			valueLabel.setText(opts.format(value));
+			opts.onChange(value);
+		};
+		applyValue(value);
+
+		const valueFromPointer = (clientY: number): number => {
+			const rect = track.getBoundingClientRect();
+			const fraction = 1 - (clientY - rect.top) / rect.height;
+			return opts.min + fraction * (opts.max - opts.min);
+		};
+
+		let dragging = false;
+		const onPointerDown = (evt: PointerEvent) => {
+			dragging = true;
+			track.setPointerCapture(evt.pointerId);
+			applyValue(valueFromPointer(evt.clientY));
+			evt.preventDefault();
+		};
+		const onPointerMove = (evt: PointerEvent) => {
+			if (!dragging) return;
+			applyValue(valueFromPointer(evt.clientY));
+		};
+		const onPointerUp = (evt: PointerEvent) => {
+			dragging = false;
+			track.releasePointerCapture(evt.pointerId);
+		};
+		track.addEventListener('pointerdown', onPointerDown);
+		track.addEventListener('pointermove', onPointerMove);
+		track.addEventListener('pointerup', onPointerUp);
+		track.addEventListener('keydown', (evt) => {
+			if (evt.key === 'ArrowUp' || evt.key === 'ArrowRight') {
+				evt.preventDefault();
+				applyValue(value + opts.step);
+			} else if (evt.key === 'ArrowDown' || evt.key === 'ArrowLeft') {
+				evt.preventDefault();
+				applyValue(value - opts.step);
+			}
+		});
+
+		// Positioned after the popover has real dimensions to measure, and flipped below the anchor
+		// when there isn't enough room above it.
+		const anchorRect = anchor.getBoundingClientRect();
+		const popoverRect = popover.getBoundingClientRect();
+		const gap = 8;
+		const openAbove = anchorRect.top - popoverRect.height - gap > 0;
+		const top = openAbove ? anchorRect.top - popoverRect.height - gap : anchorRect.bottom + gap;
+		const left = Math.min(
+			Math.max(anchorRect.left + anchorRect.width / 2 - popoverRect.width / 2, 8),
+			doc.defaultView ? doc.defaultView.innerWidth - popoverRect.width - 8 : anchorRect.left,
+		);
+		popover.setCssStyles({ top: `${top}px`, left: `${left}px` });
+
+		const onDocumentPointerDown = (evt: PointerEvent) => {
+			const target = evt.target;
+			if (target instanceof Node && (popover.contains(target) || anchor.contains(target))) return;
+			this.dismissPopover();
+		};
+		const onKeyDown = (evt: KeyboardEvent) => {
+			if (evt.key === 'Escape') this.dismissPopover();
+		};
+		doc.addEventListener('pointerdown', onDocumentPointerDown, true);
+		doc.addEventListener('keydown', onKeyDown, true);
+
+		this.openPopover = {
+			el: popover,
+			cleanup: () => {
+				doc.removeEventListener('pointerdown', onDocumentPointerDown, true);
+				doc.removeEventListener('keydown', onKeyDown, true);
+			},
+		};
 	}
 
 	private createIconButton(

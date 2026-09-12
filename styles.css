@@ -42,6 +42,113 @@
 	.obsidian-reader-primary-actions .obsidian-reader-button-label {
 		display: none;
 	}
+
+	/* Below this width the horizontal slider doesn't have room to be usable -- hide the whole row
+	   (name + native slider) and show the icon-only compact pill instead, which opens a vertical
+	   popover slider on tap. See .obsidian-reader-slider-setting/-compact below. */
+	.obsidian-reader-slider-setting {
+		display: none;
+	}
+
+	.obsidian-reader-slider-compact {
+		display: inline-flex;
+	}
+}
+
+/* The [icon][label] pair used as a Setting's name for the speed/volume rows -- the icon always
+   stays, the label hides at the narrow breakpoint above. */
+.obsidian-reader-setting-name {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--size-2-2);
+}
+
+.obsidian-reader-setting-icon {
+	display: flex;
+	flex-shrink: 0;
+	color: var(--text-muted);
+}
+
+.obsidian-reader-setting-icon svg {
+	width: var(--icon-s);
+	height: var(--icon-s);
+}
+
+/*
+ * The narrow-layout icon-only pill for playback speed/volume -- hidden by default, shown only under
+ * the container query's narrow breakpoint above, where it replaces the full Setting row entirely.
+ * No value text next to it (unlike an earlier version of this) -- the popover it opens shows the
+ * live value, so repeating it on the pill itself would be redundant.
+ */
+.obsidian-reader-slider-compact {
+	display: none;
+	align-items: center;
+	justify-content: center;
+	width: var(--size-4-8);
+	height: var(--size-4-8);
+	border-radius: var(--radius-s);
+	color: var(--text-muted);
+	cursor: pointer;
+}
+
+.obsidian-reader-slider-compact:hover {
+	background-color: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+.obsidian-reader-slider-compact-icon {
+	display: flex;
+}
+
+.obsidian-reader-slider-compact-icon svg {
+	width: var(--icon-s);
+	height: var(--icon-s);
+}
+
+.is-mobile .obsidian-reader-slider-compact {
+	width: var(--touch-size-m);
+	height: var(--touch-size-m);
+}
+
+/* A vertical pill slider (à la iOS Control Center), floated above/below its trigger pill. Appended
+   to document.body, so it's positioned in fixed/viewport coordinates, not relative to the panel. */
+.obsidian-reader-slider-popover {
+	position: fixed;
+	z-index: var(--layer-popover, 70);
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: var(--size-4-2);
+	padding: var(--size-4-2) var(--size-2-2);
+	border-radius: var(--radius-l, 12px);
+	background-color: var(--background-secondary);
+	box-shadow: var(--shadow-l, 0 8px 24px rgba(0, 0, 0, 0.35));
+	border: 1px solid var(--background-modifier-border);
+}
+
+.obsidian-reader-slider-popover-value {
+	font-size: var(--font-ui-smaller);
+	font-variant-numeric: tabular-nums;
+	color: var(--text-muted);
+}
+
+.obsidian-reader-slider-track {
+	position: relative;
+	width: var(--size-4-8);
+	height: 140px;
+	border-radius: var(--size-4-4);
+	background-color: var(--background-modifier-border);
+	overflow: hidden;
+	touch-action: none;
+	cursor: pointer;
+}
+
+.obsidian-reader-slider-fill {
+	position: absolute;
+	bottom: 0;
+	left: 0;
+	width: 100%;
+	background-color: var(--interactive-accent);
 }
 
 /* Only the vertical spacing is compacted here -- horizontal stays Obsidian's own default (16px),
