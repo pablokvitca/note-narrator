@@ -110,8 +110,11 @@
 		display: none;
 	}
 
+	/* display: flex (not inline-flex) + margin-inline: auto centers this fixed-width box within the
+	   full-width row -- inline-flex just sits it at the row's left edge like any other inline content. */
 	.obsidian-reader-slider-compact {
-		display: inline-flex;
+		display: flex;
+		margin-inline: auto;
 	}
 }
 
@@ -739,4 +742,16 @@
 .obsidian-reader-margin-marker svg {
 	width: var(--icon-xs);
 	height: var(--icon-xs);
+}
+
+/*
+ * The touch long-press tooltip bubble (touch-tooltip.ts) reuses Obsidian's own .tooltip class for
+ * visual consistency, so it's styled additively here rather than overriding .tooltip globally
+ * (which would also affect every other tooltip in the app). Obsidian's default is tuned for a quick
+ * desktop hover glance (font-size: var(--font-ui-smaller), padding: var(--size-4-1) var(--size-4-2))
+ * -- too small/cramped to read comfortably while actually holding a finger on a touchscreen.
+ */
+.obsidian-reader-touch-tooltip {
+	font-size: var(--font-ui-medium);
+	padding: var(--size-4-2) var(--size-4-3);
 }

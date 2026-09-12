@@ -79,7 +79,7 @@ export function attachTooltip(el: HTMLElement, text: string): void {
 		// have been called again since with an updated tooltip (e.g. Read -> Regenerate), and
 		// setTooltip() always keeps aria-label current.
 		const doc = el.ownerDocument;
-		bubble = doc.body.createDiv({ cls: 'tooltip', text: el.getAttribute('aria-label') ?? text });
+		bubble = doc.body.createDiv({ cls: 'tooltip obsidian-reader-touch-tooltip', text: el.getAttribute('aria-label') ?? text });
 		bubble.createDiv({ cls: 'tooltip-arrow' });
 		bubble.setCssStyles({ position: 'fixed' });
 
