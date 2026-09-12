@@ -96,6 +96,10 @@ npm run build
 
 This repo uses a `next/X.Y` → `release/X.Y` branching model with fully automated beta builds on every push. Follow this exactly — skipping the immediate version bump (below) is a real, easy-to-hit mistake that has actually happened in this repo.
 
+> **Every ordinary push to `next/**`/`release/**` — including a bug fix on a patch branch — produces a BETA only.** It is not shipped, not final, and nobody has it except testers who opt in via BRAT. `main` never moves and no stable GitHub release is created as a side effect of a normal push. The *only* way a version becomes stable is the explicit, separately-gated "Final (stable) release" procedure below, which requires the user to explicitly ask for a release/ship *in that conversation* — never inferred from "the fix is done" or "tests pass." Don't run `npm version`, don't create a version tag, and don't touch `main` unless that ask happened. When reporting status after a push, say "pushed a beta for testing" (or similar) — not "released" or "shipped," which implies the stable step happened.
+>
+> The expected flow for a patch/fix is always: bump version → fix → push (beta auto-builds) → **user manually tests the beta** → only then, if asked, run the Final (stable) release steps → merge to `main`. Treat "fixed and pushed" as the middle of that flow, not the end of it.
+
 ### Branching model
 
 - `main` always reflects the latest **released stable** version. Nothing merges into it except a fast-forward to a tracking branch's tip at release time — never a regular merge commit.
