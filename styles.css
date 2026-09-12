@@ -27,12 +27,21 @@
 }
 
 /*
- * Icon-only primary actions -- opt-in via the "Compact buttons" setting, at every panel size (not
- * width-triggered). The button keeps its full text as `aria-label` regardless, so Obsidian still
- * shows it as a tooltip on hover/long-press even with the visible label hidden.
+ * Icon-only primary actions -- opt-in via the "Compact buttons" setting at ANY size (first rule), but
+ * forced regardless of that setting once the panel itself is this narrow (second rule): real-device
+ * research found Obsidian's own mobile drawer never goes narrower than ~300px nor wider than 450px
+ * even unpinned on a full-size iPad, so 460px safely covers phones and small tablets (a roomy desktop
+ * sidebar stays above it and keeps full labels unless the setting is on). The button keeps its full
+ * text as `aria-label` either way, so Obsidian still shows it as a tooltip on hover/long-press.
  */
 .obsidian-reader-primary-actions.is-compact .obsidian-reader-button-label {
 	display: none;
+}
+
+@container obsidian-reader-panel (max-width: 460px) {
+	.obsidian-reader-primary-actions .obsidian-reader-button-label {
+		display: none;
+	}
 }
 
 .obsidian-reader-player-view .setting-item {

@@ -1,4 +1,4 @@
-import { debounce, ItemView, MarkdownView, Menu, setIcon, Setting, TFile, WorkspaceLeaf } from 'obsidian';
+import { debounce, ItemView, MarkdownView, Menu, setIcon, setTooltip, Setting, TFile, WorkspaceLeaf } from 'obsidian';
 import { ConfirmModal } from './confirm-modal';
 import ObsidianReaderPlugin from './main';
 import { hasPendingGeneration, queuePosition } from './background-job';
@@ -434,7 +434,7 @@ export class PlayerView extends ItemView {
 	): HTMLElement {
 		const button = container.createDiv({ cls: 'clickable-icon obsidian-reader-icon-button' });
 		setIcon(button, icon);
-		button.setAttribute('aria-label', label);
+		setTooltip(button, label);
 		if (disabled) {
 			button.addClass('is-disabled');
 		} else {
@@ -483,7 +483,7 @@ export class PlayerView extends ItemView {
 	private createBackgroundJobIconButton(container: HTMLElement, icon: string, label: string, onClick: () => void): HTMLElement {
 		const button = container.createDiv({ cls: 'clickable-icon obsidian-reader-bgjob-icon-button' });
 		setIcon(button, icon);
-		button.setAttribute('aria-label', label);
+		setTooltip(button, label);
 		button.onclick = (evt) => {
 			evt.stopPropagation();
 			onClick();
@@ -533,7 +533,7 @@ export class PlayerView extends ItemView {
 
 		const discardButton = actions.createDiv({ cls: 'clickable-icon obsidian-reader-background-job-discard' });
 		setIcon(discardButton, this.backgroundJobRemoveIcon(job));
-		discardButton.setAttribute('aria-label', this.backgroundJobRemoveLabel(job));
+		setTooltip(discardButton, this.backgroundJobRemoveLabel(job));
 		discardButton.onclick = (evt) => {
 			evt.stopPropagation();
 			this.plugin.reader.discardBackgroundJob(job.id);
@@ -543,7 +543,7 @@ export class PlayerView extends ItemView {
 	private renderBackgroundJobCompact(container: HTMLElement, job: BackgroundJobInfo, allJobs: BackgroundJobInfo[]): void {
 		const row = container.createDiv({ cls: 'obsidian-reader-background-job obsidian-reader-background-job--compact' });
 		row.addClass(`is-${job.status}`);
-		row.setAttribute('aria-label', this.backgroundJobLabel(job, allJobs));
+		setTooltip(row, this.backgroundJobLabel(job, allJobs));
 		this.makeBackgroundJobClickable(row, job.id);
 
 		row.createSpan({ cls: 'obsidian-reader-background-job-icon' }, (el) => setIcon(el, this.backgroundJobIcon(job)));
@@ -564,7 +564,7 @@ export class PlayerView extends ItemView {
 	private renderBackgroundJobMinimal(container: HTMLElement, job: BackgroundJobInfo, allJobs: BackgroundJobInfo[]): void {
 		const card = container.createDiv({ cls: 'obsidian-reader-background-job obsidian-reader-background-job--minimal' });
 		card.addClass(`is-${job.status}`);
-		card.setAttribute('aria-label', this.backgroundJobLabel(job, allJobs));
+		setTooltip(card, this.backgroundJobLabel(job, allJobs));
 		this.makeBackgroundJobClickable(card, job.id);
 
 		const titleRow = card.createDiv({ cls: 'obsidian-reader-background-job-title-row' });
@@ -593,7 +593,7 @@ export class PlayerView extends ItemView {
 			if (this.plugin.settings.showClearFilesButton) {
 				const deleteButton = statusEl.createDiv({ cls: 'clickable-icon obsidian-reader-audio-status-delete' });
 				setIcon(deleteButton, 'trash-2');
-				deleteButton.setAttribute('aria-label', 'Delete saved audio file');
+				setTooltip(deleteButton, 'Delete saved audio file');
 				deleteButton.onclick = () => this.confirmClearReaderFiles(activeFile);
 			}
 		});
@@ -641,14 +641,14 @@ export class PlayerView extends ItemView {
 		const button = container.createEl('button', { cls });
 		setIcon(button.createSpan({ cls: 'obsidian-reader-button-icon' }), icon);
 		const labelEl = button.createSpan({ cls: 'obsidian-reader-button-label', text: label });
-		button.setAttribute('aria-label', label);
+		setTooltip(button, label);
 		return { button, labelEl };
 	}
 
-	/** Updates both a labeled button's visible text and its `aria-label` (see {@link createLabeledButton}) together, so the icon-only tooltip never drifts from what a wide layout shows as text. */
+	/** Updates both a labeled button's visible text and its tooltip (see {@link createLabeledButton}) together, so the icon-only tooltip never drifts from what a wide layout shows as text. */
 	private setButtonLabel(button: HTMLButtonElement, labelEl: HTMLElement, text: string): void {
 		labelEl.setText(text);
-		button.setAttribute('aria-label', text);
+		setTooltip(button, text);
 	}
 
 	private renderPrimaryActions(container: HTMLElement, active: boolean, pendingGeneration: boolean): void {
@@ -669,15 +669,12 @@ export class PlayerView extends ItemView {
 
 		const { button: cancelButton } = this.createLabeledButton(actionsRow, 'obsidian-reader-cancel-button', 'octagon-x', 'Cancel');
 		cancelButton.disabled = !pendingGeneration;
-		cancelButton.setAttribute('aria-label', 'Cancel generation');
+		setTooltip(cancelButton, 'Cancel generation');
 		cancelButton.onclick = () => this.plugin.reader.stop();
 
 		const { button: backgroundButton } = this.createLabeledButton(actionsRow, 'obsidian-reader-background-button', 'layers', 'Send to Background');
 		backgroundButton.disabled = !pendingGeneration;
-		backgroundButton.setAttribute(
-			'aria-label',
-			'Stop playback but keep generating the rest of this note in the background, so you can jump back into it later.',
-		);
+		setTooltip(backgroundButton, 'Stop playback but keep generating the rest of this note in the background, so you can jump back into it later.');
 		backgroundButton.onclick = () => this.plugin.reader.continueGeneratingInBackground();
 
 		const activeFile = this.getActiveFile();
