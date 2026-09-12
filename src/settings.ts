@@ -17,6 +17,10 @@ export type BackgroundJobDisplayStyle = 'full' | 'compact' | 'minimal';
 export type HighlightGranularity = 'chunk' | 'section';
 export type HighlightStyle = 'margin-marker' | 'background' | 'underline';
 
+/** The fixed set of rewind/skip-forward durations offered in both the settings dropdown and the player view's skip-icon set (one custom icon per value, per direction -- see icons.ts). */
+export const SKIP_SECONDS_OPTIONS = [5, 10, 15, 20, 25, 30, 45, 60] as const;
+export type SkipSeconds = (typeof SKIP_SECONDS_OPTIONS)[number];
+
 export interface ReaderSettings {
 	/** Name of the secret in Obsidian's SecretStorage holding the ElevenLabs API key. */
 	apiKeySecretId: string;
@@ -27,8 +31,10 @@ export interface ReaderSettings {
 	readSelectionIfPresent: boolean;
 	/** HTMLAudioElement.playbackRate applied to the generated audio during playback. */
 	playbackRate: number;
-	/** Seconds the skip-forward/rewind buttons in the player view jump by. */
-	skipSeconds: number;
+	/** Seconds the rewind button in the player view jumps back by. One of SKIP_SECONDS_OPTIONS. */
+	skipBackSeconds: SkipSeconds;
+	/** Seconds the skip-forward button in the player view jumps ahead by. One of SKIP_SECONDS_OPTIONS. */
+	skipForwardSeconds: SkipSeconds;
 	/** Whether to also save the generated audio as a file in the vault. */
 	saveAudioFile: boolean;
 	saveAudioLocation: SaveAudioLocation;
@@ -126,7 +132,8 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
 	similarityBoost: 0.75,
 	readSelectionIfPresent: true,
 	playbackRate: 1,
-	skipSeconds: 15,
+	skipBackSeconds: 15,
+	skipForwardSeconds: 15,
 	saveAudioFile: false,
 	saveAudioLocation: 'note-folder',
 	saveAudioFolderPath: 'Reader Audio',
@@ -535,16 +542,33 @@ export class ReaderSettingTab extends PluginSettingTab {
 						control: { type: 'slider', key: 'playbackRate', min: 0.5, max: 3, step: 0.05, defaultValue: DEFAULT_SETTINGS.playbackRate },
 					},
 					{
-						name: 'Skip button seconds',
-						desc: `How many seconds the skip-forward and rewind buttons in the player view jump by. Recommended: 5-30. Default: ${DEFAULT_SETTINGS.skipSeconds}.`,
+						name: 'Rewind seconds',
+						desc: `How many seconds the rewind button in the player view jumps back by. Default: ${DEFAULT_SETTINGS.skipBackSeconds}s.`,
 						render: (setting) =>
-							this.renderNumberControlWithReset(setting, {
-								get: () => settings.skipSeconds,
-								set: (value) => {
-									settings.skipSeconds = value;
-								},
-								min: 1,
-								defaultValue: DEFAULT_SETTINGS.skipSeconds,
+							setting.addDropdown((dropdown) => {
+								for (const seconds of SKIP_SECONDS_OPTIONS) {
+									dropdown.addOption(String(seconds), `${seconds}s`);
+								}
+								dropdown.setValue(String(settings.skipBackSeconds));
+								dropdown.onChange(async (value) => {
+									settings.skipBackSeconds = Number(value) as SkipSeconds;
+									await this.plugin.saveSettings();
+								});
+							}),
+					},
+					{
+						name: 'Skip forward seconds',
+						desc: `How many seconds the skip-forward button in the player view jumps ahead by. Default: ${DEFAULT_SETTINGS.skipForwardSeconds}s.`,
+						render: (setting) =>
+							setting.addDropdown((dropdown) => {
+								for (const seconds of SKIP_SECONDS_OPTIONS) {
+									dropdown.addOption(String(seconds), `${seconds}s`);
+								}
+								dropdown.setValue(String(settings.skipForwardSeconds));
+								dropdown.onChange(async (value) => {
+									settings.skipForwardSeconds = Number(value) as SkipSeconds;
+									await this.plugin.saveSettings();
+								});
 							}),
 					},
 					{

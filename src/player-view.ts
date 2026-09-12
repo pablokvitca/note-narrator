@@ -3,7 +3,7 @@ import { ConfirmModal } from './confirm-modal';
 import ObsidianReaderPlugin from './main';
 import { hasPendingGeneration, queuePosition } from './background-job';
 import type { BackgroundJobInfo } from './background-job';
-import { PLAY_SAVED_ICON_ID } from './icons';
+import { PLAY_SAVED_ICON_ID, skipIconId } from './icons';
 import { AudioLinkStatus, ReaderState } from './reader';
 import { computeFullReadTimes, formatTimeDisplay } from './time-utils';
 import { attachTooltip } from './touch-tooltip';
@@ -241,7 +241,8 @@ export class PlayerView extends ItemView {
 
 		const state = this.plugin.reader.getState();
 		const active = state.status !== 'idle';
-		const skipSeconds = this.plugin.settings.skipSeconds;
+		const skipBackSeconds = this.plugin.settings.skipBackSeconds;
+		const skipForwardSeconds = this.plugin.settings.skipForwardSeconds;
 
 		this.lastStructuralKey = this.structuralKey(state);
 		this.progressFillEl = null;
@@ -319,14 +320,26 @@ export class PlayerView extends ItemView {
 
 			this.createIconButton(controls, 'step-back', 'Previous part', partsDisabled, () => this.plugin.reader.previousPart());
 
-			this.createIconButton(controls, 'skip-back', `Rewind ${skipSeconds}s`, !active, () => this.plugin.reader.skip(-skipSeconds));
+			this.createIconButton(
+				controls,
+				skipIconId(skipBackSeconds, 'back'),
+				`Rewind ${skipBackSeconds}s`,
+				!active,
+				() => this.plugin.reader.skip(-skipBackSeconds),
+			);
 
 			this.createIconButton(controls, state.status === 'paused' ? 'circle-play' : 'circle-pause', state.status === 'paused' ? 'Resume' : 'Pause', !active, () => {
 				if (state.status === 'playing') this.plugin.reader.pause();
 				else if (state.status === 'paused') this.plugin.reader.resume();
 			}).addClass('obsidian-reader-control-primary');
 
-			this.createIconButton(controls, 'skip-forward', `Skip forward ${skipSeconds}s`, !active, () => this.plugin.reader.skip(skipSeconds));
+			this.createIconButton(
+				controls,
+				skipIconId(skipForwardSeconds, 'forward'),
+				`Skip forward ${skipForwardSeconds}s`,
+				!active,
+				() => this.plugin.reader.skip(skipForwardSeconds),
+			);
 
 			this.createIconButton(
 				controls,
@@ -345,14 +358,15 @@ export class PlayerView extends ItemView {
 			}
 		}
 
-		// 10. Playback speed
-		if (this.plugin.settings.showPlaybackSpeedSlider) {
-			this.renderSpeedControl(scroll);
-		}
-
-		// 11. Volume
-		if (this.plugin.settings.showVolumeSlider) {
-			this.renderVolumeControl(scroll);
+		// 10/11. Playback speed / Volume. Each renders its own full Setting row (hidden at the narrow
+		// breakpoint) plus a compact icon+value pill -- both pills share one row so they sit side by
+		// side, rather than each getting a full-width row of their own, once collapsed.
+		const showSpeed = this.plugin.settings.showPlaybackSpeedSlider;
+		const showVolume = this.plugin.settings.showVolumeSlider;
+		if (showSpeed || showVolume) {
+			const compactRow = scroll.createDiv({ cls: 'obsidian-reader-slider-compact-row' });
+			if (showSpeed) this.renderSpeedControl(scroll, compactRow);
+			if (showVolume) this.renderVolumeControl(scroll, compactRow);
 		}
 
 		// 12. Background-jobs queue, pinned to the bottom of the panel (outside the scroll area)
@@ -408,7 +422,7 @@ export class PlayerView extends ItemView {
 	 * collapses to just the icon (opening a vertical popover slider on tap) under the narrow
 	 * container breakpoint, where the horizontal slider doesn't have room to be usable.
 	 */
-	private renderSpeedControl(container: HTMLElement): void {
+	private renderSpeedControl(container: HTMLElement, compactRow: HTMLElement): void {
 		const currentRate = this.plugin.reader.getPlaybackRate();
 		const formatSpeed = (value: number) => `${value.toFixed(2)}x`;
 
@@ -424,20 +438,23 @@ export class PlayerView extends ItemView {
 		speedRange.createSpan({ cls: 'obsidian-reader-speed-bound', text: formatSpeed(SPEED_MIN) });
 		speedRange.createSpan({ cls: 'obsidian-reader-speed-bound', text: formatSpeed(SPEED_MAX) });
 
-		this.renderCompactPill(container, 'gauge', 'Playback speed', (anchor) =>
+		const { valueEl } = this.renderCompactPill(compactRow, 'gauge', formatSpeed(currentRate), 'Playback speed', (anchor) =>
 			this.openSliderPopover(anchor, {
 				min: SPEED_MIN,
 				max: SPEED_MAX,
 				step: 0.05,
 				value: this.plugin.reader.getPlaybackRate(),
 				format: formatSpeed,
-				onChange: (value) => this.plugin.reader.setPlaybackRate(value),
+				onChange: (value) => {
+					this.plugin.reader.setPlaybackRate(value);
+					valueEl.setText(formatSpeed(value));
+				},
 			}),
 		);
 	}
 
 	/** Volume: same icon/label/popover split as {@link renderSpeedControl}. The mute extra-button stays visible at every width (it's already icon-only and touch-sized) regardless of whether the row is showing its full slider or its compact pill. */
-	private renderVolumeControl(container: HTMLElement): void {
+	private renderVolumeControl(container: HTMLElement, compactRow: HTMLElement): void {
 		const isMuted = this.plugin.reader.isMuted();
 		const currentVolume = this.plugin.reader.getVolume();
 		const formatVolume = (value: number) => (this.plugin.reader.isMuted() ? 'Muted' : `${Math.round(value * 100)}%`);
@@ -458,25 +475,35 @@ export class PlayerView extends ItemView {
 			attachTooltip(button.extraSettingsEl, isMuted ? 'Unmute' : 'Mute');
 		});
 
-		this.renderCompactPill(container, isMuted ? 'volume-x' : 'volume-2', 'Volume', (anchor) =>
+		const { valueEl } = this.renderCompactPill(compactRow, isMuted ? 'volume-x' : 'volume-2', formatVolume(currentVolume), 'Volume', (anchor) =>
 			this.openSliderPopover(anchor, {
 				min: VOLUME_MIN,
 				max: VOLUME_MAX,
 				step: 0.05,
 				value: this.plugin.reader.getVolume(),
 				format: formatVolume,
-				onChange: (value) => this.plugin.reader.setVolume(value),
+				onChange: (value) => {
+					this.plugin.reader.setVolume(value);
+					valueEl.setText(formatVolume(value));
+				},
 			}),
 		);
 	}
 
-	/** The narrow-layout pill: icon only (no value text -- the popover it opens shows that live), opening a popover slider on click. Hidden except under the container query's narrow breakpoint -- see the `.obsidian-reader-slider-compact` CSS rule. */
-	private renderCompactPill(container: HTMLElement, icon: string, label: string, onOpen: (anchor: HTMLElement) => void): HTMLElement {
-		const pill = container.createDiv({ cls: 'obsidian-reader-slider-compact' });
+	/** The narrow-layout pill: icon + current value, opening a popover slider on click. Hidden except under the container query's narrow breakpoint -- see the `.obsidian-reader-slider-compact` CSS rule. Speed's and Volume's pills share one row (`compactRow`) so they sit side by side once collapsed, instead of each taking a full-width row. */
+	private renderCompactPill(
+		compactRow: HTMLElement,
+		icon: string,
+		valueText: string,
+		label: string,
+		onOpen: (anchor: HTMLElement) => void,
+	): { pill: HTMLElement; valueEl: HTMLElement } {
+		const pill = compactRow.createDiv({ cls: 'obsidian-reader-slider-compact' });
 		pill.setAttribute('role', 'button');
 		pill.setAttribute('tabindex', '0');
 		attachTooltip(pill, label);
 		setIcon(pill.createSpan({ cls: 'obsidian-reader-slider-compact-icon' }), icon);
+		const valueEl = pill.createSpan({ cls: 'obsidian-reader-slider-compact-value', text: valueText });
 
 		const toggle = () => {
 			if (this.openPopover) {
@@ -492,7 +519,7 @@ export class PlayerView extends ItemView {
 			toggle();
 		};
 
-		return pill;
+		return { pill, valueEl };
 	}
 
 	/** Removes the currently-open slider popover (if any) and its document-level listeners. Safe to call when nothing is open. */

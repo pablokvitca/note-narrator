@@ -58,10 +58,20 @@
 }
 
 /*
- * The narrow-layout icon-only pill for playback speed/volume -- hidden by default, shown only under
+ * Speed's and Volume's compact pills live in this one shared row (rather than each getting its own
+ * full-width row) so they sit side by side, centered as a pair, once collapsed. Always flex -- with
+ * no width of its own beyond its (possibly zero, possibly one, possibly two) visible pill children,
+ * an empty or single-child row costs nothing at wide layouts where both pills are hidden anyway.
+ */
+.obsidian-reader-slider-compact-row {
+	display: flex;
+	justify-content: center;
+	gap: var(--size-4-2);
+}
+
+/*
+ * The narrow-layout icon+value pill for playback speed/volume -- hidden by default, shown only under
  * the container query's narrow breakpoint below, where it replaces the full Setting row entirely.
- * No value text next to it (unlike an earlier version of this) -- the popover it opens shows the
- * live value, so repeating it on the pill itself would be redundant.
  *
  * This base rule (display: none) must come BEFORE the @container block below in source order: both
  * select the same class with equal specificity, and an unmatched-but-later rule otherwise wins the
@@ -71,9 +81,8 @@
 .obsidian-reader-slider-compact {
 	display: none;
 	align-items: center;
-	justify-content: center;
-	width: var(--size-4-8);
-	height: var(--size-4-8);
+	gap: var(--size-2-2);
+	padding: var(--size-2-3) var(--size-4-2);
 	border-radius: var(--radius-s);
 	color: var(--text-muted);
 	cursor: pointer;
@@ -86,6 +95,7 @@
 
 .obsidian-reader-slider-compact-icon {
 	display: flex;
+	flex-shrink: 0;
 }
 
 .obsidian-reader-slider-compact-icon svg {
@@ -93,9 +103,13 @@
 	height: var(--icon-s);
 }
 
+.obsidian-reader-slider-compact-value {
+	font-size: var(--font-ui-smaller);
+	font-variant-numeric: tabular-nums;
+}
+
 .is-mobile .obsidian-reader-slider-compact {
-	width: var(--touch-size-m);
-	height: var(--touch-size-m);
+	min-height: var(--touch-size-m);
 }
 
 @container obsidian-reader-panel (max-width: 460px) {
@@ -104,17 +118,14 @@
 	}
 
 	/* Below this width the horizontal slider doesn't have room to be usable -- hide the whole row
-	   (name + native slider) and show the icon-only compact pill instead, which opens a vertical
+	   (name + native slider) and show the icon+value compact pill instead, which opens a vertical
 	   popover slider on tap. */
 	.obsidian-reader-slider-setting {
 		display: none;
 	}
 
-	/* display: flex (not inline-flex) + margin-inline: auto centers this fixed-width box within the
-	   full-width row -- inline-flex just sits it at the row's left edge like any other inline content. */
 	.obsidian-reader-slider-compact {
 		display: flex;
-		margin-inline: auto;
 	}
 }
 

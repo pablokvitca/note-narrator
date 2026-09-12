@@ -1,4 +1,5 @@
 import { addIcon } from 'obsidian';
+import { SKIP_SECONDS_OPTIONS, SkipSeconds } from './settings';
 
 /** A saved-audio file with a play triangle on its corner, for the "Play saved" action -- distinct from the plain `play` triangle used for playback controls. */
 export const PLAY_SAVED_ICON_ID = 'obsidian-reader-play-saved';
@@ -33,7 +34,37 @@ const PLAY_SAVED_ICON_SVG = `
 </g>
 `;
 
+/** Icon id for a rewind/skip-forward transport button showing the given duration, in the given direction. One custom icon per (seconds, direction) pair -- see {@link buildSkipIconSvg}. */
+export function skipIconId(seconds: SkipSeconds, direction: 'back' | 'forward'): string {
+	return `obsidian-reader-skip-${direction}-${seconds}`;
+}
+
+/*
+ * A circular-arrow-with-a-number icon, the way most media players show a skip amount (Apple
+ * Podcasts, YouTube's double-tap-to-skip, etc.) -- the arc+arrowhead shape is Lucide's own
+ * `rotate-ccw` glyph (a real, tested icon, not invented from scratch), with the duration set as
+ * `<text>` inside it. The arc+arrowhead alone is mirrored for the forward direction (via an inner
+ * `<g>`, not the outer one) so the number itself never renders backwards.
+ */
+function buildSkipIconSvg(seconds: SkipSeconds, direction: 'back' | 'forward'): string {
+	const arrow = `<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 3v5h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>`;
+	const arrowGroup = direction === 'forward' ? `<g transform="scale(-1,1) translate(-24,0)">${arrow}</g>` : arrow;
+	const label = String(seconds);
+	const fontSize = label.length > 2 ? 7.5 : 8.5;
+	return `
+<g transform="scale(4.1667)">
+${arrowGroup}
+<text x="12" y="14.6" text-anchor="middle" font-size="${fontSize}" font-weight="700" font-family="inherit" fill="currentColor" stroke="none">${label}</text>
+</g>
+`;
+}
+
 /** Registers this plugin's custom Lucide-style icons. Call once from `onload()`. */
 export function registerCustomIcons(): void {
 	addIcon(PLAY_SAVED_ICON_ID, PLAY_SAVED_ICON_SVG);
+
+	for (const seconds of SKIP_SECONDS_OPTIONS) {
+		addIcon(skipIconId(seconds, 'back'), buildSkipIconSvg(seconds, 'back'));
+		addIcon(skipIconId(seconds, 'forward'), buildSkipIconSvg(seconds, 'forward'));
+	}
 }
