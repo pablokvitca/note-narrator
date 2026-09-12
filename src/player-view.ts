@@ -275,7 +275,7 @@ export class PlayerView extends ItemView {
 		this.renderVoiceSelector(scroll);
 		this.renderNoteStats(scroll, selectedFile);
 
-		// 6. Play Saved / Read / Cancel / Send to Background
+		// 6. Play Saved / Read / Cancel / Background
 		this.renderPrimaryActions(scroll, activeForSelected, pendingGeneration);
 
 		// 7. Progress bars/text
@@ -632,7 +632,7 @@ export class PlayerView extends ItemView {
 	 * callers can update just the text later (e.g. Read -> Regenerate) via {@link setButtonLabel}
 	 * without disturbing the icon. `tooltip` (defaulting to `label`) is attached once via
 	 * {@link attachTooltip} -- callers that need a longer/different tooltip than the visible label
-	 * (Cancel, Send to Background) must pass it here rather than calling attachTooltip again
+	 * (Cancel, Background) must pass it here rather than calling attachTooltip again
 	 * themselves, which would double up its long-press listeners on the same button.
 	 */
 	private createLabeledButton(
@@ -649,7 +649,7 @@ export class PlayerView extends ItemView {
 		return { button, labelEl };
 	}
 
-	/** Updates both a labeled button's visible text and its tooltip (see {@link createLabeledButton}) together, so the icon-only tooltip never drifts from what a wide layout shows as text. Only for buttons whose tooltip always matches their label -- Cancel/Send to Background set theirs once at creation instead. */
+	/** Updates both a labeled button's visible text and its tooltip (see {@link createLabeledButton}) together, so the icon-only tooltip never drifts from what a wide layout shows as text. Only for buttons whose tooltip always matches their label -- Cancel/Background set theirs once at creation instead. */
 	private setButtonLabel(button: HTMLButtonElement, labelEl: HTMLElement, text: string): void {
 		labelEl.setText(text);
 		attachTooltip(button, text);
@@ -676,7 +676,7 @@ export class PlayerView extends ItemView {
 		attachTooltip(cancelButton, 'Cancel generation');
 		cancelButton.onclick = () => this.plugin.reader.stop();
 
-		const { button: backgroundButton } = this.createLabeledButton(actionsRow, 'obsidian-reader-background-button', 'layers', 'Send to Background');
+		const { button: backgroundButton } = this.createLabeledButton(actionsRow, 'obsidian-reader-background-button', 'layers', 'Background');
 		backgroundButton.disabled = !pendingGeneration;
 		attachTooltip(backgroundButton, 'Stop playback but keep generating the rest of this note in the background, so you can jump back into it later.');
 		backgroundButton.onclick = () => this.plugin.reader.continueGeneratingInBackground();
