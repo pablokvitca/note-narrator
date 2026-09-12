@@ -1,5 +1,6 @@
 import { MarkdownView, Plugin, TFile } from 'obsidian';
 import { createHighlightExtension } from './highlight-extension';
+import { registerCustomIcons } from './icons';
 import { PlayerView, READER_VIEW_TYPE } from './player-view';
 import { Reader } from './reader';
 import { DEFAULT_SETTINGS, ReaderSettings, ReaderSettingTab } from './settings';
@@ -14,6 +15,7 @@ export default class ObsidianReaderPlugin extends Plugin {
 	private actionButtons: HTMLElement[] = [];
 
 	async onload() {
+		registerCustomIcons();
 		await this.loadSettings();
 		this.reader = new Reader(this.app, this.settings);
 
