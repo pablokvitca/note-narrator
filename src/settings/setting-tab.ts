@@ -11,6 +11,9 @@ import { ProvidersSection } from './sections/providers';
 import { SettingsHost, SettingsTabId } from './section';
 import { VoiceCache } from './voices';
 
+/** Settings the editor highlight reads at draw time; changing one repaints open editors right away. */
+const HIGHLIGHT_KEYS = new Set(['highlightWhileReading', 'highlightGranularity', 'highlightStyle', 'highlightSectionTitleOnly']);
+
 const SETTINGS_TABS: { id: SettingsTabId; label: string }[] = [
 	{ id: 'general', label: 'General' },
 	{ id: 'providers', label: 'Providers' },
@@ -68,6 +71,7 @@ export class NoteNarratorSettingTab extends PluginSettingTab implements Settings
 		}
 		await super.setControlValue(key, normalized);
 		this.plugin.refreshPanels();
+		if (HIGHLIGHT_KEYS.has(key)) this.plugin.reader.refreshHighlights();
 
 		if (key === 'saveAudioFile' && normalized === true && !this.plugin.settings.linkAudioInNote) {
 			this.plugin.settings.linkAudioInNote = true;

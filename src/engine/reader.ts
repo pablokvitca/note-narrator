@@ -112,6 +112,11 @@ export class Reader extends Events {
 		this.setState({ backgroundJobs: [] });
 	}
 
+	/** Asks every open editor to redraw its highlight, e.g. after a highlight setting changed while reading is paused or idle. */
+	refreshHighlights(): void {
+		this.trigger('highlight-refresh');
+	}
+
 	stop(): void {
 		this.sessionId++;
 		this.savedPlaybackTimeline = null;
