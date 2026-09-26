@@ -3,7 +3,7 @@
 	"name": "Note Narrator",
 	"version": "0.17.1",
 	"minAppVersion": "1.13.0",
-	"description": "Read the current note aloud with text-to-speech, starting with ElevenLabs.",
+	"description": "Read notes aloud with text to speech. Requires an ElevenLabs account and API key. ElevenLabs charges for generated audio.",
 	"author": "Pablo Kvitca",
 	"isDesktopOnly": false
 }
