@@ -339,6 +339,18 @@
 /* Explicit disabled look instead of relying on generic opacity dimming, which fades foreground and
    background toward each other at the same rate and can leave text hard to read against the button
    itself (as opposed to just looking muted against the panel). */
+/* Long labels (Regenerate with new narrator) truncate with an ellipsis instead of spilling out of the button; the full text is in the tooltip. The primary action gets more of the row. */
+.note-narrator-primary-actions .note-narrator-button-label {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.note-narrator-primary-actions button.mod-cta {
+	flex: 2;
+}
+
 .note-narrator-primary-actions button:disabled {
 	opacity: 1;
 	cursor: default;
