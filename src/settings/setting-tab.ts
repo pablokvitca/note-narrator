@@ -55,7 +55,7 @@ export class NoteNarratorSettingTab extends PluginSettingTab implements Settings
 	 * Turning on "save audio" also turns on "link in note": saved audio is only useful if the note tracks
 	 * it, and linking is on by default, but a person may have switched it off before.
 	 */
-	setControlValue(key: string, value: unknown): void | Promise<void> {
+	async setControlValue(key: string, value: unknown): Promise<void> {
 		const fallback = FALLBACK_TEXT_KEYS[key as keyof NoteNarratorSettings];
 		let normalized = fallback !== undefined && typeof value === 'string' ? value.trim() || fallback : value;
 		if (key === 'saveAudioFolderPath' && typeof normalized === 'string') {
@@ -66,21 +66,16 @@ export class NoteNarratorSettingTab extends PluginSettingTab implements Settings
 				normalized = DEFAULT_SETTINGS.saveAudioFolderPath;
 			}
 		}
-		const result = super.setControlValue(key, normalized);
+		await super.setControlValue(key, normalized);
 
-		const after = async () => {
-			if (key === 'saveAudioFile' && normalized === true && !this.plugin.settings.linkAudioInNote) {
-				this.plugin.settings.linkAudioInNote = true;
-				await this.plugin.saveSettings();
-				// The linking toggle is already rendered showing "off"; re-render so it shows the new value.
-				this.update();
-				return;
-			}
-			this.refreshAll();
-		};
-
-		if (result instanceof Promise) return result.then(after);
-		return after();
+		if (key === 'saveAudioFile' && normalized === true && !this.plugin.settings.linkAudioInNote) {
+			this.plugin.settings.linkAudioInNote = true;
+			await this.plugin.saveSettings();
+			// The linking toggle is already rendered showing "off"; re-render so it shows the new value.
+			this.update();
+			return;
+		}
+		this.refreshAll();
 	}
 
 	/** Re-evaluates every declarative `visible`/`disabled` predicate and the imperative rows' disabled state. */

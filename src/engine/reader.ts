@@ -583,25 +583,28 @@ export class Reader extends Events {
 		job.chunkInFlight[index] = true;
 		this.publishJobProgress(job);
 
-		const promise = job.provider
-			.synthesize(job.chunks[index] ?? '')
-			.then(async (buffer) => {
-				job.chunkBuffers[index] = buffer;
-				const duration = await decodeAudioDuration(buffer);
-				job.chunkReady[index] = true;
-				job.chunkDurations[index] = duration;
-				job.chunkInFlight[index] = false;
-				this.publishJobProgress(job);
-				this.maybeSaveOnGenerationComplete(job);
-				return buffer;
-			})
-			.catch((error: unknown) => {
-				job.chunkInFlight[index] = false;
-				this.publishJobProgress(job);
-				throw error;
-			});
+		const promise = this.generateChunk(job, index);
 		job.chunkPromises[index] = promise;
 		return promise;
+	}
+
+	/** Synthesizes one chunk and records the result on the job; a failure (including one while recording) clears the chunk's in-flight flag and rethrows. */
+	private async generateChunk(job: GenerationJob, index: number): Promise<ArrayBuffer> {
+		try {
+			const buffer = await job.provider.synthesize(job.chunks[index] ?? '');
+			job.chunkBuffers[index] = buffer;
+			const duration = await decodeAudioDuration(buffer);
+			job.chunkReady[index] = true;
+			job.chunkDurations[index] = duration;
+			job.chunkInFlight[index] = false;
+			this.publishJobProgress(job);
+			this.maybeSaveOnGenerationComplete(job);
+			return buffer;
+		} catch (error) {
+			job.chunkInFlight[index] = false;
+			this.publishJobProgress(job);
+			throw error;
+		}
 	}
 
 	/** Mirrors a job's generation progress onto whichever public state it's currently driving -- playback's `state` fields if it's the active job, or `state.backgroundJobs` if it's in that list. A no-op once the job has been discarded from both roles. */

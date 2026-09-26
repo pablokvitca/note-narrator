@@ -638,18 +638,23 @@ export class PlayerView extends ItemView {
 		if (!activeFile || !this.plugin.settings.linkAudioInNote) return;
 
 		const statusEl = container.createDiv({ cls: 'note-narrator-audio-status' });
-		void this.plugin.reader.getAudioStatus(activeFile).then((status) => {
-			if (status === 'none') return;
-			statusEl.addClass(status === 'outdated' ? 'is-outdated' : 'is-up-to-date');
-			statusEl.createSpan({ text: AUDIO_STATUS_LABELS[status] });
+		void (async () => {
+			try {
+				const status = await this.plugin.reader.getAudioStatus(activeFile);
+					if (status === 'none') return;
+					statusEl.addClass(status === 'outdated' ? 'is-outdated' : 'is-up-to-date');
+					statusEl.createSpan({ text: AUDIO_STATUS_LABELS[status] });
 
-			if (this.plugin.settings.showClearFilesButton) {
-				const deleteButton = statusEl.createDiv({ cls: 'clickable-icon note-narrator-audio-status-delete' });
-				setIcon(deleteButton, 'trash-2');
-				attachTooltip(deleteButton, 'Delete saved audio file');
-				deleteButton.onclick = () => this.confirmClearReaderFiles(activeFile);
+					if (this.plugin.settings.showClearFilesButton) {
+						const deleteButton = statusEl.createDiv({ cls: 'clickable-icon note-narrator-audio-status-delete' });
+						setIcon(deleteButton, 'trash-2');
+						attachTooltip(deleteButton, 'Delete saved audio file');
+						deleteButton.onclick = () => this.confirmClearReaderFiles(activeFile);
+					}
+			} catch (error) {
+				console.error('Note Narrator: failed to update the panel', error);
 			}
-		});
+		})();
 	}
 
 	private confirmClearReaderFiles(activeFile: TFile): void {
@@ -667,20 +672,25 @@ export class PlayerView extends ItemView {
 		if (!file) return;
 
 		const statsEl = container.createDiv({ cls: 'note-narrator-note-stats' });
-		void this.plugin.reader.getNoteStats(file).then((stats) => {
-			if (!stats) {
-				statsEl.remove();
-				return;
+		void (async () => {
+			try {
+				const stats = await this.plugin.reader.getNoteStats(file);
+					if (!stats) {
+						statsEl.remove();
+						return;
+					}
+					statsEl.empty();
+					statsEl.createDiv({
+						text: `${stats.totalChars.toLocaleString()} characters · ${stats.chunkCount} chunk${stats.chunkCount === 1 ? '' : 's'}`,
+					});
+					statsEl.createDiv({
+						cls: 'note-narrator-note-stats-secondary',
+						text: `~${stats.avgCharsPerChunk.toLocaleString()} characters/chunk · ~${stats.avgWordsPerChunk.toLocaleString()} words/chunk`,
+					});
+			} catch (error) {
+				console.error('Note Narrator: failed to update the panel', error);
 			}
-			statsEl.empty();
-			statsEl.createDiv({
-				text: `${stats.totalChars.toLocaleString()} characters · ${stats.chunkCount} chunk${stats.chunkCount === 1 ? '' : 's'}`,
-			});
-			statsEl.createDiv({
-				cls: 'note-narrator-note-stats-secondary',
-				text: `~${stats.avgCharsPerChunk.toLocaleString()} characters/chunk · ~${stats.avgWordsPerChunk.toLocaleString()} words/chunk`,
-			});
-		});
+		})();
 	}
 
 	/**
@@ -740,27 +750,32 @@ export class PlayerView extends ItemView {
 		const activeFile = this.getActiveFile();
 		if (!activeFile || !this.plugin.settings.linkAudioInNote) return;
 
-		void this.plugin.reader.getAudioInfo(activeFile).then((info) => {
-			if (!info) return;
+		void (async () => {
+			try {
+				const info = await this.plugin.reader.getAudioInfo(activeFile);
+					if (!info) return;
 
-			// Read button's label only makes sense while it's actually clickable (not `active`) — leave it
-			// alone otherwise so it doesn't flash "Regenerate" next to a disabled "Reading" state. Play saved
-			// isn't gated the same way: it's available the instant a saved file exists, even mid-read, since
-			// clicking it just stops whatever's currently happening and plays the saved copy instead (same
-			// pattern as Read/Regenerate staying clickable while a *different* note is playing).
-			if (!active) {
-				const narrator = this.plugin.reader.getActiveNarrator();
-				const voiceMismatch = info.savedVoice !== undefined && !!narrator && !savedVoiceMatches(info.savedVoice, narrator.voice);
-				if (info.status === 'outdated') {
-					this.setButtonLabel(readButton, readLabelEl, 'Regenerate');
-				} else if (voiceMismatch) {
-					this.setButtonLabel(readButton, readLabelEl, 'Regenerate with new narrator');
-				}
+					// Read button's label only makes sense while it's actually clickable (not `active`) — leave it
+					// alone otherwise so it doesn't flash "Regenerate" next to a disabled "Reading" state. Play saved
+					// isn't gated the same way: it's available the instant a saved file exists, even mid-read, since
+					// clicking it just stops whatever's currently happening and plays the saved copy instead (same
+					// pattern as Read/Regenerate staying clickable while a *different* note is playing).
+					if (!active) {
+						const narrator = this.plugin.reader.getActiveNarrator();
+						const voiceMismatch = info.savedVoice !== undefined && !!narrator && !savedVoiceMatches(info.savedVoice, narrator.voice);
+						if (info.status === 'outdated') {
+							this.setButtonLabel(readButton, readLabelEl, 'Regenerate');
+						} else if (voiceMismatch) {
+							this.setButtonLabel(readButton, readLabelEl, 'Regenerate with new narrator');
+						}
+					}
+
+					playSavedButton.disabled = false;
+					playSavedButton.onclick = () => void this.plugin.reader.playSavedFile(info.audioFile, activeFile);
+			} catch (error) {
+				console.error('Note Narrator: failed to update the panel', error);
 			}
-
-			playSavedButton.disabled = false;
-			playSavedButton.onclick = () => void this.plugin.reader.playSavedFile(info.audioFile, activeFile);
-		});
+		})();
 	}
 
 	private showOptionsMenu(evt: MouseEvent): void {
