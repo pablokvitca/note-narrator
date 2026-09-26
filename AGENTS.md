@@ -121,6 +121,22 @@ Why: every push to a `next/**` or `release/**` branch auto-publishes a beta tagg
 - Never manually create a beta tag or release — just push commits (with the version already bumped per the rule above) and the beta appears within a minute or two. Verify it exists and is versioned as expected: `gh release list --repo <owner>/<repo> --limit 5 --json tagName,isPrerelease`.
 - Testers install via [BRAT](https://github.com/TfTHacker/obsidian42-brat), adding this repo and enabling beta versions.
 
+### Release checklist in Linear (before the final release steps)
+
+Every stable release is tracked by a Linear issue, created **before** the "Final (stable) release" steps start (as soon as the user says a stable release of `X.Y.Z` is coming).
+
+**The release task:** title `Release Stable X.Y.Z`; team ObsidianPlugins, project Note Narrator, milestone `X.Y.0`'s (the version's milestone), label Chore, assigned to the user. Give it these subtasks (all children of the release task, same team, project and milestone):
+
+1. `Run the guideline review`: run the `/review-for-stable-release X.Y.Z --release-task <release task id>` skill (`.claude/skills/review-for-stable-release/`). It reviews the diff between the last stable release and the new stable against all 52 community plugin guidelines, posts its report as a comment on this subtask, files every confirmed breach as a subtask of the **release task**, and sets this subtask to Done.
+2. `Update documentation for X.Y.Z`: update the docs vault (`note-narrator-docs`) for what changed: affected pages, the `plugin-version` and `updated` frontmatter, Known limitations, the Roadmap (move shipped items), screenshots.
+3. `Review documentation for X.Y.Z`: read the docs against the build being released (settings, labels, defaults, commands), check the screenshot checklist, links and the publish selection, and fix inaccuracies.
+4. `Test on <platform>` for each platform below: install the beta (or the release candidate) and exercise the main flows (read, pause, skip, save, link, background generation, settings tabs).
+5. `Submit to the community directory`: follow <https://docs.obsidian.md/plugins/releasing/submit-plugin>. Needed for the first stable release; for later releases, check that page for whether the listing fields (id, name, author, description) changed and need a pull request, and otherwise close it as not needed.
+
+**Platforms** (edit this list to match the devices that can actually be tested): Desktop: macOS, Windows, Linux. Mobile: iPhone, iPad, iPad mini, visionOS, Android.
+
+**Gate:** do not run the final steps below until every subtask of the release task is Done, or the user has explicitly waived the open ones in that conversation. Breach subtasks filed by the review with Urgent or High priority need fixing or an explicit waiver.
+
 ### Final (stable) release
 
 Only do this when explicitly asked to release/ship — never on your own initiative, and never skip straight here without a beta having been tested first unless told to.
@@ -132,6 +148,7 @@ Only do this when explicitly asked to release/ship — never on your own initiat
 5. Only for a new-minor release (not a patch): rename the branch for future patches — `git checkout <branch> && git branch -m next/X.Y release/X.Y && git push origin release/X.Y`. GitHub may auto-delete the old `next/X.Y` remote ref once its PR is detected merged; check `git ls-remote origin` before trying to delete it yourself.
 6. Attach `manifest.json`, `main.js`, and `styles.css` as release assets — the release workflow does this automatically; don't do it by hand.
 7. After the *first-ever* stable release, separately follow the process to add/update this plugin in the community plugin catalog, if applicable.
+8. Mark the `Release Stable X.Y.Z` task Done with a comment linking the GitHub release (and note anything deferred).
 
 ## Security, privacy, and compliance
 
