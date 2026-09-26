@@ -1,7 +1,8 @@
-import { App, PluginSettingTab, Setting, SettingDefinitionItem } from 'obsidian';
+import { App, Notice, PluginSettingTab, Setting, SettingDefinitionItem } from 'obsidian';
 import NoteNarratorPlugin from '../main';
+import { cleanVaultFolderPath } from '../engine/vault-path';
 import { AppearanceSection } from './sections/appearance';
-import { FALLBACK_TEXT_KEYS, NoteNarratorSettings } from './settings';
+import { DEFAULT_SETTINGS, FALLBACK_TEXT_KEYS, NoteNarratorSettings } from './settings';
 import { FilesSection } from './sections/files';
 import { GeneralSection } from './sections/general';
 import { PerformanceSection } from './sections/performance';
@@ -56,7 +57,15 @@ export class NoteNarratorSettingTab extends PluginSettingTab implements Settings
 	 */
 	setControlValue(key: string, value: unknown): void | Promise<void> {
 		const fallback = FALLBACK_TEXT_KEYS[key as keyof NoteNarratorSettings];
-		const normalized = fallback !== undefined && typeof value === 'string' ? value.trim() || fallback : value;
+		let normalized = fallback !== undefined && typeof value === 'string' ? value.trim() || fallback : value;
+		if (key === 'saveAudioFolderPath' && typeof normalized === 'string') {
+			const cleaned = cleanVaultFolderPath(normalized, this.app.vault.configDir);
+			if (cleaned.ok) normalized = cleaned.path || DEFAULT_SETTINGS.saveAudioFolderPath;
+			else {
+				new Notice(cleaned.reason + ' Using the default folder instead.');
+				normalized = DEFAULT_SETTINGS.saveAudioFolderPath;
+			}
+		}
 		const result = super.setControlValue(key, normalized);
 
 		const after = async () => {
