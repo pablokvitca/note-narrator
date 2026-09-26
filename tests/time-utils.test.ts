@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeFullReadTimes, formatCurrentPartTimeText, formatFullReadTimeText, formatTime, formatTimeDisplay } from './time-utils';
+import { computeFullReadTimes, formatCurrentPartTimeText, formatFullReadTimeText, formatTime, formatTimeDisplay } from '../src/time-utils';
 
 describe('formatTime', () => {
 	it('formats whole minutes and seconds with zero-padded seconds', () => {

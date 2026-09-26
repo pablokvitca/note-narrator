@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_STRIP_MARKDOWN_OPTIONS } from './text-utils';
-import { computeChunkPositions, rebaseSpan, splitChunkPosition } from './text-position';
+import { DEFAULT_STRIP_MARKDOWN_OPTIONS } from '../src/text-utils';
+import { computeChunkPositions, rebaseSpan, splitChunkPosition } from '../src/text-position';
 
 const STRIP_OPTIONS = DEFAULT_STRIP_MARKDOWN_OPTIONS;
 

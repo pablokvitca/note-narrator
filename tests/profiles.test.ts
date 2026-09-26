@@ -13,7 +13,7 @@ import {
 	savedVoiceMatches,
 	uniqueName,
 	voiceFingerprint,
-} from './profiles';
+} from '../src/profiles';
 
 function settingsWith(profileCount: number): ProfileSettings {
 	const provider = createProvider('elevenlabs', 'ElevenLabs');
