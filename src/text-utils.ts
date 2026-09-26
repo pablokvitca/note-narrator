@@ -1,6 +1,6 @@
 export type ChunkerStyle = 'markdown-aware' | 'sentence';
 
-const SENTENCE_MARKER = '~~OBSIDIAN-READER-SENTENCE-BREAK~~';
+const SENTENCE_MARKER = '~~NOTE-NARRATOR-SENTENCE-BREAK~~';
 
 /** Removes a leading YAML frontmatter block, if present. */
 export function stripFrontmatter(markdown: string): string {

@@ -1,13 +1,13 @@
 import { MarkdownView, Plugin, TFile } from 'obsidian';
 import { createHighlightExtension } from './highlight-extension';
 import { registerCustomIcons } from './icons';
-import { PlayerView, READER_VIEW_TYPE } from './player-view';
+import { PlayerView, NOTE_NARRATOR_VIEW_TYPE } from './player-view';
 import { Reader } from './reader';
-import { DEFAULT_SETTINGS, ReaderSettings, ReaderSettingTab } from './settings';
+import { DEFAULT_SETTINGS, NoteNarratorSettings, NoteNarratorSettingTab } from './settings';
 import { initTouchTooltipSupport } from './touch-tooltip';
 
-export default class ObsidianReaderPlugin extends Plugin {
-	settings!: ReaderSettings;
+export default class NoteNarratorPlugin extends Plugin {
+	settings!: NoteNarratorSettings;
 	reader!: Reader;
 
 	private patchedViews = new WeakSet<MarkdownView>();
@@ -21,7 +21,7 @@ export default class ObsidianReaderPlugin extends Plugin {
 		await this.loadSettings();
 		this.reader = new Reader(this.app, this.settings);
 
-		this.registerView(READER_VIEW_TYPE, (leaf) => new PlayerView(leaf, this));
+		this.registerView(NOTE_NARRATOR_VIEW_TYPE, (leaf) => new PlayerView(leaf, this));
 		this.registerEditorExtension(createHighlightExtension(this));
 
 		this.addRibbonIcon('audio-lines', 'Read note aloud', () => {
@@ -52,7 +52,7 @@ export default class ObsidianReaderPlugin extends Plugin {
 			callback: () => this.reader.stop(),
 		});
 
-		this.addSettingTab(new ReaderSettingTab(this.app, this));
+		this.addSettingTab(new NoteNarratorSettingTab(this.app, this));
 	}
 
 	onunload() {
@@ -65,7 +65,7 @@ export default class ObsidianReaderPlugin extends Plugin {
 
 	async activateView(): Promise<void> {
 		const { workspace } = this.app;
-		const existing = workspace.getLeavesOfType(READER_VIEW_TYPE)[0];
+		const existing = workspace.getLeavesOfType(NOTE_NARRATOR_VIEW_TYPE)[0];
 		if (existing) {
 			await workspace.revealLeaf(existing);
 			return;
@@ -73,7 +73,7 @@ export default class ObsidianReaderPlugin extends Plugin {
 
 		const leaf = workspace.getRightLeaf(false);
 		if (!leaf) return;
-		await leaf.setViewState({ type: READER_VIEW_TYPE, active: true });
+		await leaf.setViewState({ type: NOTE_NARRATOR_VIEW_TYPE, active: true });
 		await workspace.revealLeaf(leaf);
 	}
 
@@ -93,7 +93,7 @@ export default class ObsidianReaderPlugin extends Plugin {
 	}
 
 	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, (await this.loadData()) as Partial<ReaderSettings>);
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, (await this.loadData()) as Partial<NoteNarratorSettings>);
 	}
 
 	async saveSettings() {

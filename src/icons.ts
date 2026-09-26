@@ -2,7 +2,7 @@ import { addIcon } from 'obsidian';
 import { SKIP_SECONDS_OPTIONS, SkipSeconds } from './settings';
 
 /** A saved-audio file with a play triangle on its corner, for the "Play saved" action -- distinct from the plain `play` triangle used for playback controls. */
-export const PLAY_SAVED_ICON_ID = 'obsidian-reader-play-saved';
+export const PLAY_SAVED_ICON_ID = 'note-narrator-play-saved';
 
 /*
  * Path coordinates below are authored in a 24x24 grid, matching Lucide's own icons -- but unlike
@@ -36,7 +36,7 @@ const PLAY_SAVED_ICON_SVG = `
 
 /** Icon id for a rewind/skip-forward transport button showing the given duration, in the given direction. One custom icon per (seconds, direction) pair -- see {@link buildSkipIconSvg}. */
 export function skipIconId(seconds: SkipSeconds, direction: 'back' | 'forward'): string {
-	return `obsidian-reader-skip-${direction}-${seconds}`;
+	return `note-narrator-skip-${direction}-${seconds}`;
 }
 
 /*

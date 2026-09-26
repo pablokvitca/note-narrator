@@ -2,7 +2,7 @@ import { App, Events, MarkdownView, moment, Notice, normalizePath, TFile } from 
 import { concatArrayBuffers, sanitizeFilenameComponent } from './audio-utils';
 import { buildBackgroundJobInfo, hasPendingGeneration } from './background-job';
 import type { BackgroundJobInfo } from './background-job';
-import { DEFAULT_ELEVENLABS_CHAR_LIMIT, ELEVENLABS_MODEL_CHAR_LIMITS, HighlightGranularity, ReaderSettings } from './settings';
+import { DEFAULT_ELEVENLABS_CHAR_LIMIT, ELEVENLABS_MODEL_CHAR_LIMITS, HighlightGranularity, NoteNarratorSettings } from './settings';
 import { ChunkPosition, computeChunkPositions, RawSpan, rebaseSpan, splitChunkPosition } from './text-position';
 import {
 	buildReadingPreamble,
@@ -136,7 +136,7 @@ export class Reader extends Events {
 
 	constructor(
 		private app: App,
-		private settings: ReaderSettings,
+		private settings: NoteNarratorSettings,
 	) {
 		super();
 		this.currentPlaybackRate = settings.playbackRate;
@@ -448,7 +448,7 @@ export class Reader extends Events {
 
 			return { file: sourceFile, positions, chunkDurations, chunkByteLengths };
 		} catch (error) {
-			console.error('Obsidian Reader: failed to build saved-playback highlight timeline', error);
+			console.error('Note Narrator: failed to build saved-playback highlight timeline', error);
 			return null;
 		}
 	}
@@ -545,7 +545,7 @@ export class Reader extends Events {
 	private async readText(rawText: string, sourceFile: TFile | null, options: { allowSave: boolean; positionBase?: PositionBase }): Promise<void> {
 		const apiKey = this.app.secretStorage.getSecret(this.settings.apiKeySecretId);
 		if (!apiKey) {
-			new Notice('Set an ElevenLabs API key in the Obsidian reader settings.');
+			new Notice('Set an ElevenLabs API key in the Note Narrator settings.');
 			return;
 		}
 
@@ -669,7 +669,7 @@ export class Reader extends Events {
 			// Set before notifying (not just checked) so playFromIndex(), which can independently catch this
 			// same rejection concurrently, knows this failure was already handled and skips its own notice.
 			job.cancelled = true;
-			console.error('Obsidian Reader: failed to generate audio', error);
+			console.error('Note Narrator: failed to generate audio', error);
 			new Notice(`Failed to generate audio${job.file ? ` for "${job.file.basename}"` : ''}: ${error instanceof Error ? error.message : String(error)}`);
 			if (job === this.activeJob) {
 				this.activeJob = null;
@@ -701,7 +701,7 @@ export class Reader extends Events {
 				// rejection -- the cancelled check lets only the first one to get here actually
 				// notify/reset, instead of showing the same failure twice.
 				if (session !== this.sessionId || job.cancelled) return;
-				console.error('Obsidian Reader: failed to read note aloud', error);
+				console.error('Note Narrator: failed to read note aloud', error);
 				new Notice(`Failed to read note aloud: ${error instanceof Error ? error.message : String(error)}`);
 				job.cancelled = true;
 				this.activeJob = null;
@@ -829,7 +829,7 @@ export class Reader extends Events {
 				await this.linkAudioInNote(audioFile, sourceFile, chunkMeta);
 			}
 		} catch (error) {
-			console.error('Obsidian Reader: failed to save audio file', error);
+			console.error('Note Narrator: failed to save audio file', error);
 			new Notice(`Failed to save audio file: ${error instanceof Error ? error.message : String(error)}`);
 		}
 	}
@@ -838,7 +838,7 @@ export class Reader extends Events {
 		try {
 			return await getElevenLabsVoiceName(apiKey, this.settings.voiceId);
 		} catch (error) {
-			console.error('Obsidian Reader: failed to resolve voice name for filename', error);
+			console.error('Note Narrator: failed to resolve voice name for filename', error);
 			return this.settings.voiceId;
 		}
 	}
@@ -852,7 +852,7 @@ export class Reader extends Events {
 	}
 
 	/**
-	 * Staleness hash for a note, excluding the reader's own bookkeeping properties from the frontmatter
+	 * Staleness hash for a note, excluding Note Narrator's own bookkeeping properties from the frontmatter
 	 * before hashing. Hashing raw file content directly would be self-referential: linkAudioInNote() writes
 	 * these properties (including this very hash) into the file's frontmatter right after computing it, so
 	 * every later read of "current content" would include them while the stored hash never could —
@@ -937,7 +937,7 @@ export class Reader extends Events {
 		this.trigger('audio-status-change', sourceFile);
 	}
 
-	/** Deletes a note's linked audio file (if any) and removes the reader-audio properties from its frontmatter. */
+	/** Deletes a note's linked audio file (if any) and removes the Note Narrator audio properties from its frontmatter. */
 	async clearReaderFiles(sourceFile: TFile): Promise<void> {
 		const audioFile = this.findExistingAudioFile(sourceFile);
 		if (audioFile) {
@@ -946,7 +946,7 @@ export class Reader extends Events {
 
 		await this.removeReaderProperties(sourceFile);
 
-		new Notice(audioFile ? 'Cleared reader audio file and properties.' : 'Cleared reader properties (no audio file was linked).');
+		new Notice(audioFile ? 'Cleared Note Narrator audio file and properties.' : 'Cleared Note Narrator properties (no audio file was linked).');
 	}
 
 	/**
@@ -996,7 +996,7 @@ export class Reader extends Events {
 
 			await this.saveAudioFile(buffers, file, chunkDurations);
 		} catch (error) {
-			console.error('Obsidian Reader: auto-generate on open failed', error);
+			console.error('Note Narrator: auto-generate on open failed', error);
 		}
 	}
 
@@ -1048,14 +1048,14 @@ export class Reader extends Events {
 		const storedHash = frontmatter?.[this.settings.audioHashProperty] as string | undefined;
 		if (!link || !storedHash) return 'none';
 
-		// The note still links to audio that's since been moved/deleted outside Obsidian Reader — there's
+		// The note still links to audio that's since been moved/deleted outside Note Narrator — there's
 		// nothing to be "outdated" relative to, so clean up the stale properties instead of showing a
 		// misleading status. Self-stabilizing: once cleaned, `link`/`storedHash` above are gone and this
 		// short-circuits to 'none' on the next call without re-checking the vault.
 		if (!this.findExistingAudioFile(file)) {
 			if (this.settings.autoCleanupMissingAudioProperties) {
 				await this.removeReaderProperties(file);
-				new Notice('Cleaned up stale reader audio file metadata properties');
+				new Notice('Cleaned up stale Note Narrator audio file metadata properties');
 			}
 			return 'none';
 		}
@@ -1117,7 +1117,7 @@ export class Reader extends Events {
 			this.savedPlaybackTimeline = null;
 			this.resetToIdle();
 		} catch (error) {
-			console.error('Obsidian Reader: failed to play saved audio', error);
+			console.error('Note Narrator: failed to play saved audio', error);
 			new Notice(`Failed to play saved audio: ${error instanceof Error ? error.message : String(error)}`);
 			this.savedPlaybackTimeline = null;
 			this.resetToIdle();

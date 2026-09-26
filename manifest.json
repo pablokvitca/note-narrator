@@ -1,6 +1,6 @@
 {
-	"id": "obsidian-reader",
-	"name": "Obsidian Reader",
+	"id": "note-narrator",
+	"name": "Note Narrator",
 	"version": "0.16.0",
 	"minAppVersion": "1.13.0",
 	"description": "Read the current note aloud with text-to-speech, starting with ElevenLabs.",

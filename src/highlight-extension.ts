@@ -1,7 +1,7 @@
 import { Extension, StateEffect } from '@codemirror/state';
 import { Decoration, DecorationSet, EditorView, gutter, GutterMarker, ViewPlugin, ViewUpdate } from '@codemirror/view';
 import { editorInfoField, setIcon, setTooltip } from 'obsidian';
-import ObsidianReaderPlugin from './main';
+import NoteNarratorPlugin from './main';
 
 /** Dispatched (as a no-op transaction) whenever the reader's playback state changes, so each open editor's decoration/gutter recomputes even though nothing in its own document changed. */
 const refreshHighlight = StateEffect.define<null>();
@@ -13,7 +13,7 @@ function isReaderRefresh(update: ViewUpdate): boolean {
 
 class SpeakerGutterMarker extends GutterMarker {
 	toDOM(): HTMLElement {
-		const el = createSpan({ cls: 'obsidian-reader-margin-marker' });
+		const el = createSpan({ cls: 'note-narrator-margin-marker' });
 		setIcon(el, 'audio-lines');
 		setTooltip(el, 'Currently reading aloud this section');
 		return el;
@@ -27,7 +27,7 @@ class SpeakerGutterMarker extends GutterMarker {
 /** A plain vertical-rule segment for a gutter line between the icon and the end of the active span -- same visual line, no icon repeated on every row. */
 class MarkerContinuationGutterMarker extends GutterMarker {
 	toDOM(): HTMLElement {
-		return createSpan({ cls: 'obsidian-reader-margin-marker-line' });
+		return createSpan({ cls: 'note-narrator-margin-marker-line' });
 	}
 
 	eq(other: GutterMarker): boolean {
@@ -39,7 +39,7 @@ const SPEAKER_MARKER = new SpeakerGutterMarker();
 const CONTINUATION_MARKER = new MarkerContinuationGutterMarker();
 
 /** Clamps `result.span` to the document and returns it, or null if there's nothing to show (no active span, wrong file, or an empty/out-of-bounds range). Shared by the mark-decorations and the gutter so both agree on exactly the same range. */
-function resolveActiveSpan(view: EditorView, plugin: ObsidianReaderPlugin): { start: number; end: number } | null {
+function resolveActiveSpan(view: EditorView, plugin: NoteNarratorPlugin): { start: number; end: number } | null {
 	if (!plugin.settings.highlightWhileReading) return null;
 
 	const file = view.state.field(editorInfoField, false)?.file ?? null;
@@ -55,24 +55,24 @@ function resolveActiveSpan(view: EditorView, plugin: ObsidianReaderPlugin): { st
 }
 
 /** The mark-decorations for one editor (background/underline styles only -- margin-marker is a left-gutter marker instead, see `createMarkerGutter`), or none if this editor isn't showing the note currently being read. */
-function buildDecorations(view: EditorView, plugin: ObsidianReaderPlugin): DecorationSet {
+function buildDecorations(view: EditorView, plugin: NoteNarratorPlugin): DecorationSet {
 	if (plugin.settings.highlightStyle === 'margin-marker') return Decoration.none;
 
 	const span = resolveActiveSpan(view, plugin);
 	if (!span) return Decoration.none;
 
-	const cls = plugin.settings.highlightStyle === 'underline' ? 'obsidian-reader-highlight-underline' : 'obsidian-reader-highlight-bg';
+	const cls = plugin.settings.highlightStyle === 'underline' ? 'note-narrator-highlight-underline' : 'note-narrator-highlight-bg';
 	return Decoration.set([Decoration.mark({ class: cls }).range(span.start, span.end)]);
 }
 
 /**
  * Registered once (in `registerEditorExtension`) but instantiated by CodeMirror per open editor. Each
- * instance listens to the reader's own 'change' event directly -- rather than relying on a doc-change
+ * instance listens to Note Narrator's own 'change' event directly -- rather than relying on a doc-change
  * update, since the trigger here is external playback progress, not an edit to this document -- and
  * dispatches a no-op transaction to make CodeMirror re-run `update()` (on this extension and the gutter
  * below, which shares the same dispatched transaction) and re-read `decorations`.
  */
-function createMarkPlugin(plugin: ObsidianReaderPlugin): Extension {
+function createMarkPlugin(plugin: NoteNarratorPlugin): Extension {
 	return ViewPlugin.fromClass(
 		class {
 			decorations: DecorationSet;
@@ -110,9 +110,9 @@ function createMarkPlugin(plugin: ObsidianReaderPlugin): Extension {
  * vertical-rule marker instead, so the line drawn by CSS (see styles.css) runs from the icon down to
  * wherever the currently-playing chunk/section actually ends, rather than down the entire gutter.
  */
-function createMarkerGutter(plugin: ObsidianReaderPlugin): Extension {
+function createMarkerGutter(plugin: NoteNarratorPlugin): Extension {
 	return gutter({
-		class: 'obsidian-reader-marker-gutter',
+		class: 'note-narrator-marker-gutter',
 		renderEmptyElements: false,
 		lineMarker(view, line) {
 			if (plugin.settings.highlightStyle !== 'margin-marker') return null;
@@ -130,6 +130,6 @@ function createMarkerGutter(plugin: ObsidianReaderPlugin): Extension {
 	});
 }
 
-export function createHighlightExtension(plugin: ObsidianReaderPlugin): Extension {
+export function createHighlightExtension(plugin: NoteNarratorPlugin): Extension {
 	return [createMarkPlugin(plugin), createMarkerGutter(plugin)];
 }

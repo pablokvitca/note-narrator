@@ -34,7 +34,7 @@ export default defineConfig(
 			// obsidianmd/ui/sentence-case's brand list doesn't include ElevenLabs, so without this
 			// override the rule would suggest lowercasing it to "elevenlabs", misspelling the brand.
 			// Options replace (not merge with) the rule's defaults, so this repeats them verbatim
-			// plus ElevenLabs — see eslint-plugin-obsidianmd's ui/brands.ts for the canonical list.
+			// plus ElevenLabs and Note Narrator — see eslint-plugin-obsidianmd's ui/brands.ts for the canonical list.
 			'obsidianmd/ui/sentence-case': [
 				'warn',
 				{
@@ -48,6 +48,7 @@ export default defineConfig(
 						'Obsidian',
 						'Obsidian Sync',
 						'Obsidian Publish',
+						'Note Narrator',
 						'Google',
 						'Gemini',
 						'Vertex AI',

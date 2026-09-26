@@ -1,6 +1,6 @@
 import { debounce, ItemView, MarkdownView, Menu, setIcon, Setting, TFile, WorkspaceLeaf } from 'obsidian';
 import { ConfirmModal } from './confirm-modal';
-import ObsidianReaderPlugin from './main';
+import NoteNarratorPlugin from './main';
 import { hasPendingGeneration, queuePosition } from './background-job';
 import type { BackgroundJobInfo } from './background-job';
 import { PLAY_SAVED_ICON_ID, skipIconId } from './icons';
@@ -9,7 +9,7 @@ import { computeFullReadTimes, formatTimeDisplay } from './time-utils';
 import { attachTooltip } from './touch-tooltip';
 import { ElevenLabsVoice, listElevenLabsVoices } from './tts/elevenlabs-provider';
 
-export const READER_VIEW_TYPE = 'obsidian-reader-player';
+export const NOTE_NARRATOR_VIEW_TYPE = 'note-narrator-player';
 
 const SPEED_MIN = 0.5;
 const SPEED_MAX = 3;
@@ -46,17 +46,17 @@ export class PlayerView extends ItemView {
 
 	constructor(
 		leaf: WorkspaceLeaf,
-		private plugin: ObsidianReaderPlugin,
+		private plugin: NoteNarratorPlugin,
 	) {
 		super(leaf);
 	}
 
 	getViewType(): string {
-		return READER_VIEW_TYPE;
+		return NOTE_NARRATOR_VIEW_TYPE;
 	}
 
 	getDisplayText(): string {
-		return 'Obsidian reader';
+		return 'Note Narrator';
 	}
 
 	getIcon(): string {
@@ -228,7 +228,7 @@ export class PlayerView extends ItemView {
 			this.voices = await listElevenLabsVoices(apiKey);
 			this.render();
 		} catch (error) {
-			console.error('Obsidian Reader: failed to fetch ElevenLabs voices', error);
+			console.error('Note Narrator: failed to fetch ElevenLabs voices', error);
 		}
 	}
 
@@ -237,7 +237,7 @@ export class PlayerView extends ItemView {
 
 		const { contentEl } = this;
 		contentEl.empty();
-		contentEl.addClass('obsidian-reader-player-view');
+		contentEl.addClass('note-narrator-player-view');
 
 		const state = this.plugin.reader.getState();
 		const active = state.status !== 'idle';
@@ -262,21 +262,21 @@ export class PlayerView extends ItemView {
 
 		// Everything below scrolls together; the background-jobs queue (appended straight to contentEl,
 		// after this) stays pinned at the bottom regardless of scroll position.
-		const scroll = contentEl.createDiv({ cls: 'obsidian-reader-scroll-area' });
+		const scroll = contentEl.createDiv({ cls: 'note-narrator-scroll-area' });
 
 		// 1. Title
 		scroll.createDiv({
-			cls: 'obsidian-reader-selected-note',
+			cls: 'note-narrator-selected-note',
 			text: selectedFile ? `Read: ${selectedFile.basename}` : 'Open a note to read it aloud',
 		});
 		if (state.activeFile && (!selectedFile || state.activeFile.path !== selectedFile.path)) {
-			const currentlyReading = scroll.createDiv({ cls: 'obsidian-reader-currently-reading' });
-			currentlyReading.createSpan({ cls: 'obsidian-reader-currently-reading-icon' }, (el) => setIcon(el, 'headphones'));
+			const currentlyReading = scroll.createDiv({ cls: 'note-narrator-currently-reading' });
+			currentlyReading.createSpan({ cls: 'note-narrator-currently-reading-icon' }, (el) => setIcon(el, 'headphones'));
 			currentlyReading.createSpan({ text: `Currently reading: ${state.activeFile.basename}` });
 		}
 
 		// 2. Status header
-		scroll.createDiv({ cls: 'obsidian-reader-status', text: STATUS_LABELS[state.status] });
+		scroll.createDiv({ cls: 'note-narrator-status', text: STATUS_LABELS[state.status] });
 
 		// 3/4. Audio status: saved audio up to date, or outdated (whichever applies -- nothing if neither)
 		this.renderAudioStatus(scroll);
@@ -290,33 +290,33 @@ export class PlayerView extends ItemView {
 
 		// 7. Progress bars/text
 		if (state.chunkCount > 1) {
-			this.chunkProgressEl = scroll.createDiv({ cls: 'obsidian-reader-chunk-progress' });
+			this.chunkProgressEl = scroll.createDiv({ cls: 'note-narrator-chunk-progress' });
 
-			const generationBar = scroll.createDiv({ cls: 'obsidian-reader-generation-bar' });
+			const generationBar = scroll.createDiv({ cls: 'note-narrator-generation-bar' });
 			for (let i = 0; i < state.chunkCount; i++) {
-				const segment = generationBar.createDiv({ cls: 'obsidian-reader-generation-segment' });
+				const segment = generationBar.createDiv({ cls: 'note-narrator-generation-segment' });
 				if (state.chunkReady[i]) segment.addClass('is-ready');
 				else if (state.chunkInFlight[i]) segment.addClass('is-generating');
 				if (i === state.chunkIndex) segment.addClass('is-current');
 			}
 		}
 
-		const bar = scroll.createDiv({ cls: 'obsidian-reader-progress-bar' });
+		const bar = scroll.createDiv({ cls: 'note-narrator-progress-bar' });
 		if (state.status === 'generating') {
 			bar.addClass('is-indeterminate');
-			bar.createDiv({ cls: 'obsidian-reader-progress-fill' });
+			bar.createDiv({ cls: 'note-narrator-progress-fill' });
 		} else {
-			this.progressFillEl = bar.createDiv({ cls: 'obsidian-reader-progress-fill' });
+			this.progressFillEl = bar.createDiv({ cls: 'note-narrator-progress-fill' });
 		}
 
-		this.timeEl = scroll.createDiv({ cls: 'obsidian-reader-time' });
+		this.timeEl = scroll.createDiv({ cls: 'note-narrator-time' });
 		this.updateProgress(state);
 
 		// 8/9. Every playback control in one row: previous part, rewind, pause, skip, next part, stop, then
 		// (separated, since these scroll the note rather than affect playback) scroll-to-current-section/chunk.
 		{
 			const partsDisabled = !active || state.chunkCount <= 1;
-			const controls = scroll.createDiv({ cls: 'obsidian-reader-controls' });
+			const controls = scroll.createDiv({ cls: 'note-narrator-controls' });
 
 			this.createIconButton(controls, 'step-back', 'Previous part', partsDisabled, () => this.plugin.reader.previousPart());
 
@@ -331,7 +331,7 @@ export class PlayerView extends ItemView {
 			this.createIconButton(controls, state.status === 'paused' ? 'circle-play' : 'circle-pause', state.status === 'paused' ? 'Resume' : 'Pause', !active, () => {
 				if (state.status === 'playing') this.plugin.reader.pause();
 				else if (state.status === 'paused') this.plugin.reader.resume();
-			}).addClass('obsidian-reader-control-primary');
+			}).addClass('note-narrator-control-primary');
 
 			this.createIconButton(
 				controls,
@@ -352,7 +352,7 @@ export class PlayerView extends ItemView {
 			this.createIconButton(controls, 'square-stop', 'Stop', !active, () => this.plugin.reader.stop());
 
 			if (this.plugin.settings.showJumpToCurrentButtons) {
-				controls.createDiv({ cls: 'obsidian-reader-controls-separator' });
+				controls.createDiv({ cls: 'note-narrator-controls-separator' });
 				const sectionSpan = active ? this.plugin.reader.getSpan('section') : null;
 				this.createIconButton(controls, 'locate', 'Scroll to current section', !sectionSpan, () => void this.scrollToCurrent());
 			}
@@ -364,14 +364,14 @@ export class PlayerView extends ItemView {
 		const showSpeed = this.plugin.settings.showPlaybackSpeedSlider;
 		const showVolume = this.plugin.settings.showVolumeSlider;
 		if (showSpeed || showVolume) {
-			const compactRow = scroll.createDiv({ cls: 'obsidian-reader-slider-compact-row' });
+			const compactRow = scroll.createDiv({ cls: 'note-narrator-slider-compact-row' });
 			if (showSpeed) this.renderSpeedControl(scroll, compactRow);
 			if (showVolume) this.renderVolumeControl(scroll, compactRow);
 		}
 
 		// 12. Background-jobs queue, pinned to the bottom of the panel (outside the scroll area)
 		if (state.backgroundJobs.length > 0) {
-			const pinned = contentEl.createDiv({ cls: 'obsidian-reader-background-jobs-pinned' });
+			const pinned = contentEl.createDiv({ cls: 'note-narrator-background-jobs-pinned' });
 			this.renderBackgroundJobStatus(pinned, state);
 		}
 	}
@@ -406,12 +406,12 @@ export class PlayerView extends ItemView {
 			});
 	}
 
-	/** Builds a Setting name as [icon][label] -- always in that order, at every width. The label itself hides at the narrow container breakpoint (see the `.obsidian-reader-setting-label` CSS rule); the icon never does, so there's always something to the left of it identifying the row. */
+	/** Builds a Setting name as [icon][label] -- always in that order, at every width. The label itself hides at the narrow container breakpoint (see the `.note-narrator-setting-label` CSS rule); the icon never does, so there's always something to the left of it identifying the row. */
 	private buildSettingNameWithIcon(icon: string, label: string): DocumentFragment {
 		return createFragment((frag) => {
-			const wrapper = frag.createSpan({ cls: 'obsidian-reader-setting-name' });
-			setIcon(wrapper.createSpan({ cls: 'obsidian-reader-setting-icon' }), icon);
-			wrapper.createSpan({ cls: 'obsidian-reader-setting-label', text: label });
+			const wrapper = frag.createSpan({ cls: 'note-narrator-setting-name' });
+			setIcon(wrapper.createSpan({ cls: 'note-narrator-setting-icon' }), icon);
+			wrapper.createSpan({ cls: 'note-narrator-setting-label', text: label });
 		});
 	}
 
@@ -427,16 +427,16 @@ export class PlayerView extends ItemView {
 		const formatSpeed = (value: number) => `${value.toFixed(2)}x`;
 
 		const speedSetting = new Setting(container).setName(this.buildSettingNameWithIcon('gauge', 'Playback speed'));
-		speedSetting.settingEl.addClass('obsidian-reader-slider-setting');
+		speedSetting.settingEl.addClass('note-narrator-slider-setting');
 		speedSetting.addSlider((slider) =>
 			slider
 				.setLimits(SPEED_MIN, SPEED_MAX, 0.05)
 				.setValue(currentRate)
 				.onChange((value) => this.plugin.reader.setPlaybackRate(value)),
 		);
-		const speedRange = speedSetting.controlEl.createDiv({ cls: 'obsidian-reader-speed-range' });
-		speedRange.createSpan({ cls: 'obsidian-reader-speed-bound', text: formatSpeed(SPEED_MIN) });
-		speedRange.createSpan({ cls: 'obsidian-reader-speed-bound', text: formatSpeed(SPEED_MAX) });
+		const speedRange = speedSetting.controlEl.createDiv({ cls: 'note-narrator-speed-range' });
+		speedRange.createSpan({ cls: 'note-narrator-speed-bound', text: formatSpeed(SPEED_MIN) });
+		speedRange.createSpan({ cls: 'note-narrator-speed-bound', text: formatSpeed(SPEED_MAX) });
 
 		const { valueEl } = this.renderCompactPill(compactRow, 'gauge', formatSpeed(currentRate), 'Playback speed', (anchor) =>
 			this.openSliderPopover(anchor, {
@@ -460,7 +460,7 @@ export class PlayerView extends ItemView {
 		const formatVolume = (value: number) => (this.plugin.reader.isMuted() ? 'Muted' : `${Math.round(value * 100)}%`);
 
 		const volumeSetting = new Setting(container).setName(this.buildSettingNameWithIcon(isMuted ? 'volume-x' : 'volume-2', 'Volume'));
-		volumeSetting.settingEl.addClass('obsidian-reader-slider-setting');
+		volumeSetting.settingEl.addClass('note-narrator-slider-setting');
 		volumeSetting.addSlider((slider) =>
 			slider
 				.setLimits(VOLUME_MIN, VOLUME_MAX, 0.05)
@@ -490,7 +490,7 @@ export class PlayerView extends ItemView {
 		);
 	}
 
-	/** The narrow-layout pill: icon + current value, opening a popover slider on click. Hidden except under the container query's narrow breakpoint -- see the `.obsidian-reader-slider-compact` CSS rule. Speed's and Volume's pills share one row (`compactRow`) so they sit side by side once collapsed, instead of each taking a full-width row. */
+	/** The narrow-layout pill: icon + current value, opening a popover slider on click. Hidden except under the container query's narrow breakpoint -- see the `.note-narrator-slider-compact` CSS rule. Speed's and Volume's pills share one row (`compactRow`) so they sit side by side once collapsed, instead of each taking a full-width row. */
 	private renderCompactPill(
 		compactRow: HTMLElement,
 		icon: string,
@@ -498,12 +498,12 @@ export class PlayerView extends ItemView {
 		label: string,
 		onOpen: (anchor: HTMLElement) => void,
 	): { pill: HTMLElement; valueEl: HTMLElement } {
-		const pill = compactRow.createDiv({ cls: 'obsidian-reader-slider-compact' });
+		const pill = compactRow.createDiv({ cls: 'note-narrator-slider-compact' });
 		pill.setAttribute('role', 'button');
 		pill.setAttribute('tabindex', '0');
 		attachTooltip(pill, label);
-		setIcon(pill.createSpan({ cls: 'obsidian-reader-slider-compact-icon' }), icon);
-		const valueEl = pill.createSpan({ cls: 'obsidian-reader-slider-compact-value', text: valueText });
+		setIcon(pill.createSpan({ cls: 'note-narrator-slider-compact-icon' }), icon);
+		const valueEl = pill.createSpan({ cls: 'note-narrator-slider-compact-value', text: valueText });
 
 		const toggle = () => {
 			if (this.openPopover) {
@@ -543,16 +543,16 @@ export class PlayerView extends ItemView {
 		this.dismissPopover();
 
 		const doc = anchor.ownerDocument;
-		const popover = doc.body.createDiv({ cls: 'obsidian-reader-slider-popover' });
+		const popover = doc.body.createDiv({ cls: 'note-narrator-slider-popover' });
 
-		const valueLabel = popover.createDiv({ cls: 'obsidian-reader-slider-popover-value', text: opts.format(opts.value) });
+		const valueLabel = popover.createDiv({ cls: 'note-narrator-slider-popover-value', text: opts.format(opts.value) });
 
-		const track = popover.createDiv({ cls: 'obsidian-reader-slider-track' });
+		const track = popover.createDiv({ cls: 'note-narrator-slider-track' });
 		track.setAttribute('role', 'slider');
 		track.setAttribute('aria-valuemin', String(opts.min));
 		track.setAttribute('aria-valuemax', String(opts.max));
 		track.setAttribute('tabindex', '0');
-		const fill = track.createDiv({ cls: 'obsidian-reader-slider-fill' });
+		const fill = track.createDiv({ cls: 'note-narrator-slider-fill' });
 
 		let value = opts.value;
 		const clampToStep = (raw: number) => {
@@ -643,7 +643,7 @@ export class PlayerView extends ItemView {
 		disabled: boolean,
 		onClick: () => void,
 	): HTMLElement {
-		const button = container.createDiv({ cls: 'clickable-icon obsidian-reader-icon-button' });
+		const button = container.createDiv({ cls: 'clickable-icon note-narrator-icon-button' });
 		setIcon(button, icon);
 		attachTooltip(button, label);
 		if (disabled) {
@@ -692,7 +692,7 @@ export class PlayerView extends ItemView {
 
 	/** Small icon button for a background-job row/card, stopping the click from bubbling up to the row's own "play this" click handler. */
 	private createBackgroundJobIconButton(container: HTMLElement, icon: string, label: string, onClick: () => void): HTMLElement {
-		const button = container.createDiv({ cls: 'clickable-icon obsidian-reader-bgjob-icon-button' });
+		const button = container.createDiv({ cls: 'clickable-icon note-narrator-bgjob-icon-button' });
 		setIcon(button, icon);
 		attachTooltip(button, label);
 		button.onclick = (evt) => {
@@ -703,9 +703,9 @@ export class PlayerView extends ItemView {
 	}
 
 	private renderBackgroundGenerationBar(container: HTMLElement, job: BackgroundJobInfo): void {
-		const bar = container.createDiv({ cls: 'obsidian-reader-generation-bar' });
+		const bar = container.createDiv({ cls: 'note-narrator-generation-bar' });
 		for (let i = 0; i < job.chunkCount; i++) {
-			const segment = bar.createDiv({ cls: 'obsidian-reader-generation-segment' });
+			const segment = bar.createDiv({ cls: 'note-narrator-generation-segment' });
 			if (job.chunkReady[i]) segment.addClass('is-ready');
 			else if (job.chunkInFlight[i]) segment.addClass('is-generating');
 		}
@@ -715,7 +715,7 @@ export class PlayerView extends ItemView {
 	private renderBackgroundJobStatus(container: HTMLElement, state: ReaderState): void {
 		if (state.backgroundJobs.length === 0) return;
 
-		const list = container.createDiv({ cls: 'obsidian-reader-background-jobs' });
+		const list = container.createDiv({ cls: 'note-narrator-background-jobs' });
 		const style = this.plugin.settings.backgroundJobDisplayStyle;
 		for (const job of state.backgroundJobs) {
 			if (style === 'full') this.renderBackgroundJobFull(list, job, state.backgroundJobs);
@@ -725,24 +725,24 @@ export class PlayerView extends ItemView {
 	}
 
 	private renderBackgroundJobFull(container: HTMLElement, job: BackgroundJobInfo, allJobs: BackgroundJobInfo[]): void {
-		const box = container.createDiv({ cls: 'obsidian-reader-background-job obsidian-reader-background-job--full' });
+		const box = container.createDiv({ cls: 'note-narrator-background-job note-narrator-background-job--full' });
 		box.addClass(`is-${job.status}`);
 		this.makeBackgroundJobClickable(box, job.id);
 
-		const header = box.createDiv({ cls: 'obsidian-reader-background-job-header' });
-		header.createSpan({ cls: 'obsidian-reader-background-job-icon' }, (el) => setIcon(el, this.backgroundJobIcon(job)));
+		const header = box.createDiv({ cls: 'note-narrator-background-job-header' });
+		header.createSpan({ cls: 'note-narrator-background-job-icon' }, (el) => setIcon(el, this.backgroundJobIcon(job)));
 		header.createSpan({ text: this.backgroundJobLabel(job, allJobs) });
 
 		this.renderBackgroundGenerationBar(box, job);
 
-		const actions = box.createDiv({ cls: 'obsidian-reader-background-job-actions' });
+		const actions = box.createDiv({ cls: 'note-narrator-background-job-actions' });
 		const playButton = actions.createEl('button', { cls: 'mod-cta', text: 'Play' });
 		playButton.onclick = (evt) => {
 			evt.stopPropagation();
 			this.plugin.reader.playBackgroundJob(job.id);
 		};
 
-		const discardButton = actions.createDiv({ cls: 'clickable-icon obsidian-reader-background-job-discard' });
+		const discardButton = actions.createDiv({ cls: 'clickable-icon note-narrator-background-job-discard' });
 		setIcon(discardButton, this.backgroundJobRemoveIcon(job));
 		attachTooltip(discardButton, this.backgroundJobRemoveLabel(job));
 		discardButton.onclick = (evt) => {
@@ -752,15 +752,15 @@ export class PlayerView extends ItemView {
 	}
 
 	private renderBackgroundJobCompact(container: HTMLElement, job: BackgroundJobInfo, allJobs: BackgroundJobInfo[]): void {
-		const row = container.createDiv({ cls: 'obsidian-reader-background-job obsidian-reader-background-job--compact' });
+		const row = container.createDiv({ cls: 'note-narrator-background-job note-narrator-background-job--compact' });
 		row.addClass(`is-${job.status}`);
 		attachTooltip(row, this.backgroundJobLabel(job, allJobs));
 		this.makeBackgroundJobClickable(row, job.id);
 
-		row.createSpan({ cls: 'obsidian-reader-background-job-icon' }, (el) => setIcon(el, this.backgroundJobIcon(job)));
-		row.createSpan({ cls: 'obsidian-reader-background-job-name', text: job.file?.basename ?? 'note' });
+		row.createSpan({ cls: 'note-narrator-background-job-icon' }, (el) => setIcon(el, this.backgroundJobIcon(job)));
+		row.createSpan({ cls: 'note-narrator-background-job-name', text: job.file?.basename ?? 'note' });
 
-		const bar = row.createDiv({ cls: 'obsidian-reader-background-job-minibar' });
+		const bar = row.createDiv({ cls: 'note-narrator-background-job-minibar' });
 		for (let i = 0; i < job.chunkCount; i++) {
 			const segment = bar.createDiv();
 			if (job.chunkReady[i]) segment.addClass('is-ready');
@@ -773,16 +773,16 @@ export class PlayerView extends ItemView {
 	}
 
 	private renderBackgroundJobMinimal(container: HTMLElement, job: BackgroundJobInfo, allJobs: BackgroundJobInfo[]): void {
-		const card = container.createDiv({ cls: 'obsidian-reader-background-job obsidian-reader-background-job--minimal' });
+		const card = container.createDiv({ cls: 'note-narrator-background-job note-narrator-background-job--minimal' });
 		card.addClass(`is-${job.status}`);
 		attachTooltip(card, this.backgroundJobLabel(job, allJobs));
 		this.makeBackgroundJobClickable(card, job.id);
 
-		const titleRow = card.createDiv({ cls: 'obsidian-reader-background-job-title-row' });
-		titleRow.createSpan({ cls: 'obsidian-reader-background-job-icon' }, (el) => setIcon(el, this.backgroundJobIcon(job)));
-		titleRow.createSpan({ cls: 'obsidian-reader-background-job-name', text: job.file?.basename ?? 'note' });
+		const titleRow = card.createDiv({ cls: 'note-narrator-background-job-title-row' });
+		titleRow.createSpan({ cls: 'note-narrator-background-job-icon' }, (el) => setIcon(el, this.backgroundJobIcon(job)));
+		titleRow.createSpan({ cls: 'note-narrator-background-job-name', text: job.file?.basename ?? 'note' });
 
-		const buttons = titleRow.createDiv({ cls: 'obsidian-reader-background-job-minimal-buttons' });
+		const buttons = titleRow.createDiv({ cls: 'note-narrator-background-job-minimal-buttons' });
 		this.createBackgroundJobIconButton(buttons, 'play', 'Play', () => this.plugin.reader.playBackgroundJob(job.id));
 		this.createBackgroundJobIconButton(buttons, this.backgroundJobRemoveIcon(job), this.backgroundJobRemoveLabel(job), () =>
 			this.plugin.reader.discardBackgroundJob(job.id),
@@ -795,14 +795,14 @@ export class PlayerView extends ItemView {
 		const activeFile = this.getActiveFile();
 		if (!activeFile || !this.plugin.settings.linkAudioInNote) return;
 
-		const statusEl = container.createDiv({ cls: 'obsidian-reader-audio-status' });
+		const statusEl = container.createDiv({ cls: 'note-narrator-audio-status' });
 		void this.plugin.reader.getAudioStatus(activeFile).then((status) => {
 			if (status === 'none') return;
 			statusEl.addClass(status === 'outdated' ? 'is-outdated' : 'is-up-to-date');
 			statusEl.createSpan({ text: AUDIO_STATUS_LABELS[status] });
 
 			if (this.plugin.settings.showClearFilesButton) {
-				const deleteButton = statusEl.createDiv({ cls: 'clickable-icon obsidian-reader-audio-status-delete' });
+				const deleteButton = statusEl.createDiv({ cls: 'clickable-icon note-narrator-audio-status-delete' });
 				setIcon(deleteButton, 'trash-2');
 				attachTooltip(deleteButton, 'Delete saved audio file');
 				deleteButton.onclick = () => this.confirmClearReaderFiles(activeFile);
@@ -813,8 +813,8 @@ export class PlayerView extends ItemView {
 	private confirmClearReaderFiles(activeFile: TFile): void {
 		new ConfirmModal(
 			this.app,
-			'Clear reader files?',
-			`This deletes ${activeFile.basename}'s linked audio file and removes the reader-audio properties from its frontmatter. This can't be undone from within Obsidian Reader.`,
+			'Clear Note Narrator files?',
+			`This deletes ${activeFile.basename}'s linked audio file and removes the Note Narrator audio properties from its frontmatter. This can't be undone from within Note Narrator.`,
 			'DELETE',
 			() => void this.plugin.reader.clearReaderFiles(activeFile),
 		).open();
@@ -824,7 +824,7 @@ export class PlayerView extends ItemView {
 	private renderNoteStats(container: HTMLElement, file: TFile | null): void {
 		if (!file) return;
 
-		const statsEl = container.createDiv({ cls: 'obsidian-reader-note-stats' });
+		const statsEl = container.createDiv({ cls: 'note-narrator-note-stats' });
 		void this.plugin.reader.getNoteStats(file).then((stats) => {
 			if (!stats) {
 				statsEl.remove();
@@ -835,7 +835,7 @@ export class PlayerView extends ItemView {
 				text: `${stats.totalChars.toLocaleString()} characters · ${stats.chunkCount} chunk${stats.chunkCount === 1 ? '' : 's'}`,
 			});
 			statsEl.createDiv({
-				cls: 'obsidian-reader-note-stats-secondary',
+				cls: 'note-narrator-note-stats-secondary',
 				text: `~${stats.avgCharsPerChunk.toLocaleString()} characters/chunk · ~${stats.avgWordsPerChunk.toLocaleString()} words/chunk`,
 			});
 		});
@@ -857,8 +857,8 @@ export class PlayerView extends ItemView {
 		tooltip: string = label,
 	): { button: HTMLButtonElement; labelEl: HTMLElement } {
 		const button = container.createEl('button', { cls });
-		setIcon(button.createSpan({ cls: 'obsidian-reader-button-icon' }), icon);
-		const labelEl = button.createSpan({ cls: 'obsidian-reader-button-label', text: label });
+		setIcon(button.createSpan({ cls: 'note-narrator-button-icon' }), icon);
+		const labelEl = button.createSpan({ cls: 'note-narrator-button-label', text: label });
 		attachTooltip(button, tooltip);
 		return { button, labelEl };
 	}
@@ -870,27 +870,27 @@ export class PlayerView extends ItemView {
 	}
 
 	private renderPrimaryActions(container: HTMLElement, active: boolean, pendingGeneration: boolean): void {
-		const actionsRow = container.createDiv({ cls: 'obsidian-reader-primary-actions' });
+		const actionsRow = container.createDiv({ cls: 'note-narrator-primary-actions' });
 		actionsRow.toggleClass('is-compact', this.plugin.settings.compactButtons);
 
-		const { button: playSavedButton } = this.createLabeledButton(actionsRow, 'obsidian-reader-play-saved-button', PLAY_SAVED_ICON_ID, 'Play Saved');
+		const { button: playSavedButton } = this.createLabeledButton(actionsRow, 'note-narrator-play-saved-button', PLAY_SAVED_ICON_ID, 'Play Saved');
 		playSavedButton.disabled = true;
 
 		const { button: readButton, labelEl: readLabelEl } = this.createLabeledButton(
 			actionsRow,
-			'mod-cta obsidian-reader-read-button',
+			'mod-cta note-narrator-read-button',
 			'audio-lines',
 			active ? 'Reading' : 'Read',
 		);
 		readButton.disabled = active;
 		readButton.onclick = () => void this.plugin.reader.readNote(this.getActiveMarkdownView() ?? undefined);
 
-		const { button: cancelButton } = this.createLabeledButton(actionsRow, 'obsidian-reader-cancel-button', 'octagon-x', 'Cancel');
+		const { button: cancelButton } = this.createLabeledButton(actionsRow, 'note-narrator-cancel-button', 'octagon-x', 'Cancel');
 		cancelButton.disabled = !pendingGeneration;
 		attachTooltip(cancelButton, 'Cancel generation');
 		cancelButton.onclick = () => this.plugin.reader.stop();
 
-		const { button: backgroundButton } = this.createLabeledButton(actionsRow, 'obsidian-reader-background-button', 'layers', 'Background');
+		const { button: backgroundButton } = this.createLabeledButton(actionsRow, 'note-narrator-background-button', 'layers', 'Background');
 		backgroundButton.disabled = !pendingGeneration;
 		attachTooltip(backgroundButton, 'Stop playback but keep generating the rest of this note in the background, so you can jump back into it later.');
 		backgroundButton.onclick = () => this.plugin.reader.continueGeneratingInBackground();
@@ -927,7 +927,7 @@ export class PlayerView extends ItemView {
 		const menu = new Menu();
 		menu.addItem((item) =>
 			item
-				.setTitle('Clear reader files')
+				.setTitle('Clear Note Narrator files')
 				.setIcon('trash-2')
 				.setDisabled(!clearEnabled)
 				.onClick(() => {

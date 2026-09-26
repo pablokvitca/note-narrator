@@ -1,5 +1,5 @@
 import { requestUrl } from 'obsidian';
-import { ReaderSettings } from '../settings';
+import { NoteNarratorSettings } from '../settings';
 import { TTSProvider } from './provider';
 
 export interface ElevenLabsVoice {
@@ -61,7 +61,7 @@ function sleep(ms: number): Promise<void> {
 export class ElevenLabsProvider implements TTSProvider {
 	constructor(
 		private apiKey: string,
-		private settings: ReaderSettings,
+		private settings: NoteNarratorSettings,
 		/** Called (possibly more than once) the moment a 429 is first seen, before any backoff wait. */
 		private onRateLimited?: () => void,
 	) {}

@@ -1,5 +1,5 @@
 import { App, Notice, PluginSettingTab, SecretComponent, Setting, SettingDefinitionItem, TextComponent } from 'obsidian';
-import ObsidianReaderPlugin from './main';
+import NoteNarratorPlugin from './main';
 import { ChunkerStyle } from './text-utils';
 import { TimeDisplayMode } from './time-utils';
 import { ElevenLabsVoice, listElevenLabsVoices } from './tts/elevenlabs-provider';
@@ -21,7 +21,7 @@ export type HighlightStyle = 'margin-marker' | 'background' | 'underline';
 export const SKIP_SECONDS_OPTIONS = [5, 10, 15, 20, 25, 30, 45, 60] as const;
 export type SkipSeconds = (typeof SKIP_SECONDS_OPTIONS)[number];
 
-export interface ReaderSettings {
+export interface NoteNarratorSettings {
 	/** Name of the secret in Obsidian's SecretStorage holding the ElevenLabs API key. */
 	apiKeySecretId: string;
 	voiceId: string;
@@ -55,14 +55,14 @@ export interface ReaderSettings {
 	/** Frontmatter property each chunk's [duration (seconds), byte length] pair is written to -- lets "Play saved" slice the saved file back into its per-chunk buffers, for real Previous/Next part and highlighting/scroll-to-current during saved playback. */
 	audioChunkDurationsProperty: string;
 	/**
-	 * Extra frontmatter property keys (besides the reader's own) to exclude when computing the staleness
+	 * Extra frontmatter property keys (besides Note Narrator's own) to exclude when computing the staleness
 	 * hash, one per line — for properties other plugins/workflows auto-update that shouldn't count as
 	 * "the note changed" (e.g. a last-modified timestamp).
 	 */
 	extraStaleHashExcludedProperties: string;
-	/** Show a "Clear reader files" button in the player view. */
+	/** Show a "Clear Note Narrator files" button in the player view. */
 	showClearFilesButton: boolean;
-	/** Silently remove the reader's own frontmatter properties from a note when its linked audio file no longer exists on disk, instead of showing a misleading "outdated" status. */
+	/** Silently remove Note Narrator's own frontmatter properties from a note when its linked audio file no longer exists on disk, instead of showing a misleading "outdated" status. */
 	autoCleanupMissingAudioProperties: boolean;
 	/** Silently (re)generate and save a note's audio on open if missing or outdated. Requires saveAudioFile and linkAudioInNote. */
 	autoGenerateOnOpen: boolean;
@@ -124,7 +124,7 @@ export interface ReaderSettings {
 	showJumpToCurrentButtons: boolean;
 }
 
-export const DEFAULT_SETTINGS: ReaderSettings = {
+export const DEFAULT_SETTINGS: NoteNarratorSettings = {
 	apiKeySecretId: 'elevenlabs-api-key',
 	voiceId: '21m00Tcm4TlvDq8ikWAM',
 	modelId: 'eleven_multilingual_v2',
@@ -136,14 +136,14 @@ export const DEFAULT_SETTINGS: ReaderSettings = {
 	skipForwardSeconds: 15,
 	saveAudioFile: false,
 	saveAudioLocation: 'note-folder',
-	saveAudioFolderPath: 'Reader Audio',
+	saveAudioFolderPath: 'Note Narrator Audio',
 	linkAudioInNote: false,
-	audioLinkProperty: 'reader_audio',
-	audioHashProperty: 'reader_audio_hash',
-	audioPathProperty: 'reader_audio_path',
-	audioTimestampProperty: 'reader_audio_timestamp',
-	audioVoiceProperty: 'reader_audio_voice',
-	audioChunkDurationsProperty: 'reader_audio_chunk_durations',
+	audioLinkProperty: 'note_narrator_audio',
+	audioHashProperty: 'note_narrator_audio_hash',
+	audioPathProperty: 'note_narrator_audio_path',
+	audioTimestampProperty: 'note_narrator_audio_timestamp',
+	audioVoiceProperty: 'note_narrator_audio_voice',
+	audioChunkDurationsProperty: 'note_narrator_audio_chunk_durations',
 	extraStaleHashExcludedProperties: '',
 	showClearFilesButton: true,
 	autoCleanupMissingAudioProperties: true,
@@ -194,7 +194,7 @@ export const ELEVENLABS_MODEL_CHAR_LIMITS: Record<string, number> = {
 export const DEFAULT_ELEVENLABS_CHAR_LIMIT = 5000;
 
 /** Property keys whose text-control value falls back to its default when trimmed empty, instead of persisting an empty string. */
-const FALLBACK_TEXT_KEYS: Partial<Record<keyof ReaderSettings, string>> = {
+const FALLBACK_TEXT_KEYS: Partial<Record<keyof NoteNarratorSettings, string>> = {
 	saveAudioFolderPath: DEFAULT_SETTINGS.saveAudioFolderPath,
 	audioLinkProperty: DEFAULT_SETTINGS.audioLinkProperty,
 	audioHashProperty: DEFAULT_SETTINGS.audioHashProperty,
@@ -204,12 +204,12 @@ const FALLBACK_TEXT_KEYS: Partial<Record<keyof ReaderSettings, string>> = {
 	audioChunkDurationsProperty: DEFAULT_SETTINGS.audioChunkDurationsProperty,
 };
 
-export class ReaderSettingTab extends PluginSettingTab {
-	plugin: ObsidianReaderPlugin;
+export class NoteNarratorSettingTab extends PluginSettingTab {
+	plugin: NoteNarratorPlugin;
 	private voices: ElevenLabsVoice[] = [];
 	private voicesLoaded = false;
 
-	constructor(app: App, plugin: ObsidianReaderPlugin) {
+	constructor(app: App, plugin: NoteNarratorPlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
 	}
@@ -224,7 +224,7 @@ export class ReaderSettingTab extends PluginSettingTab {
 	 * of whether the framework already does so automatically for built-in controls.
 	 */
 	setControlValue(key: string, value: unknown): void | Promise<void> {
-		const fallback = FALLBACK_TEXT_KEYS[key as keyof ReaderSettings];
+		const fallback = FALLBACK_TEXT_KEYS[key as keyof NoteNarratorSettings];
 		const normalized = fallback !== undefined && typeof value === 'string' ? value.trim() || fallback : value;
 		const result = super.setControlValue(key, normalized);
 		if (result instanceof Promise) {
@@ -678,7 +678,7 @@ export class ReaderSettingTab extends PluginSettingTab {
 					},
 					{
 						name: 'Extra properties to exclude from staleness hashing',
-						desc: "Besides the reader's own properties above (always excluded), also ignore these frontmatter properties when checking whether a note has changed since its audio was generated — for properties other plugins auto-update that shouldn't count as a real edit. One property key per line.",
+						desc: "Besides Note Narrator's own properties above (always excluded), also ignore these frontmatter properties when checking whether a note has changed since its audio was generated — for properties other plugins auto-update that shouldn't count as a real edit. One property key per line.",
 						control: { type: 'textarea', key: 'extraStaleHashExcludedProperties', placeholder: 'last_modified', rows: 3 },
 						visible: () => settings.saveAudioFile && settings.linkAudioInNote,
 					},
@@ -700,14 +700,14 @@ export class ReaderSettingTab extends PluginSettingTab {
 						visible: () => settings.saveAudioFile && settings.linkAudioInNote,
 					},
 					{
-						name: 'Show "clear reader files" menu item and delete button',
-						desc: 'Enable the "clear reader files" item in the player view\'s ⋮ menu (top-right) and the small delete button on the saved-audio status line, both of which delete a note\'s linked audio file and remove the properties above, after confirming.',
+						name: 'Show "clear Note Narrator files" menu item and delete button',
+						desc: 'Enable the "clear Note Narrator files" item in the player view\'s ⋮ menu (top-right) and the small delete button on the saved-audio status line, both of which delete a note\'s linked audio file and remove the properties above, after confirming.',
 						control: { type: 'toggle', key: 'showClearFilesButton', defaultValue: DEFAULT_SETTINGS.showClearFilesButton },
 						visible: () => settings.saveAudioFile && settings.linkAudioInNote,
 					},
 					{
 						name: 'Auto-clean up properties when saved file is missing',
-						desc: "When a note's linked audio file no longer exists (moved or deleted outside Obsidian Reader), silently remove the properties above instead of showing a misleading \"outdated\" status.",
+						desc: "When a note's linked audio file no longer exists (moved or deleted outside Note Narrator), silently remove the properties above instead of showing a misleading \"outdated\" status.",
 						control: { type: 'toggle', key: 'autoCleanupMissingAudioProperties', defaultValue: DEFAULT_SETTINGS.autoCleanupMissingAudioProperties },
 						visible: () => settings.saveAudioFile && settings.linkAudioInNote,
 					},
@@ -758,7 +758,7 @@ export class ReaderSettingTab extends PluginSettingTab {
 			this.voices = await listElevenLabsVoices(apiKey);
 			this.update();
 		} catch (error) {
-			console.error('Obsidian Reader: failed to fetch ElevenLabs voices', error);
+			console.error('Note Narrator: failed to fetch ElevenLabs voices', error);
 			new Notice(`Failed to fetch voices: ${error instanceof Error ? error.message : String(error)}`);
 		}
 	}

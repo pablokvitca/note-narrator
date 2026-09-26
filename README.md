@@ -1,4 +1,4 @@
-# Obsidian Reader
+# Note Narrator
 
 An Obsidian plugin that reads your notes aloud using text-to-speech. MVP ships with [ElevenLabs](https://elevenlabs.io) as the only provider; the TTS layer (`src/tts/`) is a small interface so more providers can be added later without touching the reading logic.
 
@@ -6,7 +6,7 @@ An Obsidian plugin that reads your notes aloud using text-to-speech. MVP ships w
 
 ### Triggering a read
 
-- The ribbon icon in the left sidebar (always visible) and the speaker icon in each note's top-right action row (next to the "more options" `⋯` icon) just open the **Obsidian Reader** panel in the right sidebar — they don't start generating audio by themselves.
+- The ribbon icon in the left sidebar (always visible) and the speaker icon in each note's top-right action row (next to the "more options" `⋯` icon) just open the **Note Narrator** panel in the right sidebar — they don't start generating audio by themselves.
 - The panel itself has its own **Voice** dropdown and, when idle, a **Read** button, so you can pick a voice and explicitly start a read without leaving the panel.
 - The **Read note aloud** command is the one exception: since it names the action explicitly, it opens the panel and starts reading immediately, without needing a click on the panel's Read button.
 - If a note already has saved audio (see below), the panel shows **Play saved** (plays the existing file with no regeneration) alongside a **Read** button that relabels itself to **Regenerate** (note content changed since the audio was generated) or **Regenerate with new voice** (the selected voice differs from the one the saved audio used).
@@ -37,11 +37,11 @@ An Obsidian plugin that reads your notes aloud using text-to-speech. MVP ships w
 ### Saving audio to a file
 
 - **Save generated audio to a file** setting (off by default) saves each read as an `.mp3`, in the note's folder or a configurable custom folder (created automatically if missing). The file is written as soon as *generation* finishes, not once playback finishes.
-- **Link saved audio in the note** setting (off by default, requires saving) writes the audio's link, a content hash (for staleness), the raw file path (used internally), a generation timestamp, the voice ID used, and each chunk's `[duration, byte length]` (used to slice the saved file back into its per-chunk parts, for Previous/Next part and highlighting/scroll-to-current during **Play Saved**), each into its own **individually configurable** frontmatter property (defaults: `reader_audio`, `reader_audio_hash`, `reader_audio_path`, `reader_audio_timestamp`, `reader_audio_voice`, `reader_audio_chunk_durations`). The panel shows whether the saved audio is up to date or outdated. The reader's own six properties are always excluded when computing that hash; an **Extra properties to exclude from staleness hashing** setting lets you list additional frontmatter properties (one per line) — e.g. ones another plugin auto-updates — that shouldn't count as an edit either.
+- **Link saved audio in the note** setting (off by default, requires saving) writes the audio's link, a content hash (for staleness), the raw file path (used internally), a generation timestamp, the voice ID used, and each chunk's `[duration, byte length]` (used to slice the saved file back into its per-chunk parts, for Previous/Next part and highlighting/scroll-to-current during **Play Saved**), each into its own **individually configurable** frontmatter property (defaults: `note_narrator_audio`, `note_narrator_audio_hash`, `note_narrator_audio_path`, `note_narrator_audio_timestamp`, `note_narrator_audio_voice`, `note_narrator_audio_chunk_durations`). The panel shows whether the saved audio is up to date or outdated. Note Narrator's own six properties are always excluded when computing that hash; an **Extra properties to exclude from staleness hashing** setting lets you list additional frontmatter properties (one per line) — e.g. ones another plugin auto-updates — that shouldn't count as an edit either.
 - **On regenerate**: **Replace existing file** (default) overwrites the previously linked file in place; **Keep old versions** creates a new file each time instead.
 - **Auto-generate on open** (off by default, requires saving + linking) silently (re)generates and saves a note's audio in the background when you open it, if missing or outdated — without playing it or touching anything currently playing.
 - Saved filenames include the voice used, e.g. `My Note (Rachel).mp3`.
-- A **⋮ menu** in the panel's own title bar (top-right) has a **Clear reader files** item (on by default, toggle to hide it) that deletes a note's linked audio file and removes all of the properties above, after a confirmation dialog.
+- A **⋮ menu** in the panel's own title bar (top-right) has a **Clear Note Narrator files** item (on by default, toggle to hide it) that deletes a note's linked audio file and removes all of the properties above, after a confirmation dialog.
 
 ### Voices
 
@@ -60,9 +60,9 @@ See [FUTURE_FEATURES.md](FUTURE_FEATURES.md) for ideas not yet implemented (othe
 ## Setup
 
 1. Install the plugin (see below).
-2. Open **Settings → Obsidian Reader** and add your ElevenLabs API key. It's stored via Obsidian's built-in [SecretStorage](https://docs.obsidian.md/plugins/guides/secret-storage), not in this plugin's own settings file — the setting only remembers which secret to look up, so the key can be shared with other plugins that use the same secret and never appears in `data.json`.
+2. Open **Settings → Note Narrator** and add your ElevenLabs API key. It's stored via Obsidian's built-in [SecretStorage](https://docs.obsidian.md/plugins/guides/secret-storage), not in this plugin's own settings file — the setting only remembers which secret to look up, so the key can be shared with other plugins that use the same secret and never appears in `data.json`.
 3. Pick a **Voice** from the dropdown (fetched from your ElevenLabs account) and a **Model** — Eleven v3 (research preview), Eleven Multilingual v2, or Eleven Flash v2.5.
-4. Click the ribbon icon in the left sidebar, or the speaker icon at the top-right of a note, to open the **Obsidian Reader** panel in the right sidebar, then click its **Read** button — or just run **Read note aloud** from the command palette to open the panel and start reading in one step.
+4. Click the ribbon icon in the left sidebar, or the speaker icon at the top-right of a note, to open the **Note Narrator** panel in the right sidebar, then click its **Read** button — or just run **Read note aloud** from the command palette to open the panel and start reading in one step.
 
 ## Known limitations (MVP)
 
@@ -70,7 +70,7 @@ See [FUTURE_FEATURES.md](FUTURE_FEATURES.md) for ideas not yet implemented (othe
 - Staleness tracking hashes the note's full content (not just what was actually read, if you read a selection), so editing any part of the note will mark saved audio as outdated, even if the edit was outside the text that was actually read.
 - When "Replace existing file" is on and the voice changes between regenerations, the file keeps its original filename (with the old voice's name in parentheses) rather than being renamed — only its contents are replaced.
 - Auto-generate on open makes one or more ElevenLabs API calls (and consumes credits) every time you open a note whose saved audio is missing or outdated — be mindful of this on notes you edit frequently.
-- "Clear reader files" moves the audio file to trash (respecting your vault's file-deletion preference) and removes the properties; there's no undo for the properties themselves.
+- "Clear Note Narrator files" moves the audio file to trash (respecting your vault's file-deletion preference) and removes the properties; there's no undo for the properties themselves.
 - The voice dropdown fetches only the first 100 voices from your ElevenLabs account (no pagination past that).
 - Saving audio concatenates raw chunk bytes for multi-part reads rather than properly re-muxing the MP3 stream; this works in practice for ElevenLabs' output but isn't a fully spec-correct MP3 concatenation.
 - The rate-limit fallback to sequential generation applies only to the read in progress; each new read starts again at your configured parallel-generation setting.
@@ -100,6 +100,6 @@ See [FUTURE_FEATURES.md](FUTURE_FEATURES.md) for ideas not yet implemented (othe
 
 ## Manually installing the plugin
 
-Copy `main.js`, `manifest.json` to `VaultFolder/.obsidian/plugins/obsidian-reader/`, then enable it in Obsidian's Community Plugins settings (this plugin is not published to the community plugin store). To test a beta release before it's promoted to stable, install via [BRAT](https://github.com/TfTHacker/obsidian42-brat) instead, adding this repo and enabling beta versions.
+Copy `main.js`, `manifest.json` to `VaultFolder/.obsidian/plugins/note-narrator/`, then enable it in Obsidian's Community Plugins settings (this plugin is not published to the community plugin store). To test a beta release before it's promoted to stable, install via [BRAT](https://github.com/TfTHacker/obsidian42-brat) instead, adding this repo and enabling beta versions.
 
 Requires Obsidian 1.13.0+ (for the declarative settings API; SecretStorage itself only needs 1.11.4+).

@@ -1,11 +1,11 @@
-.obsidian-reader-player-view {
+.note-narrator-player-view {
 	display: flex;
 	flex-direction: column;
 	height: 100%;
 	padding: 0;
 	overflow: hidden;
 	container-type: inline-size;
-	container-name: obsidian-reader-panel;
+	container-name: note-narrator-panel;
 	--rd-space-section: var(--size-4-4);
 	--rd-space-tight: var(--size-4-3);
 	--rd-scroll-padding: var(--size-4-4);
@@ -18,8 +18,8 @@
  * in Obsidian's own app.css, so known-safe in this runtime) reacts to the panel's own width
  * regardless of platform, tightening the spacing variables everything below is built from.
  */
-@container obsidian-reader-panel (max-width: 400px) {
-	.obsidian-reader-player-view {
+@container note-narrator-panel (max-width: 400px) {
+	.note-narrator-player-view {
 		--rd-space-section: var(--size-4-2);
 		--rd-space-tight: var(--size-4-1);
 		--rd-scroll-padding: var(--size-4-3);
@@ -34,25 +34,25 @@
  * sidebar stays above it and keeps full labels unless the setting is on). The button keeps its full
  * text as `aria-label` either way, so Obsidian still shows it as a tooltip on hover/long-press.
  */
-.obsidian-reader-primary-actions.is-compact .obsidian-reader-button-label {
+.note-narrator-primary-actions.is-compact .note-narrator-button-label {
 	display: none;
 }
 
 /* The [icon][label] pair used as a Setting's name for the speed/volume rows -- the icon always
    stays, the label hides at the narrow breakpoint below. */
-.obsidian-reader-setting-name {
+.note-narrator-setting-name {
 	display: inline-flex;
 	align-items: center;
 	gap: var(--size-2-2);
 }
 
-.obsidian-reader-setting-icon {
+.note-narrator-setting-icon {
 	display: flex;
 	flex-shrink: 0;
 	color: var(--text-muted);
 }
 
-.obsidian-reader-setting-icon svg {
+.note-narrator-setting-icon svg {
 	width: var(--icon-s);
 	height: var(--icon-s);
 }
@@ -63,7 +63,7 @@
  * no width of its own beyond its (possibly zero, possibly one, possibly two) visible pill children,
  * an empty or single-child row costs nothing at wide layouts where both pills are hidden anyway.
  */
-.obsidian-reader-slider-compact-row {
+.note-narrator-slider-compact-row {
 	display: flex;
 	justify-content: center;
 	gap: var(--size-4-2);
@@ -78,7 +78,7 @@
  * cascade over an earlier, matched @container rule regardless of which one is actually active --
  * exactly the bug that kept this pill from ever showing on a real phone.
  */
-.obsidian-reader-slider-compact {
+.note-narrator-slider-compact {
 	display: none;
 	align-items: center;
 	gap: var(--size-2-2);
@@ -88,50 +88,50 @@
 	cursor: pointer;
 }
 
-.obsidian-reader-slider-compact:hover {
+.note-narrator-slider-compact:hover {
 	background-color: var(--background-modifier-hover);
 	color: var(--text-normal);
 }
 
-.obsidian-reader-slider-compact-icon {
+.note-narrator-slider-compact-icon {
 	display: flex;
 	flex-shrink: 0;
 }
 
-.obsidian-reader-slider-compact-icon svg {
+.note-narrator-slider-compact-icon svg {
 	width: var(--icon-s);
 	height: var(--icon-s);
 }
 
-.obsidian-reader-slider-compact-value {
+.note-narrator-slider-compact-value {
 	font-size: var(--font-ui-smaller);
 	font-variant-numeric: tabular-nums;
 }
 
-.is-mobile .obsidian-reader-slider-compact {
+.is-mobile .note-narrator-slider-compact {
 	min-height: var(--touch-size-m);
 }
 
-@container obsidian-reader-panel (max-width: 460px) {
-	.obsidian-reader-primary-actions .obsidian-reader-button-label {
+@container note-narrator-panel (max-width: 460px) {
+	.note-narrator-primary-actions .note-narrator-button-label {
 		display: none;
 	}
 
 	/* Below this width the horizontal slider doesn't have room to be usable -- hide the whole row
 	   (name + native slider) and show the icon+value compact pill instead, which opens a vertical
 	   popover slider on tap. */
-	.obsidian-reader-slider-setting {
+	.note-narrator-slider-setting {
 		display: none;
 	}
 
-	.obsidian-reader-slider-compact {
+	.note-narrator-slider-compact {
 		display: flex;
 	}
 }
 
 /* A vertical pill slider (à la iOS Control Center), floated above/below its trigger pill. Appended
    to document.body, so it's positioned in fixed/viewport coordinates, not relative to the panel. */
-.obsidian-reader-slider-popover {
+.note-narrator-slider-popover {
 	position: fixed;
 	z-index: var(--layer-popover, 70);
 	display: flex;
@@ -145,13 +145,13 @@
 	border: 1px solid var(--background-modifier-border);
 }
 
-.obsidian-reader-slider-popover-value {
+.note-narrator-slider-popover-value {
 	font-size: var(--font-ui-smaller);
 	font-variant-numeric: tabular-nums;
 	color: var(--text-muted);
 }
 
-.obsidian-reader-slider-track {
+.note-narrator-slider-track {
 	position: relative;
 	width: var(--size-4-8);
 	height: 140px;
@@ -162,7 +162,7 @@
 	cursor: pointer;
 }
 
-.obsidian-reader-slider-fill {
+.note-narrator-slider-fill {
 	position: absolute;
 	bottom: 0;
 	left: 0;
@@ -180,7 +180,7 @@
  * line (the speed row's slider + its min/max range labels underneath, in particular), the name (our
  * icon + label) visibly sits pinned to the top instead of centered against the row. Centered here.
  */
-.obsidian-reader-player-view .setting-item {
+.note-narrator-player-view .setting-item {
 	align-items: center;
 	padding-top: var(--rd-space-tight);
 	padding-bottom: var(--rd-space-tight);
@@ -189,7 +189,7 @@
 }
 
 /* Everything except the background-jobs queue scrolls in here; the queue itself stays pinned below it. */
-.obsidian-reader-scroll-area {
+.note-narrator-scroll-area {
 	flex: 1 1 auto;
 	min-height: 0;
 	overflow-y: auto;
@@ -209,7 +209,7 @@
  * every platform/theme, with nothing to keep in sync. The top border only ever shows when this
  * element exists at all, which player-view.ts only does once there's at least one background job.
  */
-.obsidian-reader-background-jobs-pinned {
+.note-narrator-background-jobs-pinned {
 	flex: 0 1 auto;
 	max-height: 40%;
 	overflow-y: auto;
@@ -219,18 +219,18 @@
 	background-color: transparent;
 }
 
-.obsidian-reader-background-jobs-pinned .obsidian-reader-background-jobs {
+.note-narrator-background-jobs-pinned .note-narrator-background-jobs {
 	margin-bottom: 0;
 }
 
-.obsidian-reader-selected-note {
+.note-narrator-selected-note {
 	font-weight: var(--font-medium);
 	color: var(--text-normal);
 	margin-bottom: var(--size-2-2);
 	overflow-wrap: break-word;
 }
 
-.obsidian-reader-currently-reading {
+.note-narrator-currently-reading {
 	display: flex;
 	align-items: flex-start;
 	gap: var(--size-2-2);
@@ -244,30 +244,30 @@
 	background-color: color-mix(in oklch, var(--color-green) 12%, transparent);
 }
 
-.obsidian-reader-currently-reading-icon {
+.note-narrator-currently-reading-icon {
 	display: flex;
 	flex-shrink: 0;
 	margin-top: 2px;
 	color: var(--text-success);
 }
 
-.obsidian-reader-currently-reading span:last-child {
+.note-narrator-currently-reading span:last-child {
 	overflow-wrap: break-word;
 }
 
-.obsidian-reader-status {
+.note-narrator-status {
 	font-weight: var(--font-medium);
 	color: var(--text-normal);
 	margin-bottom: var(--size-2-2);
 }
 
-.obsidian-reader-chunk-progress {
+.note-narrator-chunk-progress {
 	color: var(--text-muted);
 	font-size: var(--font-ui-smaller);
 	margin-bottom: var(--size-4-2);
 }
 
-.obsidian-reader-progress-bar {
+.note-narrator-progress-bar {
 	position: relative;
 	height: var(--size-2-2);
 	border-radius: var(--radius-s);
@@ -276,19 +276,19 @@
 	margin-bottom: var(--rd-space-tight);
 }
 
-.obsidian-reader-progress-fill {
+.note-narrator-progress-fill {
 	height: 100%;
 	background-color: var(--interactive-accent);
 	border-radius: var(--radius-s);
 	transition: width 0.15s linear;
 }
 
-.obsidian-reader-progress-bar.is-indeterminate .obsidian-reader-progress-fill {
+.note-narrator-progress-bar.is-indeterminate .note-narrator-progress-fill {
 	width: 40%;
-	animation: obsidian-reader-indeterminate 1.2s ease-in-out infinite;
+	animation: note-narrator-indeterminate 1.2s ease-in-out infinite;
 }
 
-@keyframes obsidian-reader-indeterminate {
+@keyframes note-narrator-indeterminate {
 	0% {
 		transform: translateX(-100%);
 	}
@@ -297,23 +297,23 @@
 	}
 }
 
-.obsidian-reader-time {
+.note-narrator-time {
 	color: var(--text-muted);
 	font-size: var(--font-ui-smaller);
 	margin-bottom: var(--rd-space-tight);
 }
 
-.obsidian-reader-note-stats {
+.note-narrator-note-stats {
 	color: var(--text-muted);
 	font-size: var(--font-ui-smaller);
 	margin-bottom: var(--rd-space-tight);
 }
 
-.obsidian-reader-note-stats-secondary {
+.note-narrator-note-stats-secondary {
 	color: var(--text-faint);
 }
 
-.obsidian-reader-primary-actions {
+.note-narrator-primary-actions {
 	display: flex;
 	flex-wrap: wrap;
 	gap: var(--size-2-2);
@@ -326,7 +326,7 @@
  * "Regenerate with new voice" wraps onto a second line at narrow widths instead of either forcing
  * that overflow or getting silently clipped -- taller buttons over a horizontal scrollbar.
  */
-.obsidian-reader-primary-actions button {
+.note-narrator-primary-actions button {
 	flex: 1;
 	min-width: 0;
 	display: flex;
@@ -339,7 +339,7 @@
 /* Explicit disabled look instead of relying on generic opacity dimming, which fades foreground and
    background toward each other at the same rate and can leave text hard to read against the button
    itself (as opposed to just looking muted against the panel). */
-.obsidian-reader-primary-actions button:disabled {
+.note-narrator-primary-actions button:disabled {
 	opacity: 1;
 	cursor: default;
 	color: var(--text-faint);
@@ -347,46 +347,46 @@
 	box-shadow: none;
 }
 
-.obsidian-reader-button-icon {
+.note-narrator-button-icon {
 	display: flex;
 	flex-shrink: 0;
 }
 
-.obsidian-reader-button-icon svg {
+.note-narrator-button-icon svg {
 	width: var(--icon-s);
 	height: var(--icon-s);
 }
 
-.obsidian-reader-generation-bar {
+.note-narrator-generation-bar {
 	display: flex;
 	gap: 2px;
 	margin-bottom: var(--rd-space-tight);
 }
 
-.obsidian-reader-generation-segment {
+.note-narrator-generation-segment {
 	flex: 1;
 	height: var(--size-2-2);
 	border-radius: var(--radius-s);
 	background-color: var(--background-modifier-border);
 }
 
-.obsidian-reader-generation-segment.is-ready {
+.note-narrator-generation-segment.is-ready {
 	background-color: var(--interactive-accent);
 }
 
-.obsidian-reader-generation-segment.is-generating {
+.note-narrator-generation-segment.is-generating {
 	background-color: var(--color-orange, #e69138);
-	animation: obsidian-reader-generating-pulse 1.2s ease-in-out infinite;
+	animation: note-narrator-generating-pulse 1.2s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
-	.obsidian-reader-generation-segment.is-generating {
+	.note-narrator-generation-segment.is-generating {
 		animation: none;
 		opacity: 0.7;
 	}
 }
 
-@keyframes obsidian-reader-generating-pulse {
+@keyframes note-narrator-generating-pulse {
 	0%,
 	100% {
 		opacity: 1;
@@ -396,12 +396,12 @@
 	}
 }
 
-.obsidian-reader-generation-segment.is-current {
+.note-narrator-generation-segment.is-current {
 	outline: 2px solid var(--text-accent);
 	outline-offset: 1px;
 }
 
-.obsidian-reader-controls {
+.note-narrator-controls {
 	display: flex;
 	flex-wrap: wrap;
 	align-items: center;
@@ -410,14 +410,14 @@
 	margin-bottom: var(--rd-space-section);
 }
 
-.obsidian-reader-controls-separator {
+.note-narrator-controls-separator {
 	width: 1px;
 	height: var(--size-4-6);
 	background-color: var(--background-modifier-border);
 	flex-shrink: 0;
 }
 
-.obsidian-reader-icon-button {
+.note-narrator-icon-button {
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -427,19 +427,19 @@
 	color: var(--text-muted);
 }
 
-.obsidian-reader-icon-button:hover:not(.is-disabled) {
+.note-narrator-icon-button:hover:not(.is-disabled) {
 	color: var(--text-normal);
 	background-color: var(--background-modifier-hover);
 }
 
 /* An explicit muted color rather than opacity, which compounds with the icon's own already-muted fill
    and can end up too low-contrast to read as "disabled" instead of just "missing". */
-.obsidian-reader-icon-button.is-disabled {
+.note-narrator-icon-button.is-disabled {
 	color: var(--text-faint);
 	cursor: default;
 }
 
-.obsidian-reader-icon-button.obsidian-reader-control-primary {
+.note-narrator-icon-button.note-narrator-control-primary {
 	width: var(--size-4-10);
 	height: var(--size-4-10);
 	color: var(--interactive-accent);
@@ -453,34 +453,34 @@
  * nav-action-button, also sized off --touch-size-m) -- verified against the installed app's own
  * app.css, not assumed.
  */
-.is-mobile .obsidian-reader-icon-button {
+.is-mobile .note-narrator-icon-button {
 	width: var(--touch-size-m);
 	height: var(--touch-size-m);
 }
 
-.is-mobile .obsidian-reader-icon-button.obsidian-reader-control-primary {
+.is-mobile .note-narrator-icon-button.note-narrator-control-primary {
 	width: var(--touch-size-l);
 	height: var(--touch-size-l);
 }
 
-.is-mobile .obsidian-reader-bgjob-icon-button,
-.is-mobile .obsidian-reader-audio-status-delete,
-.is-mobile .obsidian-reader-background-job-discard {
+.is-mobile .note-narrator-bgjob-icon-button,
+.is-mobile .note-narrator-audio-status-delete,
+.is-mobile .note-narrator-background-job-discard {
 	width: var(--touch-size-s);
 	height: var(--touch-size-s);
 }
 
-.obsidian-reader-icon-button.obsidian-reader-control-primary:hover:not(.is-disabled) {
+.note-narrator-icon-button.note-narrator-control-primary:hover:not(.is-disabled) {
 	color: var(--interactive-accent-hover);
 }
 
-.obsidian-reader-speed-range {
+.note-narrator-speed-range {
 	display: flex;
 	justify-content: space-between;
 	margin-top: var(--size-2-2);
 }
 
-.obsidian-reader-speed-bound {
+.note-narrator-speed-bound {
 	color: var(--text-faint);
 	font-size: var(--font-ui-smaller);
 	font-variant-numeric: tabular-nums;
@@ -489,7 +489,7 @@
 	padding: 1px var(--size-2-2);
 }
 
-.obsidian-reader-audio-status {
+.note-narrator-audio-status {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
@@ -502,7 +502,7 @@
 	border-left: 3px solid transparent;
 }
 
-.obsidian-reader-audio-status-delete {
+.note-narrator-audio-status-delete {
 	flex-shrink: 0;
 	width: var(--size-4-6);
 	height: var(--size-4-6);
@@ -514,18 +514,18 @@
  * foreground+background made this unreadable. Obsidian's own callouts use a color-mix() tint of the
  * accent color for the background instead, with normal body text — matching that here.
  */
-.obsidian-reader-audio-status.is-up-to-date {
+.note-narrator-audio-status.is-up-to-date {
 	background-color: color-mix(in oklch, var(--color-green) 12%, transparent);
 	border-left-color: var(--text-success);
 	margin-bottom: var(--rd-space-section);
 }
 
-.obsidian-reader-audio-status.is-outdated {
+.note-narrator-audio-status.is-outdated {
 	background-color: color-mix(in oklch, var(--color-orange) 12%, transparent);
 	border-left-color: var(--text-warning);
 }
 
-.obsidian-reader-background-jobs {
+.note-narrator-background-jobs {
 	display: flex;
 	flex-direction: column;
 	gap: var(--size-2-2);
@@ -534,7 +534,7 @@
 
 /* Base look, shared by all three "Background job display" styles -- clicking anywhere on the
    row/card besides its own icon buttons plays that job, so every variant signals it's clickable. */
-.obsidian-reader-background-job {
+.note-narrator-background-job {
 	cursor: pointer;
 	border-radius: var(--radius-s);
 	border-left: 3px solid var(--text-muted);
@@ -542,49 +542,49 @@
 	transition: background-color 0.1s ease;
 }
 
-.obsidian-reader-background-job:hover {
+.note-narrator-background-job:hover {
 	background-color: var(--background-modifier-border-hover);
 }
 
-.obsidian-reader-background-job:focus-visible {
+.note-narrator-background-job:focus-visible {
 	outline: 2px solid var(--text-accent);
 	outline-offset: 1px;
 }
 
-.obsidian-reader-background-job.is-generating {
+.note-narrator-background-job.is-generating {
 	border-left-color: var(--text-warning);
 	background-color: color-mix(in oklch, var(--color-orange) 12%, transparent);
 }
 
-.obsidian-reader-background-job.is-generating:hover {
+.note-narrator-background-job.is-generating:hover {
 	background-color: color-mix(in oklch, var(--color-orange) 20%, transparent);
 }
 
-.obsidian-reader-background-job.is-done {
+.note-narrator-background-job.is-done {
 	border-left-color: var(--text-success);
 	background-color: color-mix(in oklch, var(--color-green) 12%, transparent);
 }
 
-.obsidian-reader-background-job.is-done:hover {
+.note-narrator-background-job.is-done:hover {
 	background-color: color-mix(in oklch, var(--color-green) 20%, transparent);
 }
 
-.obsidian-reader-background-job-icon {
+.note-narrator-background-job-icon {
 	display: flex;
 	flex-shrink: 0;
 }
 
-.obsidian-reader-background-job.is-generating .obsidian-reader-background-job-icon {
-	animation: obsidian-reader-spin 1.5s linear infinite;
+.note-narrator-background-job.is-generating .note-narrator-background-job-icon {
+	animation: note-narrator-spin 1.5s linear infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
-	.obsidian-reader-background-job.is-generating .obsidian-reader-background-job-icon {
+	.note-narrator-background-job.is-generating .note-narrator-background-job-icon {
 		animation: none;
 	}
 }
 
-@keyframes obsidian-reader-spin {
+@keyframes note-narrator-spin {
 	from {
 		transform: rotate(0deg);
 	}
@@ -593,7 +593,7 @@
 	}
 }
 
-.obsidian-reader-background-job-name {
+.note-narrator-background-job-name {
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
@@ -601,7 +601,7 @@
 
 /* Icon buttons used by the compact and minimal styles -- smaller than the transport controls' since
    several can sit inline with a note title. */
-.obsidian-reader-bgjob-icon-button {
+.note-narrator-bgjob-icon-button {
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -612,17 +612,17 @@
 	color: var(--text-muted);
 }
 
-.obsidian-reader-bgjob-icon-button:hover {
+.note-narrator-bgjob-icon-button:hover {
 	color: var(--text-normal);
 	background-color: var(--background-modifier-hover);
 }
 
 /* --- Full: a callout per job, matching the panel's other status callouts --- */
-.obsidian-reader-background-job--full {
+.note-narrator-background-job--full {
 	padding: var(--size-4-2);
 }
 
-.obsidian-reader-background-job-header {
+.note-narrator-background-job-header {
 	display: flex;
 	align-items: center;
 	gap: var(--size-2-2);
@@ -631,28 +631,28 @@
 	margin-bottom: var(--size-2-2);
 }
 
-.obsidian-reader-background-job-header span:last-child {
+.note-narrator-background-job-header span:last-child {
 	overflow-wrap: break-word;
 }
 
-.obsidian-reader-background-job--full .obsidian-reader-generation-bar {
+.note-narrator-background-job--full .note-narrator-generation-bar {
 	margin-bottom: var(--size-2-2);
 }
 
-.obsidian-reader-background-job-actions {
+.note-narrator-background-job-actions {
 	display: flex;
 	align-items: center;
 	gap: var(--size-2-2);
 }
 
-.obsidian-reader-background-job-discard {
+.note-narrator-background-job-discard {
 	flex-shrink: 0;
 	width: var(--size-4-6);
 	height: var(--size-4-6);
 }
 
 /* --- Compact: one slim pill row per job --- */
-.obsidian-reader-background-job--compact {
+.note-narrator-background-job--compact {
 	display: flex;
 	align-items: center;
 	gap: var(--size-2-2);
@@ -661,30 +661,30 @@
 	color: var(--text-normal);
 }
 
-.obsidian-reader-background-job-minibar {
+.note-narrator-background-job-minibar {
 	display: flex;
 	gap: 2px;
 	flex: 1;
 	min-width: var(--size-4-8);
 }
 
-.obsidian-reader-background-job-minibar div {
+.note-narrator-background-job-minibar div {
 	flex: 1;
 	height: 5px;
 	border-radius: 2px;
 	background-color: var(--background-modifier-border);
 }
 
-.obsidian-reader-background-job-minibar div.is-ready {
+.note-narrator-background-job-minibar div.is-ready {
 	background-color: var(--interactive-accent);
 }
 
 /* --- Minimal: a small card with icon buttons, no text labels beyond the note title --- */
-.obsidian-reader-background-job--minimal {
+.note-narrator-background-job--minimal {
 	padding: var(--size-4-1) var(--size-4-2) var(--size-4-2);
 }
 
-.obsidian-reader-background-job-title-row {
+.note-narrator-background-job-title-row {
 	display: flex;
 	align-items: center;
 	gap: var(--size-2-2);
@@ -693,28 +693,28 @@
 	margin-bottom: var(--size-2-2);
 }
 
-.obsidian-reader-background-job-title-row .obsidian-reader-background-job-name {
+.note-narrator-background-job-title-row .note-narrator-background-job-name {
 	flex: 1;
 }
 
-.obsidian-reader-background-job-minimal-buttons {
+.note-narrator-background-job-minimal-buttons {
 	display: flex;
 	align-items: center;
 	gap: 2px;
 	flex-shrink: 0;
 }
 
-.obsidian-reader-background-job--minimal .obsidian-reader-generation-bar {
+.note-narrator-background-job--minimal .note-narrator-generation-bar {
 	margin-bottom: 0;
 }
 
 /* --- Now-playing highlight (editor decorations) --- */
-.obsidian-reader-highlight-bg {
+.note-narrator-highlight-bg {
 	background-color: var(--text-highlight-bg);
 	border-radius: 2px;
 }
 
-.obsidian-reader-highlight-underline {
+.note-narrator-highlight-underline {
 	text-decoration: underline;
 	text-decoration-color: var(--interactive-accent);
 	text-decoration-thickness: 2px;
@@ -726,7 +726,7 @@
  * pushing content into a literal right margin got silently clipped by the editor's line-wrap scrolling,
  * since that space doesn't actually exist as a real render target. The gutter column does.
  */
-.obsidian-reader-marker-gutter {
+.note-narrator-marker-gutter {
 	width: 1.6em;
 }
 
@@ -735,8 +735,8 @@
  * continuation) only occupies the lines from the icon down to wherever the currently-playing chunk/section
  * actually ends, the border reads as one rule spanning exactly that range, not the whole editor height.
  */
-.obsidian-reader-margin-marker,
-.obsidian-reader-margin-marker-line {
+.note-narrator-margin-marker,
+.note-narrator-margin-marker-line {
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -746,11 +746,11 @@
 	opacity: 0.85;
 }
 
-.obsidian-reader-margin-marker {
+.note-narrator-margin-marker {
 	color: var(--interactive-accent);
 }
 
-.obsidian-reader-margin-marker svg {
+.note-narrator-margin-marker svg {
 	width: var(--icon-xs);
 	height: var(--icon-xs);
 }
@@ -762,7 +762,7 @@
  * desktop hover glance (font-size: var(--font-ui-smaller), padding: var(--size-4-1) var(--size-4-2))
  * -- too small/cramped to read comfortably while actually holding a finger on a touchscreen.
  */
-.obsidian-reader-touch-tooltip {
+.note-narrator-touch-tooltip {
 	font-size: var(--font-ui-medium);
 	padding: var(--size-4-2) var(--size-4-3);
 }
