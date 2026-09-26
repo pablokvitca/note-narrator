@@ -64,7 +64,7 @@ export default class NoteNarratorPlugin extends Plugin {
 	}
 
 	onunload() {
-		this.reader?.stop();
+		this.reader?.dispose();
 		for (const button of this.actionButtons) {
 			button.remove();
 		}

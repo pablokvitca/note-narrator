@@ -66,8 +66,9 @@ export class ElevenLabsProvider implements TTSProvider {
 		private onRateLimited?: () => void,
 	) {}
 
-	async synthesize(text: string): Promise<ArrayBuffer> {
+	async synthesize(text: string, isCancelled?: () => boolean): Promise<ArrayBuffer> {
 		for (let attempt = 0; ; attempt++) {
+			if (isCancelled?.()) throw new Error('Generation was cancelled.');
 			const response = await requestUrl({
 				url: `https://api.elevenlabs.io/v1/text-to-speech/${this.voice.voiceId}`,
 				method: 'POST',

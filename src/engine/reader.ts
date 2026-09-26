@@ -104,6 +104,14 @@ export class Reader extends Events {
 	}
 
 	/** Fully stops playback and cancels the active job's generation. Use `continueGeneratingInBackground()` instead to keep generating without playing. */
+	/** Stops playback and cancels every generation job, background ones included; called when the plugin unloads so nothing keeps generating or saving afterwards. */
+	dispose(): void {
+		this.stop();
+		for (const job of this.backgroundJobs) job.cancelled = true;
+		this.backgroundJobs = [];
+		this.setState({ backgroundJobs: [] });
+	}
+
 	stop(): void {
 		this.sessionId++;
 		this.savedPlaybackTimeline = null;
@@ -591,7 +599,7 @@ export class Reader extends Events {
 	/** Synthesizes one chunk and records the result on the job; a failure (including one while recording) clears the chunk's in-flight flag and rethrows. */
 	private async generateChunk(job: GenerationJob, index: number): Promise<ArrayBuffer> {
 		try {
-			const buffer = await job.provider.synthesize(job.chunks[index] ?? '');
+			const buffer = await job.provider.synthesize(job.chunks[index] ?? '', () => job.cancelled);
 			job.chunkBuffers[index] = buffer;
 			const duration = await decodeAudioDuration(buffer);
 			job.chunkReady[index] = true;
