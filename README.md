@@ -2,8 +2,7 @@
 
 Note Narrator is an Obsidian plugin that **reads your notes aloud** using text to speech. It uses [ElevenLabs](https://elevenlabs.io) voices, starts playing while the rest of the note is still being generated, and can save the audio as an `.mp3` next to your note.
 
-> [!IMPORTANT]
-> **Requires an ElevenLabs account and API key, and ElevenLabs charges for the audio it generates** (credits on your plan; free tier limits apply). The text you read is sent to ElevenLabs. See [Requirements and costs](#requirements-and-costs) and [Disclosures](#disclosures) before installing.
+**Requires an ElevenLabs account and API key, and ElevenLabs charges for the audio it generates** (credits on your plan; free tier limits apply). The text you read is sent to ElevenLabs. See [Requirements and costs](#requirements-and-costs) and [Disclosures](#disclosures) before installing.
 
 ![Note Narrator panel reading a note aloud, with the current text highlighted in the editor](docs/screenshots/panel.png)
 
@@ -11,7 +10,7 @@ Note Narrator is an Obsidian plugin that **reads your notes aloud** using text t
 
 ## What it does
 
-- Reads the whole note, or just your text selection, from a sidebar panel or the **Read note aloud** command.
+- Reads the whole note, or just your text selection, from a sidebar panel or the **Read note aloud** command (**Stop reading** stops it).
 - **Narrator profiles**: a provider, a voice and its settings, and optional per-profile reading options. Switch profiles from the panel.
 - Plays as soon as the first chunk is ready, and generates long notes in the background while you listen.
 - Optionally **saves the audio** to your vault, links it from the note, and tells you when it is outdated.
@@ -20,10 +19,12 @@ Note Narrator is an Obsidian plugin that **reads your notes aloud** using text t
 
 ## Documentation
 
-> Documentation is being written and will be published soon. These links are placeholders until the documentation site exists.
+Full documentation is at **[the Note Narrator docs](https://publish.obsidian.md/pablokvitca-plugin-note-narrator/note-narrator)**:
 
-- **Getting started**: *link to be added when the documentation is published*
-- **Full documentation** (usage, every setting, roadmap, troubleshooting): *link to be added when the documentation is published*
+- [Installation](https://publish.obsidian.md/pablokvitca-plugin-note-narrator/note-narrator/getting-started/installation) and [Quick start](https://publish.obsidian.md/pablokvitca-plugin-note-narrator/note-narrator/getting-started/quick-start)
+- [Settings](https://publish.obsidian.md/pablokvitca-plugin-note-narrator/note-narrator/settings/overview): every setting, tab by tab
+- [Supported platforms](https://publish.obsidian.md/pablokvitca-plugin-note-narrator/note-narrator/reference/supported-platforms) and [Privacy and network use](https://publish.obsidian.md/pablokvitca-plugin-note-narrator/note-narrator/reference/privacy)
+- [Troubleshooting and FAQ](https://publish.obsidian.md/pablokvitca-plugin-note-narrator/note-narrator/reference/troubleshooting) and the [Roadmap](https://publish.obsidian.md/pablokvitca-plugin-note-narrator/note-narrator/roadmap)
 
 ## Install
 
