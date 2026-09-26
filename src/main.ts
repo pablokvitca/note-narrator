@@ -142,5 +142,13 @@ export default class NoteNarratorPlugin extends Plugin {
 
 	async saveSettings() {
 		await this.saveData(this.settings);
+		this.refreshPanels();
+	}
+
+	/** Re-renders any open player panel so it reflects settings changed elsewhere (profiles added, renamed or edited). */
+	refreshPanels(): void {
+		for (const leaf of this.app.workspace.getLeavesOfType(NOTE_NARRATOR_VIEW_TYPE)) {
+			if (leaf.view instanceof PlayerView) leaf.view.refresh();
+		}
 	}
 }
