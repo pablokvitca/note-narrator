@@ -271,7 +271,7 @@ export class PlayerView extends ItemView {
 		this.renderNarratorSelector(scroll);
 		this.renderNoteStats(scroll, selectedFile);
 
-		// 6. Play Saved / Read / Cancel / Background
+		// 6. Play saved / Read / Cancel / Background
 		this.renderPrimaryActions(scroll, activeForSelected, pendingGeneration);
 
 		// 7. Progress bars/text
@@ -657,7 +657,7 @@ export class PlayerView extends ItemView {
 			this.app,
 			'Clear Note Narrator files?',
 			`This deletes ${activeFile.basename}'s linked audio file and removes the Note Narrator audio properties from its frontmatter. This can't be undone from within Note Narrator.`,
-			'DELETE',
+			'Delete',
 			() => void this.plugin.reader.clearReaderFiles(activeFile),
 		).open();
 	}
@@ -715,7 +715,7 @@ export class PlayerView extends ItemView {
 		const actionsRow = container.createDiv({ cls: 'note-narrator-primary-actions' });
 		actionsRow.toggleClass('is-compact', this.plugin.settings.compactButtons);
 
-		const { button: playSavedButton } = this.createLabeledButton(actionsRow, 'note-narrator-play-saved-button', PLAY_SAVED_ICON_ID, 'Play Saved');
+		const { button: playSavedButton } = this.createLabeledButton(actionsRow, 'note-narrator-play-saved-button', PLAY_SAVED_ICON_ID, 'Play saved');
 		playSavedButton.disabled = true;
 
 		const { button: readButton, labelEl: readLabelEl } = this.createLabeledButton(
