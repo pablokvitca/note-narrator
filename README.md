@@ -29,7 +29,7 @@ Note Narrator is an Obsidian plugin that **reads your notes aloud** using text t
 
 ## Install
 
-Note Narrator is **not in the Obsidian community plugin directory yet**. Requires **Obsidian 1.13.0 or newer**.
+Note Narrator is **not in the Obsidian community plugin directory yet**. Requires **Obsidian 1.13.1 or newer**.
 
 - **BRAT (recommended):** install [BRAT](https://github.com/TfTHacker/obsidian42-brat), run **BRAT: Add a beta plugin for testing**, and enter `pablokvitca/note-narrator`.
 - **Manually:** download `main.js`, `manifest.json` and `styles.css` from the [latest release](https://github.com/pablokvitca/note-narrator/releases/latest) into `<your vault>/.obsidian/plugins/note-narrator/`, then enable it under **Settings → Community plugins**.
