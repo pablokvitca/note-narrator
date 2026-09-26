@@ -1,6 +1,6 @@
 import { App, DropdownComponent, Notice, PluginSettingTab, SecretComponent, Setting, SettingDefinitionItem, SettingDefinitionPage, SettingGroupItem, TextComponent } from 'obsidian';
-import { ConfirmModal } from './confirm-modal';
-import NoteNarratorPlugin from './main';
+import { ConfirmModal } from '../ui/confirm-modal';
+import NoteNarratorPlugin from '../main';
 import {
 	createProfile,
 	createProvider,
@@ -19,11 +19,11 @@ import {
 	resolveReadingConfig,
 	uniqueName,
 } from './profiles';
-import { ChunkerStyle } from './text-utils';
-import { TimeDisplayMode } from './time-utils';
-import { ElevenLabsVoice, listElevenLabsVoices } from './tts/elevenlabs-provider';
-import { ELEVENLABS_MODELS } from './tts/elevenlabs-models';
-import { getProviderApiKey } from './tts/registry';
+import { ChunkerStyle } from '../text/text-utils';
+import { TimeDisplayMode } from '../engine/time-utils';
+import { ElevenLabsVoice, listElevenLabsVoices } from '../tts/elevenlabs-provider';
+import { ELEVENLABS_MODELS } from '../tts/elevenlabs-models';
+import { getProviderApiKey } from '../tts/registry';
 
 export type SaveAudioLocation = 'note-folder' | 'custom-folder';
 export type SaveVersioning = 'replace' | 'keep';

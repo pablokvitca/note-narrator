@@ -1,5 +1,5 @@
 import { requestUrl } from 'obsidian';
-import type { ElevenLabsVoiceConfig } from '../profiles';
+import type { ElevenLabsVoiceConfig } from '../settings/profiles';
 import { TTSProvider } from './provider';
 
 export interface ElevenLabsVoice {

@@ -1,12 +1,12 @@
 import { debounce, ItemView, MarkdownView, Menu, setIcon, Setting, TFile, WorkspaceLeaf } from 'obsidian';
 import { ConfirmModal } from './confirm-modal';
-import NoteNarratorPlugin from './main';
-import { getActiveProfile, getDropdownProfiles, savedVoiceMatches } from './profiles';
-import { hasPendingGeneration, queuePosition } from './background-job';
-import type { BackgroundJobInfo } from './background-job';
+import NoteNarratorPlugin from '../main';
+import { getActiveProfile, getDropdownProfiles, savedVoiceMatches } from '../settings/profiles';
+import { hasPendingGeneration, queuePosition } from '../engine/background-job';
+import type { BackgroundJobInfo } from '../engine/background-job';
 import { PLAY_SAVED_ICON_ID, skipIconId } from './icons';
-import { AudioLinkStatus, ReaderState } from './reader';
-import { computeFullReadTimes, formatTimeDisplay } from './time-utils';
+import { AudioLinkStatus, ReaderState } from '../engine/reader';
+import { computeFullReadTimes, formatTimeDisplay } from '../engine/time-utils';
 import { attachTooltip } from './touch-tooltip';
 
 export const NOTE_NARRATOR_VIEW_TYPE = 'note-narrator-player';

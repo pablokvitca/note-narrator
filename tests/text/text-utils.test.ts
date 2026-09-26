@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chunkNote, isHeadingSkipped, parseHeadingSkipPatterns, sectionHeadingText } from '../src/text-utils';
+import { chunkNote, isHeadingSkipped, parseHeadingSkipPatterns, sectionHeadingText } from '../../src/text/text-utils';
 
 describe('parseHeadingSkipPatterns', () => {
 	it('parses one case-insensitive regex per line, skipping blanks', () => {

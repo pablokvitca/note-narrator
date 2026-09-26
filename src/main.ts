@@ -1,11 +1,11 @@
 import { debounce, MarkdownView, Plugin, setIcon, TFile } from 'obsidian';
-import { createHighlightExtension } from './highlight-extension';
-import { migrateProfileSettings, normalizeProfileSettings } from './profiles';
-import { registerCustomIcons, SAVED_TOOLBAR_ICON_ID } from './icons';
-import { PlayerView, NOTE_NARRATOR_VIEW_TYPE } from './player-view';
-import { Reader } from './reader';
-import { DEFAULT_SETTINGS, NoteNarratorSettings, NoteNarratorSettingTab } from './settings';
-import { initTouchTooltipSupport } from './touch-tooltip';
+import { createHighlightExtension } from './ui/highlight-extension';
+import { migrateProfileSettings, normalizeProfileSettings } from './settings/profiles';
+import { registerCustomIcons, SAVED_TOOLBAR_ICON_ID } from './ui/icons';
+import { PlayerView, NOTE_NARRATOR_VIEW_TYPE } from './ui/player-view';
+import { Reader } from './engine/reader';
+import { DEFAULT_SETTINGS, NoteNarratorSettings, NoteNarratorSettingTab } from './settings/settings';
+import { initTouchTooltipSupport } from './ui/touch-tooltip';
 
 export default class NoteNarratorPlugin extends Plugin {
 	settings!: NoteNarratorSettings;
