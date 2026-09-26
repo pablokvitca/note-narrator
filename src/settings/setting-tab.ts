@@ -67,6 +67,7 @@ export class NoteNarratorSettingTab extends PluginSettingTab implements Settings
 			}
 		}
 		await super.setControlValue(key, normalized);
+		this.plugin.refreshPanels();
 
 		if (key === 'saveAudioFile' && normalized === true && !this.plugin.settings.linkAudioInNote) {
 			this.plugin.settings.linkAudioInNote = true;

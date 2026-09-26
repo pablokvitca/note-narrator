@@ -363,12 +363,17 @@ export class PlayerView extends ItemView {
 	}
 
 	/** Dropdown of the narrator profiles marked for the panel (plus the active one), replacing the old per-voice list. */
+	/** Re-renders the panel from the current settings. */
+	refresh(): void {
+		this.render();
+	}
+
 	private renderNarratorSelector(container: HTMLElement): void {
 		const settings = this.plugin.settings;
 		const profiles = getDropdownProfiles(settings);
 		const activeId = getActiveProfile(settings)?.id;
 
-		new Setting(container).setName('Narrator').addDropdown((dropdown) => {
+		new Setting(container).setName('Narration profile').addDropdown((dropdown) => {
 			if (profiles.length === 0) {
 				dropdown.addOption('', 'No narrator profiles');
 				dropdown.setDisabled(true);
@@ -378,9 +383,8 @@ export class PlayerView extends ItemView {
 			if (activeId) dropdown.setValue(activeId);
 			dropdown.onChange(async (value) => {
 				settings.activeProfileId = value;
+				// saveSettings re-renders the panel, so the Read button's Regenerate/"new narrator" label and the note stats follow the new profile.
 				await this.plugin.saveSettings();
-				// Re-render so the Read button's Regenerate/"new narrator" label and the note stats follow the new profile.
-				this.render();
 			});
 		});
 	}
