@@ -1,142 +1,45 @@
-import { App, Events, MarkdownView, moment, Notice, normalizePath, TFile } from 'obsidian';
-import { concatArrayBuffers, sanitizeFilenameComponent } from './audio-utils';
+import { App, Events, MarkdownView, Notice, TFile } from 'obsidian';
+import { decodeAudioDuration, sliceIntoChunks } from './audio-utils';
+import { AudioLinkStatus, ChunkOutcome, GenerationJob, IDLE_STATE, PositionBase, ReaderState, SavedPlaybackTimeline } from './reader-types';
+import { ChunkPosition, RawSpan } from '../text/text-position';
+import { HighlightGranularity, NoteNarratorSettings } from '../settings/settings';
+import { ResolvedNarrator, generationWindow } from '../settings/profiles';
 import { buildBackgroundJobInfo, hasPendingGeneration } from './background-job';
-import type { BackgroundJobInfo } from './background-job';
-import { generationWindow, getActiveProfile, providerCharLimit, ReadingConfig, resolveNarrator, resolveReadingConfig, ResolvedNarrator, VoiceConfig } from '../settings/profiles';
-import { getGlobalReadingConfig, HighlightGranularity, NoteNarratorSettings } from '../settings/settings';
-import { ChunkPosition, computeChunkPositions, RawSpan, rebaseSpan, splitChunkPosition } from '../text/text-position';
-import {
-	buildReadingPreamble,
-	chunkByWordCount,
-	chunkBySentence,
-	chunkNote,
-	hashText,
-	parseHeadingSkipPatterns,
-	stripFrontmatter,
-	StripMarkdownOptions,
-} from '../text/text-utils';
-import { TTSProvider } from '../tts/provider';
-import { createTTSProvider, getProviderApiKey, missingApiKeyMessage, resolveVoiceLabel } from '../tts/registry';
-
-const NULL_CHUNK_POSITION: ChunkPosition = { span: null, sectionSpan: null, sectionHeadingSpan: null };
-
-/** Where in the editor a `readText()` call's raw text corresponds to -- used to rebase estimated chunk spans (computed over that raw text) onto real document offsets. Omitted entirely for a selection read, which has no reliable base offset to rebase onto. */
-interface PositionBase {
-	/** Offset within the raw text passed to `readText()` where trackable (in-editor) content starts -- e.g. past a prepended title/properties preamble that has no corresponding editor text. */
-	rawTextOffset: number;
-	/** Offset within the actual document where that same trackable content starts -- e.g. past frontmatter, which `readText()`'s raw text never includes. */
-	fileOffset: number;
-	/** Length of the trackable content, for clipping spans that would otherwise run past it. */
-	length: number;
-}
-
-/**
- * Lets `getSpan()` and Previous/Next part work during "Play saved" playback, which has no `GenerationJob`.
- * `chunkByteLengths` is what makes this reliable: it lets the saved file be sliced back into its individual
- * chunk buffers and played one at a time through the exact same per-chunk path a live read uses, rather
- * than relying on native `<audio>` seeking within one big multi-chunk MP3 concatenation -- browsers
- * estimate seek positions from the file's own header, which (being a raw concatenation, not a properly
- * re-muxed stream) only actually describes the first chunk, so seeking past it isn't reliable.
- */
-interface SavedPlaybackTimeline {
-	file: TFile;
-	positions: ChunkPosition[];
-	/** Each chunk's audio duration (seconds), for the full-read time display -- not used for chunk lookup (that's now the plain index into a sequentially-played buffer, like a live read). */
-	chunkDurations: number[];
-	/** Each chunk's byte length within the saved file, in order -- lets the concatenated file be sliced back into its original per-chunk buffers. */
-	chunkByteLengths: number[];
-}
-
-export type ReaderStatus = 'idle' | 'generating' | 'playing' | 'paused';
-export type AudioLinkStatus = 'none' | 'up-to-date' | 'outdated';
-
-export interface ReaderState {
-	status: ReaderStatus;
-	chunkIndex: number;
-	chunkCount: number;
-	currentTime: number;
-	duration: number;
-	/** Whether each chunk's audio has finished generating, for the segmented generation-progress bar. */
-	chunkReady: boolean[];
-	/** Whether each chunk is actively being generated right now (dispatched to the provider, not yet resolved), for the generation-progress bar. */
-	chunkInFlight: boolean[];
-	/** Decoded audio duration (seconds) of each chunk once generated, for whole-read elapsed/total/remaining. Undefined until decoded. */
-	chunkDurations: (number | undefined)[];
-	/** The note this status is about, so the panel can show it even when it isn't the currently-active note. Null when reading a selection with no backing file, or once idle. */
-	activeFile: TFile | null;
-	/**
-	 * Notes generating in the background after being detached from playback, plus ones that have finished
-	 * (kept until explicitly cleared). Only one is ever 'generating' at once; the rest are 'queued' (waiting
-	 * their turn, in this array's order) or 'done'. Independent of the playback fields above.
-	 */
-	backgroundJobs: BackgroundJobInfo[];
-}
-
-const IDLE_STATE: ReaderState = {
-	status: 'idle',
-	chunkIndex: 0,
-	chunkCount: 0,
-	currentTime: 0,
-	duration: 0,
-	chunkReady: [],
-	chunkInFlight: [],
-	chunkDurations: [],
-	activeFile: null,
-	backgroundJobs: [],
-};
-
-type ChunkOutcome = 'ended' | 'next' | 'previous';
-
-/**
- * A single read's generation state: its chunk texts, buffers/promises/readiness, and the provider used to
- * synthesize them. Exactly one job at a time drives active playback (`Reader.activeJob`); any number of
- * others can be queued/generating/done in the background (`Reader.backgroundJobs`) after being detached from
- * playback via `continueGeneratingInBackground()`. Kept as a plain object (rather than flat fields on Reader)
- * so a job can be handed off between roles, or discarded, without those roles' state colliding.
- */
-interface GenerationJob {
-	id: number;
-	file: TFile | null;
-	chunks: string[];
-	chunkBuffers: (ArrayBuffer | undefined)[];
-	chunkPromises: (Promise<ArrayBuffer> | undefined)[];
-	chunkReady: boolean[];
-	chunkInFlight: boolean[];
-	chunkDurations: (number | undefined)[];
-	/** Estimated editor position of each chunk (and its section), for highlighting/scroll-to-current. See {@link computeChunkPositions}. */
-	positions: ChunkPosition[];
-	provider: TTSProvider;
-	/** The narrator this job was started with, resolved once so later edits to the profile or provider don't change a read (or its saved audio) mid-flight. */
-	narrator: ResolvedNarrator;
-	sourceFileForSave: TFile | null;
-	/** Whether this job's audio has already been saved (triggered once every chunk finishes generating). */
-	savedForSession: boolean;
-	/** Set once a 429 is seen for this job; falls back its generation to sequential (1 at a time) to avoid repeating it. */
-	rateLimited: boolean;
-	/** Set once this job is discarded (stopped, superseded, or promoted elsewhere) so any still-settling promises know not to touch playback/background state on completion. */
-	cancelled: boolean;
-	/** Only meaningful while the job is in `Reader.backgroundJobs` -- see {@link BackgroundJobStatus}. */
-	backgroundStatus: 'queued' | 'generating' | 'done';
-}
+import { chunkNote, stripFrontmatter } from '../text/text-utils';
+import { createTTSProvider, getProviderApiKey, missingApiKeyMessage } from '../tts/registry';
+import { NoteText } from './note-text';
+import { SavedAudio } from './saved-audio';
 
 export class Reader extends Events {
 	private audio: HTMLAudioElement | null = null;
+
 	private sessionId = 0;
+
 	private resolveCurrentChunk: ((outcome: ChunkOutcome) => void) | null = null;
+
 	private state: ReaderState = { ...IDLE_STATE };
+
 	/** Live playback rate for the current/next read. Starts from settings.playbackRate but is never persisted back to it. */
 	private currentPlaybackRate: number;
+
 	/** Live volume/mute for the current session. Not tied to any setting — persists across reads until Obsidian restarts, like a physical volume knob. */
 	private currentVolume = 1;
+
 	private muted = false;
 
 	private nextJobId = 0;
+
 	/** The job currently bound to playback and driving `state`. Null when nothing is generating/playing (or a saved file is playing directly, with no generation job involved). */
 	private activeJob: GenerationJob | null = null;
+
 	/** Jobs generating (or queued to generate, or done) without being bound to playback. At most one has backgroundStatus 'generating' at a time. */
 	private backgroundJobs: GenerationJob[] = [];
+
 	/** Set while a saved file plays directly (no generation job), so `getSpan()` can still map elapsed playback time back to a chunk/section. Null whenever there's no such timeline (e.g. the note's since changed, or no chunk-durations property was saved). */
 	private savedPlaybackTimeline: SavedPlaybackTimeline | null = null;
+
+	private readonly savedAudio: SavedAudio;
+	private readonly noteText: NoteText;
 
 	constructor(
 		private app: App,
@@ -144,6 +47,8 @@ export class Reader extends Events {
 	) {
 		super();
 		this.currentPlaybackRate = settings.playbackRate;
+		this.savedAudio = new SavedAudio(app, settings, (file) => this.trigger('audio-status-change', file));
+		this.noteText = new NoteText(app, settings);
 	}
 
 	getState(): ReaderState {
@@ -419,7 +324,7 @@ export class Reader extends Events {
 	 */
 	private async buildSavedPlaybackTimeline(sourceFile: TFile): Promise<SavedPlaybackTimeline | null> {
 		try {
-			const status = await this.getAudioStatus(sourceFile);
+			const status = await this.savedAudio.getAudioStatus(sourceFile);
 			if (status !== 'up-to-date') return null;
 
 			const frontmatter = this.app.metadataCache.getFileCache(sourceFile)?.frontmatter;
@@ -440,11 +345,11 @@ export class Reader extends Events {
 			const fullValue = await this.app.vault.cachedRead(sourceFile);
 			const body = stripFrontmatter(fullValue);
 			const fileOffset = fullValue.length - body.length;
-			const preamble = this.buildPreamble(sourceFile.basename, frontmatter);
+			const preamble = this.noteText.buildPreamble(sourceFile.basename, frontmatter);
 			const rawText = preamble ? `${preamble}\n\n${body}` : body;
 			const positionBase: PositionBase = { rawTextOffset: preamble ? preamble.length + 2 : 0, fileOffset, length: body.length };
 
-			const { positions } = this.buildChunksAndPositions(rawText, positionBase);
+			const { positions } = this.noteText.buildChunksAndPositions(rawText, positionBase);
 			if (positions.length !== chunkDurations.length) return null;
 
 			return { file: sourceFile, positions, chunkDurations, chunkByteLengths };
@@ -452,35 +357,6 @@ export class Reader extends Events {
 			console.error('Note Narrator: failed to build saved-playback highlight timeline', error);
 			return null;
 		}
-	}
-
-	/** The reading settings in effect: the global defaults with the active narrator profile's overrides applied. */
-	private getReadingConfig(): ReadingConfig {
-		return resolveReadingConfig(getGlobalReadingConfig(this.settings), getActiveProfile(this.settings)?.readingOverrides);
-	}
-
-	/** The active narrator profile resolved with its provider, or null when none is usable. */
-	getActiveNarrator(): ResolvedNarrator | null {
-		return resolveNarrator(this.settings);
-	}
-
-	private buildPreamble(title: string | null, frontmatter: Parameters<typeof buildReadingPreamble>[1]): string {
-		const reading = this.getReadingConfig();
-		return buildReadingPreamble(title, frontmatter, { readTitle: reading.readTitle, readProperties: reading.readProperties });
-	}
-
-	private getStripMarkdownOptions(): StripMarkdownOptions {
-		const reading = this.getReadingConfig();
-		return {
-			stripMarkdownComments: reading.stripMarkdownComments,
-			stripCommentDelimiters: reading.stripCommentDelimiters,
-			announceComments: reading.announceComments,
-		};
-	}
-
-	/** Characters one TTS request can hold for the active narrator's voice configuration. */
-	private getCharLimit(): number {
-		return providerCharLimit(this.getActiveNarrator()?.voice);
 	}
 
 	async readNote(view?: MarkdownView): Promise<void> {
@@ -502,7 +378,7 @@ export class Reader extends Events {
 		const body = stripFrontmatter(fullValue);
 		const fileOffset = fullValue.length - body.length;
 		const frontmatter = target.file ? this.app.metadataCache.getFileCache(target.file)?.frontmatter : undefined;
-		const preamble = this.buildPreamble(target.file?.basename ?? null, frontmatter);
+		const preamble = this.noteText.buildPreamble(target.file?.basename ?? null, frontmatter);
 
 		await this.readText(preamble ? `${preamble}\n\n${body}` : body, target.file, {
 			allowSave: true,
@@ -510,59 +386,8 @@ export class Reader extends Events {
 		});
 	}
 
-	private getSkipHeadingPatterns(): RegExp[] {
-		return parseHeadingSkipPatterns(this.getReadingConfig().skipSectionHeadingPatterns);
-	}
-
-	private rebasePosition(position: ChunkPosition, base: PositionBase): ChunkPosition {
-		return {
-			span: rebaseSpan(position.span, base.rawTextOffset, base.length, base.fileOffset),
-			sectionSpan: rebaseSpan(position.sectionSpan, base.rawTextOffset, base.length, base.fileOffset),
-			sectionHeadingSpan: rebaseSpan(position.sectionHeadingSpan, base.rawTextOffset, base.length, base.fileOffset),
-		};
-	}
-
-	/**
-	 * The chunking + position-estimation pipeline shared by an actual read (`readText()`) and re-deriving
-	 * the same structure later for a saved file's playback (`buildSavedPlaybackTimeline()`) -- kept as one
-	 * implementation so the two can't silently drift apart (e.g. one applying quick-start's chunk-0 split
-	 * and the other not, which would misalign a saved file's chunk index against its content).
-	 */
-	private buildChunksAndPositions(rawText: string, positionBase: PositionBase | undefined): { chunks: string[]; positions: ChunkPosition[] } {
-		const charLimit = this.getCharLimit();
-		const built = computeChunkPositions(
-			rawText,
-			charLimit,
-			this.getReadingConfig().chunkerStyle,
-			this.getReadingConfig().maxHeadingDepth,
-			this.getStripMarkdownOptions(),
-			this.getSkipHeadingPatterns(),
-		);
-		let chunks = built.chunks;
-		let positions = positionBase
-			? built.positions.map((position) => this.rebasePosition(position, positionBase))
-			: built.positions.map(() => NULL_CHUNK_POSITION);
-
-		// Quick start: split the first chunk into a short lead-in plus the remainder (including the
-		// preamble, since it's already part of chunks[0]), so the first TTS request returns sooner.
-		if (this.settings.startPlaybackImmediately && this.settings.quickStart) {
-			const [firstChunk, ...rest] = chunks;
-			const [firstPosition, ...restPositions] = positions;
-			if (firstChunk !== undefined) {
-				const leadPieces =
-					this.settings.quickStartUnit === 'words'
-						? chunkByWordCount(firstChunk, this.settings.quickStartWordCount)
-						: chunkBySentence(firstChunk, this.settings.quickStartCharCount);
-				chunks = [...leadPieces, ...rest];
-				positions = [...splitChunkPosition(firstPosition, leadPieces.map((piece) => piece.length)), ...restPositions];
-			}
-		}
-
-		return { chunks, positions };
-	}
-
 	private async readText(rawText: string, sourceFile: TFile | null, options: { allowSave: boolean; positionBase?: PositionBase }): Promise<void> {
-		const narrator = this.getActiveNarrator();
+		const narrator = this.noteText.getActiveNarrator();
 		if (!narrator) {
 			new Notice('Add a provider and a narrator profile in the Note Narrator settings.');
 			return;
@@ -573,7 +398,7 @@ export class Reader extends Events {
 			return;
 		}
 
-		const { chunks, positions } = this.buildChunksAndPositions(rawText, options.positionBase);
+		const { chunks, positions } = this.noteText.buildChunksAndPositions(rawText, options.positionBase);
 		if (chunks.length === 0) {
 			new Notice('Nothing to read.');
 			return;
@@ -762,7 +587,7 @@ export class Reader extends Events {
 			.synthesize(job.chunks[index] ?? '')
 			.then(async (buffer) => {
 				job.chunkBuffers[index] = buffer;
-				const duration = await this.decodeAudioDuration(buffer);
+				const duration = await decodeAudioDuration(buffer);
 				job.chunkReady[index] = true;
 				job.chunkDurations[index] = duration;
 				job.chunkInFlight[index] = false;
@@ -792,25 +617,6 @@ export class Reader extends Events {
 		}
 	}
 
-	/** Decodes a generated chunk's audio duration (seconds) without playing it, for whole-read time totals. */
-	private decodeAudioDuration(buffer: ArrayBuffer): Promise<number> {
-		return new Promise((resolve) => {
-			const blob = new Blob([buffer], { type: 'audio/mpeg' });
-			const url = URL.createObjectURL(blob);
-			const audio = new Audio(url);
-			const finish = (duration: number) => {
-				audio.removeEventListener('loadedmetadata', onLoaded);
-				audio.removeEventListener('error', onError);
-				URL.revokeObjectURL(url);
-				resolve(duration);
-			};
-			const onLoaded = () => finish(audio.duration || 0);
-			const onError = () => finish(0);
-			audio.addEventListener('loadedmetadata', onLoaded);
-			audio.addEventListener('error', onError);
-		});
-	}
-
 	/** Saves (once) as soon as every chunk in a job has finished generating, regardless of playback progress. */
 	private maybeSaveOnGenerationComplete(job: GenerationJob): void {
 		if (job.savedForSession) return;
@@ -820,155 +626,7 @@ export class Reader extends Events {
 		job.savedForSession = true;
 		const buffers = job.chunkBuffers.filter((buffer): buffer is ArrayBuffer => buffer !== undefined);
 		const chunkDurations = job.chunkDurations.map((duration) => duration ?? 0);
-		void this.saveAudioFile(buffers, job.sourceFileForSave, chunkDurations, job.narrator);
-	}
-
-	private async saveAudioFile(chunks: ArrayBuffer[], sourceFile: TFile | null, chunkDurations: number[], narrator: ResolvedNarrator): Promise<void> {
-		try {
-			const apiKey = getProviderApiKey(this.app, narrator.provider);
-			const voiceName = apiKey ? await resolveVoiceLabel(narrator.provider, narrator.voice, apiKey) : this.voiceFallbackLabel(narrator.voice);
-			const data = concatArrayBuffers(chunks);
-
-			const existingAudioFile =
-				this.settings.saveVersioning === 'replace' && this.settings.linkAudioInNote && sourceFile
-					? this.findExistingAudioFile(sourceFile)
-					: null;
-
-			let audioFile: TFile;
-			if (existingAudioFile) {
-				await this.app.vault.modifyBinary(existingAudioFile, data);
-				audioFile = existingAudioFile;
-				new Notice(`Updated audio at ${audioFile.path}`);
-			} else {
-				const folderPath = this.resolveSaveFolder(sourceFile);
-				await this.ensureFolder(folderPath);
-				const noteName = sourceFile?.basename ?? `Reading ${moment().format('YYYY-MM-DD HHmmss')}`;
-				const baseName = sanitizeFilenameComponent(`${noteName} (${voiceName})`);
-				const path = await this.uniquePath(folderPath, baseName, 'mp3');
-				audioFile = await this.app.vault.createBinary(path, data);
-				new Notice(`Saved audio to ${path}`);
-			}
-
-			if (this.settings.linkAudioInNote && sourceFile) {
-				const chunkMeta = chunkDurations.map((duration, i) => ({ duration, byteLength: chunks[i]?.byteLength ?? 0 }));
-				await this.linkAudioInNote(audioFile, sourceFile, chunkMeta, narrator);
-			}
-		} catch (error) {
-			console.error('Note Narrator: failed to save audio file', error);
-			new Notice(`Failed to save audio file: ${error instanceof Error ? error.message : String(error)}`);
-		}
-	}
-
-	/** Label for a saved filename when the voice's real name can't be looked up (no API key). */
-	private voiceFallbackLabel(voice: VoiceConfig): string {
-		return voice.voiceId;
-	}
-
-	private findExistingAudioFile(sourceFile: TFile): TFile | null {
-		const frontmatter = this.app.metadataCache.getFileCache(sourceFile)?.frontmatter;
-		const storedPath = frontmatter?.[this.settings.audioPathProperty] as string | undefined;
-		if (!storedPath) return null;
-		const file = this.app.vault.getAbstractFileByPath(storedPath);
-		return file instanceof TFile ? file : null;
-	}
-
-	/**
-	 * Staleness hash for a note, excluding Note Narrator's own bookkeeping properties from the frontmatter
-	 * before hashing. Hashing raw file content directly would be self-referential: linkAudioInNote() writes
-	 * these properties (including this very hash) into the file's frontmatter right after computing it, so
-	 * every later read of "current content" would include them while the stored hash never could —
-	 * guaranteeing a permanent mismatch. Excluding them keeps the hash stable across saves.
-	 */
-	private async computeStalenessHash(file: TFile): Promise<string> {
-		const rawContent = await this.app.vault.cachedRead(file);
-		const body = stripFrontmatter(rawContent);
-		const frontmatter: Record<string, unknown> = { ...(this.app.metadataCache.getFileCache(file)?.frontmatter ?? {}) };
-		delete frontmatter.position;
-		delete frontmatter[this.settings.audioLinkProperty];
-		delete frontmatter[this.settings.audioHashProperty];
-		delete frontmatter[this.settings.audioPathProperty];
-		delete frontmatter[this.settings.audioTimestampProperty];
-		delete frontmatter[this.settings.audioVoiceProperty];
-		delete frontmatter[this.settings.audioChunkDurationsProperty];
-		for (const key of this.settings.extraStaleHashExcludedProperties.split('\n')) {
-			const trimmed = key.trim();
-			if (trimmed) delete frontmatter[trimmed];
-		}
-		return hashText(`${JSON.stringify(frontmatter)}\n${body}`);
-	}
-
-	/**
-	 * `processFrontMatter()`'s returned promise can resolve before `metadataCache.getFileCache()` actually
-	 * reflects the write — the cache recomputes on its own pipeline after the underlying `vault.modify`,
-	 * not synchronously as part of the write call. Callers that immediately re-read frontmatter via the
-	 * cache (like the panel's Play saved/status checks, triggered off `audio-status-change`) would see the
-	 * stale pre-write cache otherwise. Waits for the cache's own 'changed' event for this file, with a
-	 * timeout as a safety net in case that event is ever missed.
-	 */
-	private waitForMetadataCacheUpdate(file: TFile): Promise<void> {
-		return new Promise((resolve) => {
-			let settled = false;
-			const finish = () => {
-				if (settled) return;
-				settled = true;
-				this.app.metadataCache.offref(ref);
-				window.clearTimeout(timeoutId);
-				resolve();
-			};
-			const ref = this.app.metadataCache.on('changed', (changedFile: TFile) => {
-				if (changedFile.path === file.path) finish();
-			});
-			const timeoutId = window.setTimeout(finish, 2000);
-		});
-	}
-
-	private async linkAudioInNote(audioFile: TFile, sourceFile: TFile, chunkMeta: { duration: number; byteLength: number }[], narrator: ResolvedNarrator): Promise<void> {
-		const link = this.app.fileManager.generateMarkdownLink(audioFile, sourceFile.path);
-		const hash = await this.computeStalenessHash(sourceFile);
-
-		const cacheUpdated = this.waitForMetadataCacheUpdate(sourceFile);
-		await this.app.fileManager.processFrontMatter(sourceFile, (frontmatter: Record<string, unknown>) => {
-			frontmatter[this.settings.audioLinkProperty] = link;
-			frontmatter[this.settings.audioHashProperty] = hash;
-			frontmatter[this.settings.audioPathProperty] = audioFile.path;
-			frontmatter[this.settings.audioTimestampProperty] = moment().toISOString(true);
-			// A fingerprint of the narrator's voice settings, not its name or provider account, so renaming a profile doesn't look like a new narrator.
-			frontmatter[this.settings.audioVoiceProperty] = narrator.fingerprint;
-			// [duration, byteLength] pairs -- one property instead of two. Byte lengths let a saved file be
-			// sliced back into its per-chunk buffers for reliable Previous/Next part; see SavedPlaybackTimeline.
-			frontmatter[this.settings.audioChunkDurationsProperty] = chunkMeta.map((m) => [Math.round(m.duration * 100) / 100, m.byteLength]);
-		});
-		await cacheUpdated;
-
-		this.trigger('audio-status-change', sourceFile);
-	}
-
-	/** Removes just the reader-audio frontmatter properties (not the audio file itself), used by both the user-facing clear action and silent missing-file cleanup. */
-	private async removeReaderProperties(sourceFile: TFile): Promise<void> {
-		const cacheUpdated = this.waitForMetadataCacheUpdate(sourceFile);
-		await this.app.fileManager.processFrontMatter(sourceFile, (frontmatter: Record<string, unknown>) => {
-			delete frontmatter[this.settings.audioLinkProperty];
-			delete frontmatter[this.settings.audioHashProperty];
-			delete frontmatter[this.settings.audioPathProperty];
-			delete frontmatter[this.settings.audioTimestampProperty];
-			delete frontmatter[this.settings.audioVoiceProperty];
-			delete frontmatter[this.settings.audioChunkDurationsProperty];
-		});
-		await cacheUpdated;
-
-		this.trigger('audio-status-change', sourceFile);
-	}
-
-	/** Deletes a note's linked audio file (if any) and removes the Note Narrator audio properties from its frontmatter. */
-	async clearReaderFiles(sourceFile: TFile): Promise<void> {
-		const audioFile = this.findExistingAudioFile(sourceFile);
-		if (audioFile) {
-			await this.app.fileManager.trashFile(audioFile);
-		}
-
-		await this.removeReaderProperties(sourceFile);
-
-		new Notice(audioFile ? 'Cleared Note Narrator audio file and properties.' : 'Cleared Note Narrator properties (no audio file was linked).');
+		void this.savedAudio.saveAudioFile(buffers, job.sourceFileForSave, chunkDurations, job.narrator);
 	}
 
 	/**
@@ -980,10 +638,10 @@ export class Reader extends Events {
 		if (file.extension !== 'md') return;
 
 		try {
-			const status = await this.getAudioStatus(file);
+			const status = await this.savedAudio.getAudioStatus(file);
 			if (status === 'up-to-date') return;
 
-			const narrator = this.getActiveNarrator();
+			const narrator = this.noteText.getActiveNarrator();
 			if (!narrator) return;
 			const apiKey = getProviderApiKey(this.app, narrator.provider);
 			if (!apiKey) return;
@@ -991,17 +649,17 @@ export class Reader extends Events {
 			const rawText = await this.app.vault.cachedRead(file);
 			const body = stripFrontmatter(rawText);
 			const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
-			const preamble = this.buildPreamble(file.basename, frontmatter);
+			const preamble = this.noteText.buildPreamble(file.basename, frontmatter);
 			const textToRead = preamble ? `${preamble}\n\n${body}` : body;
 
-			const charLimit = this.getCharLimit();
+			const charLimit = this.noteText.getCharLimit();
 			const chunks = chunkNote(
 				textToRead,
 				charLimit,
-				this.getReadingConfig().chunkerStyle,
-				this.getReadingConfig().maxHeadingDepth,
-				this.getStripMarkdownOptions(),
-				this.getSkipHeadingPatterns(),
+				this.noteText.getReadingConfig().chunkerStyle,
+				this.noteText.getReadingConfig().maxHeadingDepth,
+				this.noteText.getStripMarkdownOptions(),
+				this.noteText.getSkipHeadingPatterns(),
 			);
 			if (chunks.length === 0) return;
 
@@ -1012,85 +670,38 @@ export class Reader extends Events {
 			for (const chunk of chunks) {
 				const buffer = await provider.synthesize(chunk);
 				buffers.push(buffer);
-				chunkDurations.push(await this.decodeAudioDuration(buffer));
+				chunkDurations.push(await decodeAudioDuration(buffer));
 			}
 
-			await this.saveAudioFile(buffers, file, chunkDurations, narrator);
+			await this.savedAudio.saveAudioFile(buffers, file, chunkDurations, narrator);
 		} catch (error) {
 			console.error('Note Narrator: auto-generate on open failed', error);
 		}
 	}
 
-	/**
-	 * Note-length stats for the panel's idle-state display (total characters/chunks, average per chunk),
-	 * computed via the same preamble+chunking pipeline readNote() would use. Null for non-notes or notes
-	 * with nothing to read.
-	 */
-	async getNoteStats(
-		file: TFile,
-	): Promise<{ totalChars: number; chunkCount: number; avgCharsPerChunk: number; avgWordsPerChunk: number } | null> {
-		if (file.extension !== 'md') return null;
+	/** The active narrator profile resolved with its provider, or null when none is usable. */
+	getActiveNarrator(): ResolvedNarrator | null {
+		return this.noteText.getActiveNarrator();
+	}
 
-		const rawText = await this.app.vault.cachedRead(file);
-		const body = stripFrontmatter(rawText);
-		const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
-		const preamble = this.buildPreamble(file.basename, frontmatter);
-		const textToRead = preamble ? `${preamble}\n\n${body}` : body;
-		if (!textToRead.trim()) return null;
-
-		const charLimit = this.getCharLimit();
-		const chunks = chunkNote(
-			textToRead,
-			charLimit,
-			this.getReadingConfig().chunkerStyle,
-			this.getReadingConfig().maxHeadingDepth,
-			this.getStripMarkdownOptions(),
-			this.getSkipHeadingPatterns(),
-		);
-		if (chunks.length === 0) return null;
-
-		const totalChars = textToRead.length;
-		const totalWords = textToRead.split(/\s+/).filter(Boolean).length;
-		return {
-			totalChars,
-			chunkCount: chunks.length,
-			avgCharsPerChunk: Math.round(totalChars / chunks.length),
-			avgWordsPerChunk: Math.round(totalWords / chunks.length),
-		};
+	/** Note-length stats for the panel's idle-state display; see {@link NoteText.getNoteStats}. */
+	getNoteStats(file: TFile): ReturnType<NoteText['getNoteStats']> {
+		return this.noteText.getNoteStats(file);
 	}
 
 	/** Compares the note's current content against the hash stored when its linked audio was last generated. */
-	async getAudioStatus(file: TFile): Promise<AudioLinkStatus> {
-		const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
-		const link = frontmatter?.[this.settings.audioLinkProperty] as string | undefined;
-		const storedHash = frontmatter?.[this.settings.audioHashProperty] as string | undefined;
-		if (!link || !storedHash) return 'none';
-
-		// The note still links to audio that's since been moved/deleted outside Note Narrator — there's
-		// nothing to be "outdated" relative to, so clean up the stale properties instead of showing a
-		// misleading status. Self-stabilizing: once cleaned, `link`/`storedHash` above are gone and this
-		// short-circuits to 'none' on the next call without re-checking the vault.
-		if (!this.findExistingAudioFile(file)) {
-			if (this.settings.autoCleanupMissingAudioProperties) {
-				await this.removeReaderProperties(file);
-				new Notice('Cleaned up stale Note Narrator audio file metadata properties');
-			}
-			return 'none';
-		}
-
-		const currentHash = await this.computeStalenessHash(file);
-		return currentHash === storedHash ? 'up-to-date' : 'outdated';
+	getAudioStatus(file: TFile): Promise<AudioLinkStatus> {
+		return this.savedAudio.getAudioStatus(file);
 	}
 
 	/** Info about a note's linked saved audio, for the player view's "Play saved"/"Regenerate" buttons. Null if none exists. */
-	async getAudioInfo(file: TFile): Promise<{ audioFile: TFile; status: AudioLinkStatus; savedVoice: string | undefined } | null> {
-		const audioFile = this.findExistingAudioFile(file);
-		if (!audioFile) return null;
+	getAudioInfo(file: TFile): ReturnType<SavedAudio['getAudioInfo']> {
+		return this.savedAudio.getAudioInfo(file);
+	}
 
-		const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
-		const savedVoice = frontmatter?.[this.settings.audioVoiceProperty] as string | undefined;
-		const status = await this.getAudioStatus(file);
-		return { audioFile, status, savedVoice };
+	/** Deletes a note's linked audio file (if any) and removes the Note Narrator audio properties from its frontmatter. */
+	clearReaderFiles(sourceFile: TFile): Promise<void> {
+		return this.savedAudio.clearReaderFiles(sourceFile);
 	}
 
 	/** Plays a previously saved audio file directly, without generating anything. */
@@ -1111,7 +722,7 @@ export class Reader extends Events {
 			// byte lengths don't actually add up to this file's size (stale/mismatched metadata), fall back
 			// to playing it as one opaque chunk with no timeline -- no Previous/Next part, no highlighting,
 			// rather than slicing at the wrong offsets.
-			const sliced = timeline ? this.sliceIntoChunks(data, timeline.chunkByteLengths) : null;
+			const sliced = timeline ? sliceIntoChunks(data, timeline.chunkByteLengths) : null;
 			this.savedPlaybackTimeline = sliced ? timeline : null;
 			const buffers = sliced ?? [data];
 			const chunkCount = buffers.length;
@@ -1152,45 +763,6 @@ export class Reader extends Events {
 			if (session !== this.sessionId) return;
 			index = outcome === 'previous' ? Math.max(0, index - 1) : index + 1;
 		}
-	}
-
-	/** Splits a saved file's bytes back into its original per-chunk buffers, in order. Null if the lengths don't add up to the file's actual size -- stale or corrupted metadata, not safe to slice by. */
-	private sliceIntoChunks(data: ArrayBuffer, byteLengths: number[]): ArrayBuffer[] | null {
-		const total = byteLengths.reduce((sum, length) => sum + length, 0);
-		if (total !== data.byteLength) return null;
-
-		const buffers: ArrayBuffer[] = [];
-		let offset = 0;
-		for (const length of byteLengths) {
-			buffers.push(data.slice(offset, offset + length));
-			offset += length;
-		}
-		return buffers;
-	}
-
-	private resolveSaveFolder(sourceFile: TFile | null): string {
-		if (this.settings.saveAudioLocation === 'custom-folder') {
-			return normalizePath(this.settings.saveAudioFolderPath || '/');
-		}
-		return sourceFile?.parent?.path ?? '/';
-	}
-
-	private async ensureFolder(folderPath: string): Promise<void> {
-		if (!folderPath || folderPath === '/') return;
-		if (!this.app.vault.getAbstractFileByPath(folderPath)) {
-			await this.app.vault.createFolder(folderPath);
-		}
-	}
-
-	private async uniquePath(folder: string, baseName: string, extension: string): Promise<string> {
-		const base = folder && folder !== '/' ? `${folder}/${baseName}` : baseName;
-		let candidate = normalizePath(`${base}.${extension}`);
-		let counter = 1;
-		while (this.app.vault.getAbstractFileByPath(candidate)) {
-			candidate = normalizePath(`${base} (${counter}).${extension}`);
-			counter++;
-		}
-		return candidate;
 	}
 
 	/** `job` is null only for direct saved-file playback, which has no generation job and thus nothing to patch chunkDurations onto. */

@@ -5,7 +5,7 @@ import { getActiveProfile, getDropdownProfiles, savedVoiceMatches } from '../set
 import { hasPendingGeneration, queuePosition } from '../engine/background-job';
 import type { BackgroundJobInfo } from '../engine/background-job';
 import { PLAY_SAVED_ICON_ID, skipIconId } from './icons';
-import { AudioLinkStatus, ReaderState } from '../engine/reader';
+import { AudioLinkStatus, ReaderState } from '../engine/reader-types';
 import { computeFullReadTimes, formatTimeDisplay } from '../engine/time-utils';
 import { attachTooltip } from './touch-tooltip';
 
