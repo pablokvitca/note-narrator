@@ -1,6 +1,6 @@
 ---
 name: review-for-stable-release
-description: Review the changes between the last stable release and a new stable candidate against Obsidian's community plugin guidelines (52 checks in guidelines.md), post the report as a comment on the release's review subtask in Linear, and file every confirmed breach as a subtask of the release task. Use when preparing a stable release, before the "Final (stable) release" steps in AGENTS.md.
+description: Review the changes between the last stable release and a new stable candidate against Obsidian's community plugin guidelines (52 checks in guidelines.md), post the report as a comment on the release's review subtask in Linear, and file every confirmed breach as a subtask of the release task. Use when preparing a stable release, as part of `/release stable`, before the final release steps.
 argument-hint: "[new-version] [--release-task OBS-123] [--base <tag>]"
 ---
 
@@ -17,7 +17,7 @@ Never edit files, commit, push, tag or create a release from this skill.
 - **base**: `--base <tag>`, else the last stable release tag:
   `gh release list --exclude-pre-releases --limit 1 --json tagName -q '.[0].tagName'`
   (fallback: `git tag --list '[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -1`). If there is no stable release yet, use the empty tree (`git hash-object -t tree /dev/null`) so the whole repository counts as the diff.
-- **release task**: `--release-task OBS-123`, else find the Linear issue titled `Release Stable <new-version>` (project Note Narrator). If it does not exist, stop and tell the user to create it (see "Release checklist in Linear" in AGENTS.md), or offer to create it with the standard subtasks.
+- **release task**: `--release-task OBS-123`, else find the Linear issue titled `Release Stable <new-version>` (project Note Narrator). If it does not exist, stop and tell the user to create it (the `release` skill, `stable.md`, creates it with the standard subtasks), or offer to create it that way.
 - **review subtask**: the child of the release task whose title starts with `Run the guideline review`.
 
 Load the Linear tools first if they are deferred:
@@ -102,7 +102,7 @@ Do not file optional improvements unless the user asks.
 
 ### 7. Report back to the user
 
-Finish with a compact summary: verdict counts, the created issues (id, priority, title), anything in **Cannot determine**, and a recommendation: resolve every Urgent and High breach (or get an explicit waiver from the user) before running the "Final (stable) release" steps.
+Finish with a compact summary: verdict counts, the created issues (id, priority, title), anything in **Cannot determine**, and a recommendation: resolve every Urgent and High breach (or get an explicit waiver from the user) before the release steps of `/release stable`.
 
 ## Re-runs
 

@@ -94,61 +94,14 @@ npm run build
 
 ## Versioning & releases
 
-This repo uses a `next/X.Y` → `release/X.Y` branching model with fully automated beta builds on every push. Follow this exactly — skipping the immediate version bump (below) is a real, easy-to-hit mistake that has actually happened in this repo.
+**Every release goes through the `release` skill** (`.claude/skills/release/`): `/release beta` publishes a beta build for BRAT testers, `/release stable` cuts a stable release. Invoke it whenever the user asks to release, ship, publish a beta or push a tracking branch. The branching model, the version-bump rule, the beta and stable procedures and the Linear release checklist live in the skill and are only loaded when you use it; do not duplicate them here.
 
-> **Every ordinary push to `next/**`/`release/**` — including a bug fix on a patch branch — produces a BETA only.** It is not shipped, not final, and nobody has it except testers who opt in via BRAT. `main` never moves and no stable GitHub release is created as a side effect of a normal push. The *only* way a version becomes stable is the explicit, separately-gated "Final (stable) release" procedure below, which requires the user to explicitly ask for a release/ship *in that conversation* — never inferred from "the fix is done" or "tests pass." Don't run `npm version`, don't create a version tag, and don't touch `main` unless that ask happened. When reporting status after a push, say "pushed a beta for testing" (or similar) — not "released" or "shipped," which implies the stable step happened.
->
-> The expected flow for a patch/fix is always: bump version → fix → push (beta auto-builds) → **user manually tests the beta** → only then, if asked, run the Final (stable) release steps → merge to `main`. Treat "fixed and pushed" as the middle of that flow, not the end of it.
+Rules that hold even when you are "just pushing":
 
-### Branching model
-
-- `main` always reflects the latest **released stable** version. Nothing merges into it except a fast-forward to a tracking branch's tip at release time — never a regular merge commit.
-- Feature work for an upcoming minor version happens on `next/X.Y` (e.g. `next/0.14`), branched off `main`.
-- Once `X.Y.0` ships, `next/X.Y` is renamed to `release/X.Y` and becomes where patches for that line land directly (`X.Y.1`, `X.Y.2`, ...).
-- A new `next/X.(Y+1)` (or `next/(X+1).0`) branch is cut from `main` once the next minor's feature work starts.
-- If a later `next/X.(Y+1)` branch already exists when an earlier line ships a release, merge the released branch into it afterward (`git merge release/X.Y`) so it inherits the release commit — otherwise its own eventual release won't be a valid fast-forward of the new `main`.
-
-### The rule that's easy to miss: bump the version immediately, on every tracking branch, every time
-
-**As the first commit whenever you start work on a `next/X.Y` branch, and again as the first commit of *any* fix/feature that lands on a `release/X.Y` branch (a patch), bump `manifest.json`'s `version` to the target version (`X.Y.0` for a new minor, `X.Y.(Z+1)` for a patch) before pushing anything else.** This applies equally to patch branches, not just new minors — that's the part that's easy to forget.
-
-Why: every push to a `next/**` or `release/**` branch auto-publishes a beta tagged `<manifest version>-beta.N` (see below). SemVer ranks a prerelease *below* its base version once that version has shipped — `0.14.0-beta.51` sorts below the real, already-released `0.14.0`. Push a fix to `release/0.14` without first bumping `manifest.json` to `0.14.1`, and the resulting beta tag is `0.14.0-beta.N` — BRAT considers that older than the shipped `0.14.0` and silently keeps serving the old stable build instead of surfacing the fix at all. Concretely: `manifest.json`'s version must equal the version you intend to ship next, at all times while a tracking branch has unreleased commits.
-
-### Beta builds — automatic, do nothing extra
-
-- Every push to a `next/**` or `release/**` branch triggers a workflow that builds the plugin and publishes a GitHub **pre-release** tagged `<manifest version>-beta.<run number>`.
-- Each push supersedes (deletes) the previous beta release for that version line, so only the latest beta build for a given base version stays published.
-- Never manually create a beta tag or release — just push commits (with the version already bumped per the rule above) and the beta appears within a minute or two. Verify it exists and is versioned as expected: `gh release list --repo <owner>/<repo> --limit 5 --json tagName,isPrerelease`.
-- Testers install via [BRAT](https://github.com/TfTHacker/obsidian42-brat), adding this repo and enabling beta versions.
-
-### Release checklist in Linear (before the final release steps)
-
-Every stable release is tracked by a Linear issue, created **before** the "Final (stable) release" steps start (as soon as the user says a stable release of `X.Y.Z` is coming).
-
-**The release task:** title `Release Stable X.Y.Z`; team ObsidianPlugins, project Note Narrator, milestone `X.Y.0`'s (the version's milestone), label Chore, assigned to the user. Give it these subtasks (all children of the release task, same team, project and milestone):
-
-1. `Run the guideline review`: run the `/review-for-stable-release X.Y.Z --release-task <release task id>` skill (`.claude/skills/review-for-stable-release/`). It reviews the diff between the last stable release and the new stable against all 52 community plugin guidelines, posts its report as a comment on this subtask, files every confirmed breach as a subtask of the **release task**, and sets this subtask to Done.
-2. `Update documentation for X.Y.Z`: update the docs vault (`note-narrator-docs`) for what changed: affected pages, the `plugin-version` and `updated` frontmatter, Known limitations, the Roadmap (move shipped items), screenshots.
-3. `Review documentation for X.Y.Z`: read the docs against the build being released (settings, labels, defaults, commands), check the screenshot checklist, links and the publish selection, and fix inaccuracies.
-4. `Test on <platform>` for each platform below: install the beta (or the release candidate) and exercise the main flows (read, pause, skip, save, link, background generation, settings tabs).
-5. `Submit to the community directory`: follow <https://docs.obsidian.md/plugins/releasing/submit-plugin>. Needed for the first stable release; for later releases, check that page for whether the listing fields (id, name, author, description) changed and need a pull request, and otherwise close it as not needed.
-
-**Platforms** (edit this list to match the devices that can actually be tested): Desktop: macOS, Windows, Linux. Mobile: iPhone, iPad, iPad mini, visionOS, Android.
-
-**Gate:** do not run the final steps below until every subtask of the release task is Done, or the user has explicitly waived the open ones in that conversation. Breach subtasks filed by the review with Urgent or High priority need fixing or an explicit waiver.
-
-### Final (stable) release
-
-Only do this when explicitly asked to release/ship — never on your own initiative, and never skip straight here without a beta having been tested first unless told to.
-
-1. On the tracking branch (`next/X.Y` for a new minor, `release/X.Y` for a patch): working tree clean, `npm run build && npm run lint && npm test` all passing.
-2. `npm version X.Y.Z -m "Release %s"` — bumps `package.json`, runs the `version` script (syncs `manifest.json`/adds a `versions.json` entry), commits everything as `Release X.Y.Z`, and creates git tag `X.Y.Z` (this repo's `.npmrc` sets `tag-version-prefix=""`, so no leading `v`).
-3. `git push origin <branch> --follow-tags` — pushes the release commit and tag together. The tag push triggers the release workflow, which creates the **stable** GitHub release (verify: `gh release view X.Y.Z`).
-4. Fast-forward `main`: `git checkout main && git merge --ff-only <branch> && git push origin main`. If a PR exists from this branch, GitHub auto-detects the fast-forward and marks it merged on its own.
-5. Only for a new-minor release (not a patch): rename the branch for future patches — `git checkout <branch> && git branch -m next/X.Y release/X.Y && git push origin release/X.Y`. GitHub may auto-delete the old `next/X.Y` remote ref once its PR is detected merged; check `git ls-remote origin` before trying to delete it yourself.
-6. Attach `manifest.json`, `main.js`, and `styles.css` as release assets — the release workflow does this automatically; don't do it by hand.
-7. After the *first-ever* stable release, separately follow the process to add/update this plugin in the community plugin catalog, if applicable.
-8. Mark the `Release Stable X.Y.Z` task Done with a comment linking the GitHub release (and note anything deferred).
+- **Every push to a `next/**` or `release/**` branch publishes a beta build**, so treat any such push as a beta release and do it through `/release beta`.
+- **Never run `npm version`, create or push a version tag, or touch `main` outside `/release stable`**, and only when the user explicitly asked for a stable release in that conversation. "The fix is done" and "tests pass" are never that request.
+- The first commit of new work on a tracking branch must bump `manifest.json`'s version (the skill explains how and why).
+- Say "pushed a beta for testing", not "released" or "shipped", unless the stable steps ran.
 
 ## Security, privacy, and compliance
 
