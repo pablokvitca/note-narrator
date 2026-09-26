@@ -1,5 +1,5 @@
-import { ChunkerStyle, hashText } from './text-utils';
-import { DEFAULT_ELEVENLABS_CHAR_LIMIT, ELEVENLABS_MODEL_CHAR_LIMITS } from './tts/elevenlabs-models';
+import { ChunkerStyle, hashText } from '../text/text-utils';
+import { DEFAULT_ELEVENLABS_CHAR_LIMIT, ELEVENLABS_MODEL_CHAR_LIMITS } from '../tts/elevenlabs-models';
 
 /*
  * Providers and narrator profiles. Pure data + helpers (no Obsidian imports) so they can be unit tested.

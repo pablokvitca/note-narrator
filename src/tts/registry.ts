@@ -1,5 +1,5 @@
 import { App } from 'obsidian';
-import type { ProviderEntry, VoiceConfig } from '../profiles';
+import type { ProviderEntry, VoiceConfig } from '../settings/profiles';
 import { ElevenLabsProvider, getElevenLabsVoiceName } from './elevenlabs-provider';
 import { TTSProvider } from './provider';
 

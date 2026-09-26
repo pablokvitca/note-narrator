@@ -1,7 +1,7 @@
 import { Extension, StateEffect } from '@codemirror/state';
 import { Decoration, DecorationSet, EditorView, gutter, GutterMarker, ViewPlugin, ViewUpdate } from '@codemirror/view';
 import { editorInfoField, setIcon, setTooltip } from 'obsidian';
-import NoteNarratorPlugin from './main';
+import NoteNarratorPlugin from '../main';
 
 /** Dispatched (as a no-op transaction) whenever the reader's playback state changes, so each open editor's decoration/gutter recomputes even though nothing in its own document changed. */
 const refreshHighlight = StateEffect.define<null>();

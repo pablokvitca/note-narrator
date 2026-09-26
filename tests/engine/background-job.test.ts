@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildBackgroundJobInfo, hasPendingGeneration, queuePosition } from '../src/background-job';
+import { buildBackgroundJobInfo, hasPendingGeneration, queuePosition } from '../../src/engine/background-job';
 
 describe('hasPendingGeneration', () => {
 	it('is false for an empty chunk list', () => {

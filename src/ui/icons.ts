@@ -1,5 +1,5 @@
 import { addIcon } from 'obsidian';
-import { SKIP_SECONDS_OPTIONS, SkipSeconds } from './settings';
+import { SKIP_SECONDS_OPTIONS, SkipSeconds } from '../settings/settings';
 
 /** A saved-audio file with a play triangle on its corner, for the "Play saved" action -- distinct from the plain `play` triangle used for playback controls. */
 export const PLAY_SAVED_ICON_ID = 'note-narrator-play-saved';

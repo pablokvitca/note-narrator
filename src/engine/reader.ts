@@ -2,9 +2,9 @@ import { App, Events, MarkdownView, moment, Notice, normalizePath, TFile } from 
 import { concatArrayBuffers, sanitizeFilenameComponent } from './audio-utils';
 import { buildBackgroundJobInfo, hasPendingGeneration } from './background-job';
 import type { BackgroundJobInfo } from './background-job';
-import { generationWindow, getActiveProfile, providerCharLimit, ReadingConfig, resolveNarrator, resolveReadingConfig, ResolvedNarrator, VoiceConfig } from './profiles';
-import { getGlobalReadingConfig, HighlightGranularity, NoteNarratorSettings } from './settings';
-import { ChunkPosition, computeChunkPositions, RawSpan, rebaseSpan, splitChunkPosition } from './text-position';
+import { generationWindow, getActiveProfile, providerCharLimit, ReadingConfig, resolveNarrator, resolveReadingConfig, ResolvedNarrator, VoiceConfig } from '../settings/profiles';
+import { getGlobalReadingConfig, HighlightGranularity, NoteNarratorSettings } from '../settings/settings';
+import { ChunkPosition, computeChunkPositions, RawSpan, rebaseSpan, splitChunkPosition } from '../text/text-position';
 import {
 	buildReadingPreamble,
 	chunkByWordCount,
@@ -14,9 +14,9 @@ import {
 	parseHeadingSkipPatterns,
 	stripFrontmatter,
 	StripMarkdownOptions,
-} from './text-utils';
-import { TTSProvider } from './tts/provider';
-import { createTTSProvider, getProviderApiKey, missingApiKeyMessage, resolveVoiceLabel } from './tts/registry';
+} from '../text/text-utils';
+import { TTSProvider } from '../tts/provider';
+import { createTTSProvider, getProviderApiKey, missingApiKeyMessage, resolveVoiceLabel } from '../tts/registry';
 
 const NULL_CHUNK_POSITION: ChunkPosition = { span: null, sectionSpan: null, sectionHeadingSpan: null };
 
