@@ -106,6 +106,8 @@ Rules that hold even when you are "just pushing":
 
 ## Security, privacy, and compliance
 
+- Write the provider's name as **ElevenLabs** (one word), in plain text only. Never use its logo or product names such as "ElevenAPI", and never imply affiliation or endorsement.
+
 Follow Obsidian's **Developer Policies** and **Plugin Guidelines**. In particular:
 
 - Default to local/offline operation. Only make network requests when essential to the feature.
