@@ -766,3 +766,59 @@
 	font-size: var(--font-ui-medium);
 	padding: var(--size-4-2) var(--size-4-3);
 }
+
+/* Settings tab: section tab bar (General / Providers / Profiles / ...) */
+.note-narrator-settings-tabs {
+	padding: 0;
+	border-top: none;
+	position: sticky;
+	top: 0;
+	z-index: 1;
+	background: var(--background-primary);
+}
+
+.note-narrator-settings-tabs > .setting-item-info,
+.note-narrator-settings-tabs > .setting-item-control {
+	display: none;
+}
+
+.note-narrator-tab-bar {
+	display: flex;
+	gap: var(--size-4-1);
+	width: 100%;
+	overflow-x: auto;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.note-narrator-tab {
+	flex: 0 0 auto;
+	height: auto;
+	padding: var(--size-4-2) var(--size-4-3);
+	background: none;
+	box-shadow: none;
+	border: none;
+	border-bottom: 2px solid transparent;
+	border-radius: 0;
+	color: var(--text-muted);
+	white-space: nowrap;
+	cursor: pointer;
+}
+
+.note-narrator-tab:hover {
+	color: var(--text-normal);
+}
+
+.note-narrator-tab.is-active {
+	color: var(--text-accent);
+	border-bottom-color: var(--interactive-accent);
+}
+
+.is-mobile .note-narrator-tab {
+	min-height: var(--touch-size-m);
+}
+
+/* Settings rows that don't currently apply are greyed out and inert rather than hidden. */
+.note-narrator-row-disabled {
+	opacity: 0.5;
+	pointer-events: none;
+}

@@ -7,9 +7,9 @@ An Obsidian plugin that reads your notes aloud using text-to-speech. MVP ships w
 ### Triggering a read
 
 - The ribbon icon in the left sidebar (always visible) and the speaker icon in each note's top-right action row (next to the "more options" `⋯` icon) just open the **Note Narrator** panel in the right sidebar — they don't start generating audio by themselves.
-- The panel itself has its own **Voice** dropdown and, when idle, a **Read** button, so you can pick a voice and explicitly start a read without leaving the panel.
+- The panel itself has its own **Narrator** dropdown (your narrator profiles) and, when idle, a **Read** button, so you can pick a narrator and explicitly start a read without leaving the panel.
 - The **Read note aloud** command is the one exception: since it names the action explicitly, it opens the panel and starts reading immediately, without needing a click on the panel's Read button.
-- If a note already has saved audio (see below), the panel shows **Play saved** (plays the existing file with no regeneration) alongside a **Read** button that relabels itself to **Regenerate** (note content changed since the audio was generated) or **Regenerate with new voice** (the selected voice differs from the one the saved audio used).
+- If a note already has saved audio (see below), the panel shows **Play saved** (plays the existing file with no regeneration) alongside a **Read** button that relabels itself to **Regenerate** (note content changed since the audio was generated) or **Regenerate with new narrator** (the selected narrator profile's voice settings differ from the ones the saved audio used).
 - **Read selection instead of whole note** setting — when on, reading a note with an active text selection reads only the selection instead of the whole note.
 - **Read note title** (on by default) and **Read note properties** (off by default) settings — properties reads "Properties", each frontmatter key and value, then "Content", before the note's body. Neither applies when reading a selection.
 
@@ -32,21 +32,25 @@ An Obsidian plugin that reads your notes aloud using text-to-speech. MVP ships w
 - Notes are split into TTS-request-sized chunks according to the **Text chunker** setting: **Markdown-aware** (default) splits by heading section first (up to a configurable **max heading depth**), then by sentence within each section; **Sentence-only** ignores headings and just packs sentences up to the character limit.
 - **Skip sections by heading** setting (Markdown-aware chunker only) lists regex patterns, one per line; any section whose heading text matches one is skipped entirely when chunking/reading -- e.g. to always skip a "Changelog" or "Notes to self" section.
 - **Start playback immediately** (on by default) begins playing as soon as the first chunk is ready instead of waiting for the whole note; **Quick start** (on by default, requires the above) makes that first chunk artificially short — including the title/properties preamble, if enabled — so it returns faster. **Quick start unit** picks whether that target size is in **Words** (default, 150) or **Characters** (default 750), each with its own size slider.
-- **Generate chunks in parallel** (on by default, window of 2) lets more than one chunk generate at once instead of strictly one at a time; **Max parallel chunk generation** controls the window size. If ElevenLabs returns a 429 (rate limited), requests retry automatically with exponential backoff (up to 3 attempts), and generation falls back to sequential (one at a time) for the rest of that read to avoid repeating it.
+- **Generate chunks in parallel** (on by default, window of 2) lets more than one chunk generate at once instead of strictly one at a time; **Max parallel chunk generation** controls the window size. Both are set per provider (Providers tab), since rate limits belong to the account. If ElevenLabs returns a 429 (rate limited), requests retry automatically with exponential backoff (up to 3 attempts), and generation falls back to sequential (one at a time) for the rest of that read to avoid repeating it.
 
 ### Saving audio to a file
 
 - **Save generated audio to a file** setting (off by default) saves each read as an `.mp3`, in the note's folder or a configurable custom folder (created automatically if missing). The file is written as soon as *generation* finishes, not once playback finishes.
-- **Link saved audio in the note** setting (off by default, requires saving) writes the audio's link, a content hash (for staleness), the raw file path (used internally), a generation timestamp, the voice ID used, and each chunk's `[duration, byte length]` (used to slice the saved file back into its per-chunk parts, for Previous/Next part and highlighting/scroll-to-current during **Play Saved**), each into its own **individually configurable** frontmatter property (defaults: `note_narrator_audio`, `note_narrator_audio_hash`, `note_narrator_audio_path`, `note_narrator_audio_timestamp`, `note_narrator_audio_voice`, `note_narrator_audio_chunk_durations`). The panel shows whether the saved audio is up to date or outdated. Note Narrator's own six properties are always excluded when computing that hash; an **Extra properties to exclude from staleness hashing** setting lets you list additional frontmatter properties (one per line) — e.g. ones another plugin auto-updates — that shouldn't count as an edit either.
+- **Link saved audio in the note** setting (on by default; turning on saving turns it on too) writes the audio's link, a content hash (for staleness), the raw file path (used internally), a generation timestamp, a fingerprint of the narrator profile's voice settings (older notes hold the raw voice ID, which still counts as a match for that voice), and each chunk's `[duration, byte length]` (used to slice the saved file back into its per-chunk parts, for Previous/Next part and highlighting/scroll-to-current during **Play Saved**), each into its own **individually configurable** frontmatter property (defaults: `note_narrator_audio`, `note_narrator_audio_hash`, `note_narrator_audio_path`, `note_narrator_audio_timestamp`, `note_narrator_audio_voice`, `note_narrator_audio_chunk_durations`). The panel shows whether the saved audio is up to date or outdated. Note Narrator's own six properties are always excluded when computing that hash; an **Extra properties to exclude from staleness hashing** setting lets you list additional frontmatter properties (one per line) — e.g. ones another plugin auto-updates — that shouldn't count as an edit either.
 - **On regenerate**: **Replace existing file** (default) overwrites the previously linked file in place; **Keep old versions** creates a new file each time instead.
 - **Auto-generate on open** (off by default, requires saving + linking) silently (re)generates and saves a note's audio in the background when you open it, if missing or outdated — without playing it or touching anything currently playing.
 - Saved filenames include the voice used, e.g. `My Note (Rachel).mp3`.
 - A **⋮ menu** in the panel's own title bar (top-right) has a **Clear Note Narrator files** item (on by default, toggle to hide it) that deletes a note's linked audio file and removes all of the properties above, after a confirmation dialog.
 
-### Voices
+### Providers and narrator profiles
 
-- **Voice** is a dropdown populated from your ElevenLabs account's voices (first 100), with a refresh button.
-- **Panel voices** setting lets you toggle a short list of voices (each with its own toggle) to show in the panel's Voice dropdown instead of your whole account list.
+- The settings tab has six sections: **General** (default reading settings), **Providers**, **Profiles**, **Appearance** (panel and highlighting), **Performance**, and **Files** (saving audio and note properties). Settings that don't apply right now are greyed out rather than hidden.
+- A **provider** is a named connection to a TTS service: its type (ElevenLabs today), its API key (in Obsidian's secret storage), and its parallel-generation limits. Add as many as you like, including several of the same type (e.g. two ElevenLabs accounts).
+- A **narrator profile** is a name, a provider, that provider type's voice settings (ElevenLabs: voice, model, stability, similarity boost), a **Show in panel dropdown** toggle, and optional **reading overrides** for the title, properties, Markdown comments, chunker, max heading depth, and skip-by-heading patterns. Anything not overridden uses the General default.
+- Adding a provider with **+** also adds a profile named **Default (provider name)** for it. Providers and profiles are removed with the **Delete** button at the bottom of their page (you can't delete the last profile); deleting a provider deletes the profiles that use it, after a confirmation.
+- The panel's **Narrator** dropdown lists the profiles with the dropdown toggle on (plus the active one).
+- Existing settings are migrated automatically into one provider and one profile named "Default".
 
 ### Other
 
@@ -60,8 +64,8 @@ See [FUTURE_FEATURES.md](FUTURE_FEATURES.md) for ideas not yet implemented (othe
 ## Setup
 
 1. Install the plugin (see below).
-2. Open **Settings → Note Narrator** and add your ElevenLabs API key. It's stored via Obsidian's built-in [SecretStorage](https://docs.obsidian.md/plugins/guides/secret-storage), not in this plugin's own settings file — the setting only remembers which secret to look up, so the key can be shared with other plugins that use the same secret and never appears in `data.json`.
-3. Pick a **Voice** from the dropdown (fetched from your ElevenLabs account) and a **Model** — Eleven v3 (research preview), Eleven Multilingual v2, or Eleven Flash v2.5.
+2. Open **Settings → Note Narrator → Providers**, open the ElevenLabs provider, and add your API key. It's stored via Obsidian's built-in [SecretStorage](https://docs.obsidian.md/plugins/guides/secret-storage), not in this plugin's own settings file — the setting only remembers which secret to look up, so the key can be shared with other plugins that use the same secret and never appears in `data.json`.
+3. Open **Profiles**, open your narrator profile, and pick a **Voice** from the dropdown (fetched from your ElevenLabs account) and a **Model** — Eleven v3 (research preview), Eleven Multilingual v2, or Eleven Flash v2.5.
 4. Click the ribbon icon in the left sidebar, or the speaker icon at the top-right of a note, to open the **Note Narrator** panel in the right sidebar, then click its **Read** button — or just run **Read note aloud** from the command palette to open the panel and start reading in one step.
 
 ## Known limitations (MVP)
@@ -71,7 +75,7 @@ See [FUTURE_FEATURES.md](FUTURE_FEATURES.md) for ideas not yet implemented (othe
 - When "Replace existing file" is on and the voice changes between regenerations, the file keeps its original filename (with the old voice's name in parentheses) rather than being renamed — only its contents are replaced.
 - Auto-generate on open makes one or more ElevenLabs API calls (and consumes credits) every time you open a note whose saved audio is missing or outdated — be mindful of this on notes you edit frequently.
 - "Clear Note Narrator files" moves the audio file to trash (respecting your vault's file-deletion preference) and removes the properties; there's no undo for the properties themselves.
-- The voice dropdown fetches only the first 100 voices from your ElevenLabs account (no pagination past that).
+- A profile's voice dropdown fetches only the first 100 voices from the provider's ElevenLabs account (no pagination past that).
 - Saving audio concatenates raw chunk bytes for multi-part reads rather than properly re-muxing the MP3 stream; this works in practice for ElevenLabs' output but isn't a fully spec-correct MP3 concatenation.
 - The rate-limit fallback to sequential generation applies only to the read in progress; each new read starts again at your configured parallel-generation setting.
 - Eleven v3 is ElevenLabs' own "research preview" model — it can be more expressive but also more prone to hallucinated/mispronounced output than Multilingual v2, and their Professional Voice Clones aren't fully optimized for it yet.

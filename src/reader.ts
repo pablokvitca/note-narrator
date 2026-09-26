@@ -2,7 +2,8 @@ import { App, Events, MarkdownView, moment, Notice, normalizePath, TFile } from 
 import { concatArrayBuffers, sanitizeFilenameComponent } from './audio-utils';
 import { buildBackgroundJobInfo, hasPendingGeneration } from './background-job';
 import type { BackgroundJobInfo } from './background-job';
-import { DEFAULT_ELEVENLABS_CHAR_LIMIT, ELEVENLABS_MODEL_CHAR_LIMITS, HighlightGranularity, NoteNarratorSettings } from './settings';
+import { generationWindow, getActiveProfile, providerCharLimit, ReadingConfig, resolveNarrator, resolveReadingConfig, ResolvedNarrator, VoiceConfig } from './profiles';
+import { getGlobalReadingConfig, HighlightGranularity, NoteNarratorSettings } from './settings';
 import { ChunkPosition, computeChunkPositions, RawSpan, rebaseSpan, splitChunkPosition } from './text-position';
 import {
 	buildReadingPreamble,
@@ -14,7 +15,8 @@ import {
 	stripFrontmatter,
 	StripMarkdownOptions,
 } from './text-utils';
-import { ElevenLabsProvider, getElevenLabsVoiceName } from './tts/elevenlabs-provider';
+import { TTSProvider } from './tts/provider';
+import { createTTSProvider, getProviderApiKey, missingApiKeyMessage, resolveVoiceLabel } from './tts/registry';
 
 const NULL_CHUNK_POSITION: ChunkPosition = { span: null, sectionSpan: null, sectionHeadingSpan: null };
 
@@ -103,7 +105,9 @@ interface GenerationJob {
 	chunkDurations: (number | undefined)[];
 	/** Estimated editor position of each chunk (and its section), for highlighting/scroll-to-current. See {@link computeChunkPositions}. */
 	positions: ChunkPosition[];
-	provider: ElevenLabsProvider;
+	provider: TTSProvider;
+	/** The narrator this job was started with, resolved once so later edits to the profile or provider don't change a read (or its saved audio) mid-flight. */
+	narrator: ResolvedNarrator;
 	sourceFileForSave: TFile | null;
 	/** Whether this job's audio has already been saved (triggered once every chunk finishes generating). */
 	savedForSession: boolean;
@@ -178,7 +182,7 @@ export class Reader extends Events {
 
 	/** Drives one background job's generation to completion, then advances the queue. A no-op past its own removal (promoted or discarded) -- the action that removed it is responsible for advancing the queue itself. */
 	private async runBackgroundJob(job: GenerationJob): Promise<void> {
-		const windowSize = Math.max(1, this.settings.maxBackgroundParallelGeneration);
+		const windowSize = generationWindow(job.narrator.provider, true);
 		const ok = await this.runGenerationWorkerPool(job, windowSize);
 		if (job.cancelled || !this.backgroundJobs.includes(job)) return;
 
@@ -436,10 +440,7 @@ export class Reader extends Events {
 			const fullValue = await this.app.vault.cachedRead(sourceFile);
 			const body = stripFrontmatter(fullValue);
 			const fileOffset = fullValue.length - body.length;
-			const preamble = buildReadingPreamble(sourceFile.basename, frontmatter, {
-				readTitle: this.settings.readTitle,
-				readProperties: this.settings.readProperties,
-			});
+			const preamble = this.buildPreamble(sourceFile.basename, frontmatter);
 			const rawText = preamble ? `${preamble}\n\n${body}` : body;
 			const positionBase: PositionBase = { rawTextOffset: preamble ? preamble.length + 2 : 0, fileOffset, length: body.length };
 
@@ -453,12 +454,33 @@ export class Reader extends Events {
 		}
 	}
 
+	/** The reading settings in effect: the global defaults with the active narrator profile's overrides applied. */
+	private getReadingConfig(): ReadingConfig {
+		return resolveReadingConfig(getGlobalReadingConfig(this.settings), getActiveProfile(this.settings)?.readingOverrides);
+	}
+
+	/** The active narrator profile resolved with its provider, or null when none is usable. */
+	getActiveNarrator(): ResolvedNarrator | null {
+		return resolveNarrator(this.settings);
+	}
+
+	private buildPreamble(title: string | null, frontmatter: Parameters<typeof buildReadingPreamble>[1]): string {
+		const reading = this.getReadingConfig();
+		return buildReadingPreamble(title, frontmatter, { readTitle: reading.readTitle, readProperties: reading.readProperties });
+	}
+
 	private getStripMarkdownOptions(): StripMarkdownOptions {
+		const reading = this.getReadingConfig();
 		return {
-			stripMarkdownComments: this.settings.stripMarkdownComments,
-			stripCommentDelimiters: this.settings.stripCommentDelimiters,
-			announceComments: this.settings.announceComments,
+			stripMarkdownComments: reading.stripMarkdownComments,
+			stripCommentDelimiters: reading.stripCommentDelimiters,
+			announceComments: reading.announceComments,
 		};
+	}
+
+	/** Characters one TTS request can hold for the active narrator's voice configuration. */
+	private getCharLimit(): number {
+		return providerCharLimit(this.getActiveNarrator()?.voice);
 	}
 
 	async readNote(view?: MarkdownView): Promise<void> {
@@ -480,10 +502,7 @@ export class Reader extends Events {
 		const body = stripFrontmatter(fullValue);
 		const fileOffset = fullValue.length - body.length;
 		const frontmatter = target.file ? this.app.metadataCache.getFileCache(target.file)?.frontmatter : undefined;
-		const preamble = buildReadingPreamble(target.file?.basename ?? null, frontmatter, {
-			readTitle: this.settings.readTitle,
-			readProperties: this.settings.readProperties,
-		});
+		const preamble = this.buildPreamble(target.file?.basename ?? null, frontmatter);
 
 		await this.readText(preamble ? `${preamble}\n\n${body}` : body, target.file, {
 			allowSave: true,
@@ -492,7 +511,7 @@ export class Reader extends Events {
 	}
 
 	private getSkipHeadingPatterns(): RegExp[] {
-		return parseHeadingSkipPatterns(this.settings.skipSectionHeadingPatterns);
+		return parseHeadingSkipPatterns(this.getReadingConfig().skipSectionHeadingPatterns);
 	}
 
 	private rebasePosition(position: ChunkPosition, base: PositionBase): ChunkPosition {
@@ -510,12 +529,12 @@ export class Reader extends Events {
 	 * and the other not, which would misalign a saved file's chunk index against its content).
 	 */
 	private buildChunksAndPositions(rawText: string, positionBase: PositionBase | undefined): { chunks: string[]; positions: ChunkPosition[] } {
-		const charLimit = ELEVENLABS_MODEL_CHAR_LIMITS[this.settings.modelId] ?? DEFAULT_ELEVENLABS_CHAR_LIMIT;
+		const charLimit = this.getCharLimit();
 		const built = computeChunkPositions(
 			rawText,
 			charLimit,
-			this.settings.chunkerStyle,
-			this.settings.maxHeadingDepth,
+			this.getReadingConfig().chunkerStyle,
+			this.getReadingConfig().maxHeadingDepth,
 			this.getStripMarkdownOptions(),
 			this.getSkipHeadingPatterns(),
 		);
@@ -543,9 +562,14 @@ export class Reader extends Events {
 	}
 
 	private async readText(rawText: string, sourceFile: TFile | null, options: { allowSave: boolean; positionBase?: PositionBase }): Promise<void> {
-		const apiKey = this.app.secretStorage.getSecret(this.settings.apiKeySecretId);
+		const narrator = this.getActiveNarrator();
+		if (!narrator) {
+			new Notice('Add a provider and a narrator profile in the Note Narrator settings.');
+			return;
+		}
+		const apiKey = getProviderApiKey(this.app, narrator.provider);
 		if (!apiKey) {
-			new Notice('Set an ElevenLabs API key in the Note Narrator settings.');
+			new Notice(missingApiKeyMessage(narrator.provider));
 			return;
 		}
 
@@ -588,7 +612,8 @@ export class Reader extends Events {
 			chunkInFlight: new Array<boolean>(chunks.length).fill(false),
 			chunkDurations: new Array<number | undefined>(chunks.length).fill(undefined),
 			positions,
-			provider: new ElevenLabsProvider(apiKey, this.settings, () => this.handleRateLimited(job)),
+			provider: createTTSProvider(narrator.provider, narrator.voice, apiKey, () => this.handleRateLimited(job)),
+			narrator,
 			sourceFileForSave: options.allowSave ? sourceFile : null,
 			savedForSession: false,
 			rateLimited: false,
@@ -615,7 +640,7 @@ export class Reader extends Events {
 		// once its small window finished generating early and nothing re-triggered more until the play
 		// index itself advanced. It never touches playback's status/chunkIndex, so it can't fight with
 		// playFromIndex()'s own tracking of what's actually playing.
-		const windowSize = this.settings.parallelGenerationEnabled ? Math.max(1, this.settings.maxParallelGeneration) : 1;
+		const windowSize = generationWindow(narrator.provider, false);
 		const generation = this.runGenerationWorkerPool(job, windowSize);
 
 		if (!this.settings.startPlaybackImmediately) {
@@ -795,13 +820,13 @@ export class Reader extends Events {
 		job.savedForSession = true;
 		const buffers = job.chunkBuffers.filter((buffer): buffer is ArrayBuffer => buffer !== undefined);
 		const chunkDurations = job.chunkDurations.map((duration) => duration ?? 0);
-		void this.saveAudioFile(buffers, job.sourceFileForSave, chunkDurations);
+		void this.saveAudioFile(buffers, job.sourceFileForSave, chunkDurations, job.narrator);
 	}
 
-	private async saveAudioFile(chunks: ArrayBuffer[], sourceFile: TFile | null, chunkDurations: number[]): Promise<void> {
+	private async saveAudioFile(chunks: ArrayBuffer[], sourceFile: TFile | null, chunkDurations: number[], narrator: ResolvedNarrator): Promise<void> {
 		try {
-			const apiKey = this.app.secretStorage.getSecret(this.settings.apiKeySecretId);
-			const voiceName = apiKey ? await this.resolveVoiceName(apiKey) : this.settings.voiceId;
+			const apiKey = getProviderApiKey(this.app, narrator.provider);
+			const voiceName = apiKey ? await resolveVoiceLabel(narrator.provider, narrator.voice, apiKey) : this.voiceFallbackLabel(narrator.voice);
 			const data = concatArrayBuffers(chunks);
 
 			const existingAudioFile =
@@ -826,7 +851,7 @@ export class Reader extends Events {
 
 			if (this.settings.linkAudioInNote && sourceFile) {
 				const chunkMeta = chunkDurations.map((duration, i) => ({ duration, byteLength: chunks[i]?.byteLength ?? 0 }));
-				await this.linkAudioInNote(audioFile, sourceFile, chunkMeta);
+				await this.linkAudioInNote(audioFile, sourceFile, chunkMeta, narrator);
 			}
 		} catch (error) {
 			console.error('Note Narrator: failed to save audio file', error);
@@ -834,13 +859,9 @@ export class Reader extends Events {
 		}
 	}
 
-	private async resolveVoiceName(apiKey: string): Promise<string> {
-		try {
-			return await getElevenLabsVoiceName(apiKey, this.settings.voiceId);
-		} catch (error) {
-			console.error('Note Narrator: failed to resolve voice name for filename', error);
-			return this.settings.voiceId;
-		}
+	/** Label for a saved filename when the voice's real name can't be looked up (no API key). */
+	private voiceFallbackLabel(voice: VoiceConfig): string {
+		return voice.voiceId;
 	}
 
 	private findExistingAudioFile(sourceFile: TFile): TFile | null {
@@ -901,7 +922,7 @@ export class Reader extends Events {
 		});
 	}
 
-	private async linkAudioInNote(audioFile: TFile, sourceFile: TFile, chunkMeta: { duration: number; byteLength: number }[]): Promise<void> {
+	private async linkAudioInNote(audioFile: TFile, sourceFile: TFile, chunkMeta: { duration: number; byteLength: number }[], narrator: ResolvedNarrator): Promise<void> {
 		const link = this.app.fileManager.generateMarkdownLink(audioFile, sourceFile.path);
 		const hash = await this.computeStalenessHash(sourceFile);
 
@@ -911,7 +932,8 @@ export class Reader extends Events {
 			frontmatter[this.settings.audioHashProperty] = hash;
 			frontmatter[this.settings.audioPathProperty] = audioFile.path;
 			frontmatter[this.settings.audioTimestampProperty] = moment().toISOString(true);
-			frontmatter[this.settings.audioVoiceProperty] = this.settings.voiceId;
+			// A fingerprint of the narrator's voice settings, not its name or provider account, so renaming a profile doesn't look like a new narrator.
+			frontmatter[this.settings.audioVoiceProperty] = narrator.fingerprint;
 			// [duration, byteLength] pairs -- one property instead of two. Byte lengths let a saved file be
 			// sliced back into its per-chunk buffers for reliable Previous/Next part; see SavedPlaybackTimeline.
 			frontmatter[this.settings.audioChunkDurationsProperty] = chunkMeta.map((m) => [Math.round(m.duration * 100) / 100, m.byteLength]);
@@ -961,30 +983,29 @@ export class Reader extends Events {
 			const status = await this.getAudioStatus(file);
 			if (status === 'up-to-date') return;
 
-			const apiKey = this.app.secretStorage.getSecret(this.settings.apiKeySecretId);
+			const narrator = this.getActiveNarrator();
+			if (!narrator) return;
+			const apiKey = getProviderApiKey(this.app, narrator.provider);
 			if (!apiKey) return;
 
 			const rawText = await this.app.vault.cachedRead(file);
 			const body = stripFrontmatter(rawText);
 			const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
-			const preamble = buildReadingPreamble(file.basename, frontmatter, {
-				readTitle: this.settings.readTitle,
-				readProperties: this.settings.readProperties,
-			});
+			const preamble = this.buildPreamble(file.basename, frontmatter);
 			const textToRead = preamble ? `${preamble}\n\n${body}` : body;
 
-			const charLimit = ELEVENLABS_MODEL_CHAR_LIMITS[this.settings.modelId] ?? DEFAULT_ELEVENLABS_CHAR_LIMIT;
+			const charLimit = this.getCharLimit();
 			const chunks = chunkNote(
 				textToRead,
 				charLimit,
-				this.settings.chunkerStyle,
-				this.settings.maxHeadingDepth,
+				this.getReadingConfig().chunkerStyle,
+				this.getReadingConfig().maxHeadingDepth,
 				this.getStripMarkdownOptions(),
 				this.getSkipHeadingPatterns(),
 			);
 			if (chunks.length === 0) return;
 
-			const provider = new ElevenLabsProvider(apiKey, this.settings);
+			const provider = createTTSProvider(narrator.provider, narrator.voice, apiKey);
 
 			const buffers: ArrayBuffer[] = [];
 			const chunkDurations: number[] = [];
@@ -994,7 +1015,7 @@ export class Reader extends Events {
 				chunkDurations.push(await this.decodeAudioDuration(buffer));
 			}
 
-			await this.saveAudioFile(buffers, file, chunkDurations);
+			await this.saveAudioFile(buffers, file, chunkDurations, narrator);
 		} catch (error) {
 			console.error('Note Narrator: auto-generate on open failed', error);
 		}
@@ -1013,19 +1034,16 @@ export class Reader extends Events {
 		const rawText = await this.app.vault.cachedRead(file);
 		const body = stripFrontmatter(rawText);
 		const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
-		const preamble = buildReadingPreamble(file.basename, frontmatter, {
-			readTitle: this.settings.readTitle,
-			readProperties: this.settings.readProperties,
-		});
+		const preamble = this.buildPreamble(file.basename, frontmatter);
 		const textToRead = preamble ? `${preamble}\n\n${body}` : body;
 		if (!textToRead.trim()) return null;
 
-		const charLimit = ELEVENLABS_MODEL_CHAR_LIMITS[this.settings.modelId] ?? DEFAULT_ELEVENLABS_CHAR_LIMIT;
+		const charLimit = this.getCharLimit();
 		const chunks = chunkNote(
 			textToRead,
 			charLimit,
-			this.settings.chunkerStyle,
-			this.settings.maxHeadingDepth,
+			this.getReadingConfig().chunkerStyle,
+			this.getReadingConfig().maxHeadingDepth,
 			this.getStripMarkdownOptions(),
 			this.getSkipHeadingPatterns(),
 		);
@@ -1065,14 +1083,14 @@ export class Reader extends Events {
 	}
 
 	/** Info about a note's linked saved audio, for the player view's "Play saved"/"Regenerate" buttons. Null if none exists. */
-	async getAudioInfo(file: TFile): Promise<{ audioFile: TFile; status: AudioLinkStatus; voiceId: string | undefined } | null> {
+	async getAudioInfo(file: TFile): Promise<{ audioFile: TFile; status: AudioLinkStatus; savedVoice: string | undefined } | null> {
 		const audioFile = this.findExistingAudioFile(file);
 		if (!audioFile) return null;
 
 		const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
-		const voiceId = frontmatter?.[this.settings.audioVoiceProperty] as string | undefined;
+		const savedVoice = frontmatter?.[this.settings.audioVoiceProperty] as string | undefined;
 		const status = await this.getAudioStatus(file);
-		return { audioFile, status, voiceId };
+		return { audioFile, status, savedVoice };
 	}
 
 	/** Plays a previously saved audio file directly, without generating anything. */
