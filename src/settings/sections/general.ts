@@ -1,4 +1,5 @@
 import { SettingDefinitionItem } from 'obsidian';
+import { findHeadingPatternIssues } from '../../text/text-utils';
 import { DEFAULT_SETTINGS } from '../settings';
 import { SettingsSection } from '../section';
 
@@ -69,7 +70,7 @@ export class GeneralSection extends SettingsSection {
 					},
 					{
 						name: 'Max heading depth for sections',
-						desc: 'Headings at or shallower than this depth (1 = #, 2 = ## and shallower, etc.) start a new section. Deeper headings stay within their enclosing section. Only applies to the Markdown-aware chunker.',
+						desc: 'Headings at or shallower than this depth (1 = #, 2 = ## and shallower, etc.) start a new section. Deeper headings stay within their enclosing section. Only applies to the Markdown-aware chunker. Lookbehind patterns are not supported on iOS below 16.4.',
 						control: {
 							type: 'slider',
 							key: 'maxHeadingDepth',
@@ -88,6 +89,7 @@ export class GeneralSection extends SettingsSection {
 							key: 'skipSectionHeadingPatterns',
 							placeholder: 'Changelog\nNotes to self',
 							rows: 3,
+							validate: (value) => findHeadingPatternIssues(String(value)).find((issue) => issue.kind === 'invalid')?.message,
 							disabled: () => settings.chunkerStyle !== 'markdown-aware',
 						},
 					},
