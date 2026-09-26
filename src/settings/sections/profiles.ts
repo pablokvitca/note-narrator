@@ -39,7 +39,6 @@ export class ProfilesSection extends SettingsSection {
 			},
 			{
 				type: 'list',
-				heading: 'Narrator profiles',
 				visible,
 				emptyState: 'No narrator profiles yet. Add one with the + button.',
 				addItem: { name: 'Add narrator profile', action: () => void this.addProfile() },
@@ -137,7 +136,6 @@ export class ProfilesSection extends SettingsSection {
 				},
 				{
 					type: 'group',
-					heading: 'Delete',
 					items: [
 						this.deleteRow(
 							'Delete narrator profile',
