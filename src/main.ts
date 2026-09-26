@@ -4,7 +4,8 @@ import { migrateProfileSettings, normalizeProfileSettings } from './settings/pro
 import { registerCustomIcons, SAVED_TOOLBAR_ICON_ID } from './ui/icons';
 import { PlayerView, NOTE_NARRATOR_VIEW_TYPE } from './ui/player-view';
 import { Reader } from './engine/reader';
-import { DEFAULT_SETTINGS, NoteNarratorSettings, NoteNarratorSettingTab } from './settings/settings';
+import { DEFAULT_SETTINGS, NoteNarratorSettings } from './settings/settings';
+import { NoteNarratorSettingTab } from './settings/setting-tab';
 import { initTouchTooltipSupport } from './ui/touch-tooltip';
 
 export default class NoteNarratorPlugin extends Plugin {
