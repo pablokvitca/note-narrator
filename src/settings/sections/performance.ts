@@ -18,6 +18,11 @@ export class PerformanceSection extends SettingsSection {
 				visible,
 				items: [
 					{
+						name: 'Keep generating when starting another note',
+						desc: 'When you start reading a different note while one is still generating, move the current one to the background instead of discarding it. Finished notes show up in the background list, ready to play.',
+						control: { type: 'toggle', key: 'autoBackgroundOnSwitch', defaultValue: DEFAULT_SETTINGS.autoBackgroundOnSwitch },
+					},
+					{
 						name: 'Start playback immediately',
 						desc: 'Start playing as soon as the first chunk is ready, instead of waiting for the whole note to finish generating first.',
 						control: { type: 'toggle', key: 'startPlaybackImmediately', defaultValue: DEFAULT_SETTINGS.startPlaybackImmediately },

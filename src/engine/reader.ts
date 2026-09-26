@@ -103,7 +103,6 @@ export class Reader extends Events {
 		return this.state.status === 'playing';
 	}
 
-	/** Fully stops playback and cancels the active job's generation. Use `continueGeneratingInBackground()` instead to keep generating without playing. */
 	/** Stops playback and cancels every generation job, background ones included; called when the plugin unloads so nothing keeps generating or saving afterwards. */
 	dispose(): void {
 		this.stop();
@@ -117,6 +116,7 @@ export class Reader extends Events {
 		this.trigger('highlight-refresh');
 	}
 
+	/** Fully stops playback and cancels the active job's generation. Use `continueGeneratingInBackground()` instead to keep generating without playing. */
 	stop(): void {
 		this.sessionId++;
 		this.savedPlaybackTimeline = null;
@@ -170,6 +170,19 @@ export class Reader extends Events {
 		this.publishBackgroundJobs();
 
 		if (job.backgroundStatus === 'generating') void this.runBackgroundJob(job);
+	}
+
+	/**
+	 * With "Keep generating when starting another note" on, hands a still-generating active job to the
+	 * background before something else replaces it. Only for a genuinely different note: the same note
+	 * restarts fresh as before. Does nothing (so the caller's stop() discards it) when the setting is off,
+	 * nothing is active, or the active job has nothing left to generate.
+	 */
+	private backgroundActiveJobForOtherNote(nextFile: TFile | null): void {
+		if (!this.settings.autoBackgroundOnSwitch) return;
+		const active = this.activeJob;
+		if (!active || !active.file || !nextFile || active.file.path === nextFile.path) return;
+		this.continueGeneratingInBackground();
 	}
 
 	/** Promotes a background job (queued, generating, or done) to active and starts playing it from the beginning. No-op if `jobId` isn't in the list. */
@@ -429,6 +442,7 @@ export class Reader extends Events {
 			}
 		}
 
+		this.backgroundActiveJobForOtherNote(sourceFile);
 		this.stop();
 		if (sourceFile) {
 			for (const existing of this.backgroundJobs.filter((job) => job.file?.path === sourceFile.path)) {
@@ -722,6 +736,7 @@ export class Reader extends Events {
 
 	/** Plays a previously saved audio file directly, without generating anything. */
 	async playSavedFile(audioFile: TFile, sourceFile: TFile | null = null): Promise<void> {
+		this.backgroundActiveJobForOtherNote(sourceFile);
 		this.stop();
 		const session = this.sessionId;
 
