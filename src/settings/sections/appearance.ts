@@ -15,7 +15,7 @@ export class AppearanceSection extends SettingsSection {
 				items: [
 					{
 						name: 'Compact buttons',
-						desc: 'Show Play Saved, Read, Cancel, and Send to Background as icon-only buttons, with the full name as a tooltip on hover/long-press, instead of icon + text. Applies at every panel size, not just narrow ones.',
+						desc: 'Show Play saved, Read, Cancel, and Background as icon-only buttons, with the full name as a tooltip on hover/long-press, instead of icon + text. Applies at every panel size, not just narrow ones.',
 						control: { type: 'toggle', key: 'compactButtons', defaultValue: DEFAULT_SETTINGS.compactButtons },
 					},
 					{

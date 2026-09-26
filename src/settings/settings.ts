@@ -71,7 +71,7 @@ export interface NoteNarratorSettings extends ProfileSettings, ReadingConfig {
 	quickStartCharCount: number;
 	/** How the panel shows queued/generating/done background jobs: a full callout with text buttons, a compact pill row, or a minimal card -- all with icon buttons and click-to-play. */
 	backgroundJobDisplayStyle: BackgroundJobDisplayStyle;
-	/** Show Play Saved/Read/Cancel/Send to Background as icon-only buttons (with the label as a tooltip) at every panel size, instead of icon + text. */
+	/** Show Play saved/Read/Cancel/Background as icon-only buttons (with the label as a tooltip) at every panel size, instead of icon + text. */
 	compactButtons: boolean;
 	/** Show the volume slider + mute button row in the player view. */
 	showVolumeSlider: boolean;
