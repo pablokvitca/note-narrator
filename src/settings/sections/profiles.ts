@@ -197,11 +197,12 @@ export class ProfilesSection extends SettingsSection {
 						const provider = getProvider(this.settings, profile.providerId);
 						if (provider) this.voices.populateVoiceDropdown(dropdown, provider, voice().voiceId);
 					};
-					const reload = (force: boolean) => {
+					const reload = async (force: boolean) => {
 						const provider = getProvider(this.settings, profile.providerId);
 						if (!provider) return;
 						if (force) this.voices.voicesByProvider.delete(provider.id);
-						void this.voices.ensureVoices(provider, force).then(populate);
+						await this.voices.ensureVoices(provider, force);
+						populate();
 					};
 
 					setting.addDropdown((component) => {
@@ -216,10 +217,10 @@ export class ProfilesSection extends SettingsSection {
 						button
 							.setIcon('refresh-cw')
 							.setTooltip('Refresh voice list from ElevenLabs')
-							.onClick(() => reload(true)),
+							.onClick(() => void reload(true)),
 					);
-					this.voiceRefreshers.set(profile.id, () => reload(false));
-					reload(false);
+					this.voiceRefreshers.set(profile.id, () => void reload(false));
+					void reload(false);
 				},
 			},
 			this.dropdownRow('Model', 'The ElevenLabs text-to-speech model to use.', ELEVENLABS_MODELS, () => voice().modelId, (value) => {
