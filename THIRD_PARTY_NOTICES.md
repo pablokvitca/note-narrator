@@ -8,48 +8,25 @@ The notices below cover third-party material that this plugin's own source is de
 
 Some of the plugin's custom icons (`src/ui/icons.ts`) reuse geometry from [Lucide](https://lucide.dev): the waveform paths of the `audio-lines` icon (used in the "saved audio" toolbar icon) and the arc and arrowhead of the `rotate-ccw` icon (used in the rewind and skip-forward controls). Icons drawn with Obsidian's own `setIcon()` are Lucide icons that ship with Obsidian itself.
 
-Lucide is licensed under the ISC License. Portions derived from Feather are licensed under the MIT License.
+Lucide is licensed under the ISC License, reproduced below from Lucide's repository (<https://github.com/lucide-icons/lucide/blob/main/LICENSE>). Lucide also lists icons it derived from Feather (MIT); the two icons used here, `audio-lines` and `rotate-ccw`, are not on that list, so only the ISC License applies.
 
 ```
 ISC License
 
-Copyright (c) for portions of Lucide are held by Cole Bemis 2013-2022 as part of Feather (MIT).
-All other copyright (c) for Lucide are held by Lucide Contributors 2022.
+Copyright (c) 2026 Lucide Icons and Contributors
 
-Permission to use, copy, modify, and/or distribute this software for any purpose with or without
-fee is hereby granted, provided that the above copyright notice and this permission notice appear
-in all copies.
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
 
-THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH REGARD TO THIS
-SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE
-AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
-WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT,
-NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE
-OF THIS SOFTWARE.
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 ```
-
-```
-The MIT License (MIT) (for portions derived from Feather)
-
-Copyright (c) 2013-2023 Cole Bemis
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
-associated documentation files (the "Software"), to deal in the Software without restriction,
-including without limitation the rights to use, copy, modify, merge, publish, distribute,
-sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all copies or
-substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
-NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
-NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
-DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT
-OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-```
-
-The text above reproduces Lucide's published license; if in doubt, the authoritative copy is at <https://github.com/lucide-icons/lucide/blob/main/LICENSE>.
 
 ## Services and trademarks
 
