@@ -4,6 +4,9 @@ import { SKIP_SECONDS_OPTIONS, SkipSeconds } from './settings';
 /** A saved-audio file with a play triangle on its corner, for the "Play saved" action -- distinct from the plain `play` triangle used for playback controls. */
 export const PLAY_SAVED_ICON_ID = 'note-narrator-play-saved';
 
+/** The in-note toolbar icon while the note has up-to-date saved audio: the usual `audio-lines` waveform with a check badge. */
+export const SAVED_TOOLBAR_ICON_ID = 'note-narrator-toolbar-saved';
+
 /*
  * Path coordinates below are authored in a 24x24 grid, matching Lucide's own icons -- but unlike
  * `setIcon()`'s built-in Lucide icons (rendered in a `viewBox="0 0 24 24"` SVG), Obsidian's
@@ -31,6 +34,16 @@ const PLAY_SAVED_ICON_SVG = `
 <!-- The play triangle: no circle around it, centroid at (16,20) -- the (shifted) file outline's
      exact bottom-right corner. Enlarged (r 3.4 -> 4.2) now that the shift above gives it room. -->
 <path d="M20.2 20L13.9 23.6L13.9 16.4Z" fill="currentColor" stroke="none"/>
+</g>
+`;
+
+/** Lucide's `audio-lines` waveform, shrunk into the top-left to leave the bottom-right corner free for a check badge. */
+const SAVED_TOOLBAR_ICON_SVG = `
+<g transform="scale(4.1667)">
+<g transform="scale(0.8)" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+<path d="M2 10v3"/><path d="M6 6v11"/><path d="M10 3v18"/><path d="M14 8v7"/><path d="M18 5v13"/><path d="M22 10v3"/>
+</g>
+<path d="m14.5 18.5 2.5 2.5 4.5-5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
 </g>
 `;
 
@@ -62,6 +75,7 @@ ${arrowGroup}
 /** Registers this plugin's custom Lucide-style icons. Call once from `onload()`. */
 export function registerCustomIcons(): void {
 	addIcon(PLAY_SAVED_ICON_ID, PLAY_SAVED_ICON_SVG);
+	addIcon(SAVED_TOOLBAR_ICON_ID, SAVED_TOOLBAR_ICON_SVG);
 
 	for (const seconds of SKIP_SECONDS_OPTIONS) {
 		addIcon(skipIconId(seconds, 'back'), buildSkipIconSvg(seconds, 'back'));

@@ -1,6 +1,6 @@
-import { MarkdownView, Plugin, TFile } from 'obsidian';
+import { debounce, MarkdownView, Plugin, setIcon, TFile } from 'obsidian';
 import { createHighlightExtension } from './highlight-extension';
-import { registerCustomIcons } from './icons';
+import { registerCustomIcons, SAVED_TOOLBAR_ICON_ID } from './icons';
 import { PlayerView, NOTE_NARRATOR_VIEW_TYPE } from './player-view';
 import { Reader } from './reader';
 import { DEFAULT_SETTINGS, NoteNarratorSettings, NoteNarratorSettingTab } from './settings';
@@ -10,7 +10,7 @@ export default class NoteNarratorPlugin extends Plugin {
 	settings!: NoteNarratorSettings;
 	reader!: Reader;
 
-	private patchedViews = new WeakSet<MarkdownView>();
+	private patchedViews = new WeakMap<MarkdownView, HTMLElement>();
 	// MarkdownView instances (and their DOM) survive a plugin reload/update; track the action
 	// buttons we add so onunload can remove them and a fresh load doesn't duplicate them.
 	private actionButtons: HTMLElement[] = [];
@@ -31,6 +31,12 @@ export default class NoteNarratorPlugin extends Plugin {
 		this.app.workspace.onLayoutReady(() => this.patchOpenMarkdownViews());
 		this.registerEvent(this.app.workspace.on('active-leaf-change', () => this.patchOpenMarkdownViews()));
 		this.registerEvent(this.app.workspace.on('layout-change', () => this.patchOpenMarkdownViews()));
+		// The saved-audio state can change from a frontmatter update (audio linked/unlinked), a content
+		// edit (up to date -> outdated), or the Note Narrator panel saving audio; refresh the toolbar icons for
+		// all of those. Content edits are debounced since each refresh re-hashes the note.
+		const refreshIcons = debounce(() => void this.refreshActionIcons(), 1000, true);
+		this.registerEvent(this.app.metadataCache.on('changed', refreshIcons));
+		this.registerEvent(this.app.vault.on('modify', refreshIcons));
 		this.registerEvent(
 			this.app.workspace.on('file-open', (file) => {
 				if (file instanceof TFile) void this.reader.autoGenerateIfNeeded(file);
@@ -85,11 +91,35 @@ export default class NoteNarratorPlugin extends Plugin {
 
 	private patchMarkdownView(view: MarkdownView): void {
 		if (this.patchedViews.has(view)) return;
-		this.patchedViews.add(view);
 		const button = view.addAction('audio-lines', 'Read note aloud', () => {
 			void this.activateView();
 		});
+		this.patchedViews.set(view, button);
 		this.actionButtons.push(button);
+		void this.refreshActionIcon(view);
+	}
+
+	private async refreshActionIcons(): Promise<void> {
+		for (const leaf of this.app.workspace.getLeavesOfType('markdown')) {
+			if (leaf.view instanceof MarkdownView) await this.refreshActionIcon(leaf.view);
+		}
+	}
+
+	/** Swaps the in-note toolbar icon to a "saved" variant while the view's note has up-to-date saved audio. */
+	private async refreshActionIcon(view: MarkdownView): Promise<void> {
+		const button = this.patchedViews.get(view);
+		const file = view.file;
+		if (!button || !file) return;
+
+		const saved = (await this.reader.getAudioStatus(file)) === 'up-to-date';
+		// The view may have moved to another note while the status was being computed.
+		if (view.file !== file) return;
+
+		const state = saved ? 'saved' : 'default';
+		if (button.dataset.readerState === state) return;
+		button.dataset.readerState = state;
+		setIcon(button, saved ? SAVED_TOOLBAR_ICON_ID : 'audio-lines');
+		button.setAttribute('aria-label', saved ? 'Read note aloud (saved audio is up to date)' : 'Read note aloud');
 	}
 
 	async loadSettings() {
