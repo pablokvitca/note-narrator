@@ -1,6 +1,6 @@
 {
 	"name": "note-narrator",
-	"version": "0.16.0",
+	"version": "0.16.1",
 	"description": "Read the current note aloud with text-to-speech, starting with ElevenLabs.",
 	"main": "main.js",
 	"type": "module",
