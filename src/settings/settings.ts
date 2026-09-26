@@ -59,6 +59,8 @@ export interface NoteNarratorSettings extends ProfileSettings, ReadingConfig {
 	autoGenerateOnOpen: boolean;
 	/** Whether regenerating a note's audio replaces the previously linked file or keeps it and creates a new one. Only applies when linkAudioInNote is on. */
 	saveVersioning: SaveVersioning;
+	/** When a read (or Play saved) starts on a different note while another note is still generating, keep generating the old one in the background instead of discarding it. */
+	autoBackgroundOnSwitch: boolean;
 	/** Start playback as soon as the first chunk is ready, rather than waiting for the whole note to generate. */
 	startPlaybackImmediately: boolean;
 	/** Generate an artificially short first chunk so playback can start sooner. Only applies when startPlaybackImmediately is on. */
@@ -123,6 +125,7 @@ export const DEFAULT_SETTINGS: NoteNarratorSettings = {
 	stripMarkdownComments: true,
 	stripCommentDelimiters: true,
 	announceComments: true,
+	autoBackgroundOnSwitch: true,
 	startPlaybackImmediately: true,
 	quickStart: true,
 	quickStartUnit: 'words',
