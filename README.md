@@ -5,11 +5,9 @@ Note Narrator is an Obsidian plugin that **reads your notes aloud** using text t
 > [!IMPORTANT]
 > **Requires an ElevenLabs account and API key, and ElevenLabs charges for the audio it generates** (credits on your plan; free tier limits apply). The text you read is sent to ElevenLabs. See [Requirements and costs](#requirements-and-costs) and [Disclosures](#disclosures) before installing.
 
-> [!NOTE]
-> Screenshot placeholder: the Note Narrator panel in the right sidebar while reading a note (transport controls, progress, generation bar, highlighted text in the editor). Add it as `docs/screenshots/panel.png` and replace this block with `![Note Narrator panel](docs/screenshots/panel.png)`.
+![Note Narrator panel reading a note aloud, with the current text highlighted in the editor](docs/screenshots/panel.png)
 
-> [!NOTE]
-> Screenshot placeholder: the settings screen with the tab bar (General, Providers, Profiles, Appearance, Performance, Files). Add it as `docs/screenshots/settings.png` and replace this block with `![Note Narrator settings](docs/screenshots/settings.png)`.
+![Note Narrator settings, showing the General, Providers, Profiles, Appearance, Performance and Files tabs](docs/screenshots/settings.png)
 
 ## What it does
 
