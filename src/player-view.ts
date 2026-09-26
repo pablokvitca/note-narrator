@@ -1,13 +1,13 @@
 import { debounce, ItemView, MarkdownView, Menu, setIcon, Setting, TFile, WorkspaceLeaf } from 'obsidian';
 import { ConfirmModal } from './confirm-modal';
 import NoteNarratorPlugin from './main';
+import { getActiveProfile, getDropdownProfiles, savedVoiceMatches } from './profiles';
 import { hasPendingGeneration, queuePosition } from './background-job';
 import type { BackgroundJobInfo } from './background-job';
 import { PLAY_SAVED_ICON_ID, skipIconId } from './icons';
 import { AudioLinkStatus, ReaderState } from './reader';
 import { computeFullReadTimes, formatTimeDisplay } from './time-utils';
 import { attachTooltip } from './touch-tooltip';
-import { ElevenLabsVoice, listElevenLabsVoices } from './tts/elevenlabs-provider';
 
 export const NOTE_NARRATOR_VIEW_TYPE = 'note-narrator-player';
 
@@ -30,7 +30,6 @@ const AUDIO_STATUS_LABELS: Record<AudioLinkStatus, string> = {
 };
 
 export class PlayerView extends ItemView {
-	private voices: ElevenLabsVoice[] = [];
 	private lastActiveFilePath: string | null = null;
 
 	// Elements patched directly on frequent playback ticks (many times a second via `timeupdate`)
@@ -91,7 +90,6 @@ export class PlayerView extends ItemView {
 		const debouncedRender = debounce(() => this.render(), 1000, true);
 		this.registerEvent(this.app.workspace.on('editor-change', () => debouncedRender()));
 
-		void this.loadVoices();
 		this.render();
 	}
 
@@ -220,18 +218,6 @@ export class PlayerView extends ItemView {
 		editor.scrollIntoView({ from, to }, true);
 	}
 
-	private async loadVoices(): Promise<void> {
-		const apiKey = this.app.secretStorage.getSecret(this.plugin.settings.apiKeySecretId);
-		if (!apiKey) return;
-
-		try {
-			this.voices = await listElevenLabsVoices(apiKey);
-			this.render();
-		} catch (error) {
-			console.error('Note Narrator: failed to fetch ElevenLabs voices', error);
-		}
-	}
-
 	private render(): void {
 		this.dismissPopover();
 
@@ -282,7 +268,7 @@ export class PlayerView extends ItemView {
 		this.renderAudioStatus(scroll);
 
 		// 5. Voice selection
-		this.renderVoiceSelector(scroll);
+		this.renderNarratorSelector(scroll);
 		this.renderNoteStats(scroll, selectedFile);
 
 		// 6. Play Saved / Read / Cancel / Background
@@ -376,34 +362,27 @@ export class PlayerView extends ItemView {
 		}
 	}
 
-	private renderVoiceSelector(container: HTMLElement): void {
-		const currentValue = this.plugin.settings.voiceId;
-		const shortlist = this.plugin.settings.panelVoiceIds;
-		const availableVoices = shortlist.length > 0 ? this.voices.filter((voice) => shortlist.includes(voice.voiceId)) : this.voices;
+	/** Dropdown of the narrator profiles marked for the panel (plus the active one), replacing the old per-voice list. */
+	private renderNarratorSelector(container: HTMLElement): void {
+		const settings = this.plugin.settings;
+		const profiles = getDropdownProfiles(settings);
+		const activeId = getActiveProfile(settings)?.id;
 
-		new Setting(container)
-			.setName('Voice')
-			.addDropdown((dropdown) => {
-				if (availableVoices.length === 0) {
-					dropdown.addOption(currentValue, currentValue);
-				} else {
-					for (const voice of availableVoices) {
-						dropdown.addOption(voice.voiceId, voice.name);
-					}
-					if (!availableVoices.some((voice) => voice.voiceId === currentValue)) {
-						dropdown.addOption(currentValue, `${currentValue} (custom)`);
-					}
-				}
-				dropdown.setValue(currentValue);
-				dropdown.onChange(async (value) => {
-					this.plugin.settings.voiceId = value;
-					await this.plugin.saveSettings();
-				});
-			})
-			.addExtraButton((button) => {
-				button.setIcon('refresh-cw').onClick(() => void this.loadVoices());
-				attachTooltip(button.extraSettingsEl, 'Refresh voice list from ElevenLabs');
+		new Setting(container).setName('Narrator').addDropdown((dropdown) => {
+			if (profiles.length === 0) {
+				dropdown.addOption('', 'No narrator profiles');
+				dropdown.setDisabled(true);
+				return;
+			}
+			for (const profile of profiles) dropdown.addOption(profile.id, profile.name);
+			if (activeId) dropdown.setValue(activeId);
+			dropdown.onChange(async (value) => {
+				settings.activeProfileId = value;
+				await this.plugin.saveSettings();
+				// Re-render so the Read button's Regenerate/"new narrator" label and the note stats follow the new profile.
+				this.render();
 			});
+		});
 	}
 
 	/** Builds a Setting name as [icon][label] -- always in that order, at every width. The label itself hides at the narrow container breakpoint (see the `.note-narrator-setting-label` CSS rule); the icon never does, so there's always something to the left of it identifying the row. */
@@ -907,11 +886,12 @@ export class PlayerView extends ItemView {
 			// clicking it just stops whatever's currently happening and plays the saved copy instead (same
 			// pattern as Read/Regenerate staying clickable while a *different* note is playing).
 			if (!active) {
-				const voiceMismatch = info.voiceId !== undefined && info.voiceId !== this.plugin.settings.voiceId;
+				const narrator = this.plugin.reader.getActiveNarrator();
+				const voiceMismatch = info.savedVoice !== undefined && !!narrator && !savedVoiceMatches(info.savedVoice, narrator.voice);
 				if (info.status === 'outdated') {
 					this.setButtonLabel(readButton, readLabelEl, 'Regenerate');
 				} else if (voiceMismatch) {
-					this.setButtonLabel(readButton, readLabelEl, 'Regenerate with new voice');
+					this.setButtonLabel(readButton, readLabelEl, 'Regenerate with new narrator');
 				}
 			}
 

@@ -1,5 +1,6 @@
 import { debounce, MarkdownView, Plugin, setIcon, TFile } from 'obsidian';
 import { createHighlightExtension } from './highlight-extension';
+import { migrateProfileSettings, normalizeProfileSettings } from './profiles';
 import { registerCustomIcons, SAVED_TOOLBAR_ICON_ID } from './icons';
 import { PlayerView, NOTE_NARRATOR_VIEW_TYPE } from './player-view';
 import { Reader } from './reader';
@@ -123,7 +124,13 @@ export default class NoteNarratorPlugin extends Plugin {
 	}
 
 	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, (await this.loadData()) as Partial<NoteNarratorSettings>);
+		const saved = ((await this.loadData()) ?? {}) as Record<string, unknown>;
+		// Pre-profile settings (flat voice/model/API key) become a provider + narrator profile; a fresh
+		// install gets a default pair. Saved back right away so the upgrade only ever runs once.
+		const needsMigration = !Array.isArray(saved.providers) || saved.providers.length === 0;
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, migrateProfileSettings(saved));
+		normalizeProfileSettings(this.settings);
+		if (needsMigration) await this.saveSettings();
 	}
 
 	async saveSettings() {

@@ -1,5 +1,5 @@
 import { requestUrl } from 'obsidian';
-import { NoteNarratorSettings } from '../settings';
+import type { ElevenLabsVoiceConfig } from '../profiles';
 import { TTSProvider } from './provider';
 
 export interface ElevenLabsVoice {
@@ -61,7 +61,7 @@ function sleep(ms: number): Promise<void> {
 export class ElevenLabsProvider implements TTSProvider {
 	constructor(
 		private apiKey: string,
-		private settings: NoteNarratorSettings,
+		private voice: ElevenLabsVoiceConfig,
 		/** Called (possibly more than once) the moment a 429 is first seen, before any backoff wait. */
 		private onRateLimited?: () => void,
 	) {}
@@ -69,7 +69,7 @@ export class ElevenLabsProvider implements TTSProvider {
 	async synthesize(text: string): Promise<ArrayBuffer> {
 		for (let attempt = 0; ; attempt++) {
 			const response = await requestUrl({
-				url: `https://api.elevenlabs.io/v1/text-to-speech/${this.settings.voiceId}`,
+				url: `https://api.elevenlabs.io/v1/text-to-speech/${this.voice.voiceId}`,
 				method: 'POST',
 				headers: {
 					'xi-api-key': this.apiKey,
@@ -77,10 +77,10 @@ export class ElevenLabsProvider implements TTSProvider {
 				},
 				body: JSON.stringify({
 					text,
-					model_id: this.settings.modelId,
+					model_id: this.voice.modelId,
 					voice_settings: {
-						stability: this.settings.stability,
-						similarity_boost: this.settings.similarityBoost,
+						stability: this.voice.stability,
+						similarity_boost: this.voice.similarityBoost,
 					},
 				}),
 				throw: false,
