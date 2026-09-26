@@ -67,7 +67,7 @@ function buildDecorations(view: EditorView, plugin: NoteNarratorPlugin): Decorat
 
 /**
  * Registered once (in `registerEditorExtension`) but instantiated by CodeMirror per open editor. Each
- * instance listens to Note Narrator's own 'change' event directly -- rather than relying on a doc-change
+ * instance listens to Note Narrator's own 'change' event (and 'highlight-refresh', for highlight settings changing) directly -- rather than relying on a doc-change
  * update, since the trigger here is external playback progress, not an edit to this document -- and
  * dispatches a no-op transaction to make CodeMirror re-run `update()` (on this extension and the gutter
  * below, which shares the same dispatched transaction) and re-read `decorations`.
@@ -83,6 +83,7 @@ function createMarkPlugin(plugin: NoteNarratorPlugin): Extension {
 			constructor(private view: EditorView) {
 				this.decorations = buildDecorations(view, plugin);
 				plugin.reader.on('change', this.handleReaderChange);
+				plugin.reader.on('highlight-refresh', this.handleReaderChange);
 			}
 
 			update(update: ViewUpdate): void {
@@ -93,6 +94,7 @@ function createMarkPlugin(plugin: NoteNarratorPlugin): Extension {
 
 			destroy(): void {
 				plugin.reader.off('change', this.handleReaderChange);
+				plugin.reader.off('highlight-refresh', this.handleReaderChange);
 			}
 		},
 		{ decorations: (instance) => instance.decorations },
