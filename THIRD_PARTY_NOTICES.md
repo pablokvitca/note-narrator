@@ -6,7 +6,7 @@ The notices below cover third-party material that this plugin's own source is de
 
 ## Lucide icons
 
-Some of the plugin's custom icons (`src/icons.ts`) reuse geometry from [Lucide](https://lucide.dev): the waveform paths of the `audio-lines` icon (used in the "saved audio" toolbar icon) and the arc and arrowhead of the `rotate-ccw` icon (used in the rewind and skip-forward controls). Icons drawn with Obsidian's own `setIcon()` are Lucide icons that ship with Obsidian itself.
+Some of the plugin's custom icons (`src/ui/icons.ts`) reuse geometry from [Lucide](https://lucide.dev): the waveform paths of the `audio-lines` icon (used in the "saved audio" toolbar icon) and the arc and arrowhead of the `rotate-ccw` icon (used in the rewind and skip-forward controls). Icons drawn with Obsidian's own `setIcon()` are Lucide icons that ship with Obsidian itself.
 
 Lucide is licensed under the ISC License. Portions derived from Feather are licensed under the MIT License.
 
