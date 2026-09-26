@@ -63,9 +63,10 @@ export class SavedAudio {
 
 	private findExistingAudioFile(sourceFile: TFile): TFile | null {
 		const frontmatter = this.app.metadataCache.getFileCache(sourceFile)?.frontmatter;
-		const storedPath = frontmatter?.[this.settings.audioPathProperty] as string | undefined;
-		if (!storedPath) return null;
-		const file = this.app.vault.getAbstractFileByPath(storedPath);
+		const storedPath: unknown = frontmatter?.[this.settings.audioPathProperty];
+		// The property is user-editable, so clean it up (stray slashes, non-breaking spaces, non-NFC Unicode) before the lookup.
+		if (typeof storedPath !== 'string' || !storedPath) return null;
+		const file = this.app.vault.getAbstractFileByPath(normalizePath(storedPath));
 		return file instanceof TFile ? file : null;
 	}
 
