@@ -48,9 +48,15 @@ export default class NoteNarratorPlugin extends Plugin {
 		this.addCommand({
 			id: 'read-note-aloud',
 			name: 'Read note aloud',
-			callback: () => {
-				void this.activateView();
-				void this.reader.readNote();
+			// Only available while a note is open, so the command doesn't open an empty panel plus a notice.
+			checkCallback: (checking) => {
+				const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+				if (!view) return false;
+				if (!checking) {
+					void this.activateView();
+					void this.reader.readNote(view);
+				}
+				return true;
 			},
 		});
 
