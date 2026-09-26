@@ -13,6 +13,16 @@ const MOVE_CANCEL_PX = 10;
 let lastLongPressElement: HTMLElement | null = null;
 let installed = false;
 
+/** Cleanup callbacks for whatever bubbles and long-press timers are live right now, so unloading the plugin can drop them. */
+const liveCleanups = new Set<() => void>();
+
+function resetTouchTooltipState(): void {
+	for (const cleanup of [...liveCleanups]) cleanup();
+	liveCleanups.clear();
+	lastLongPressElement = null;
+	installed = false;
+}
+
 /** Elements whose long-press listeners are already wired, so calling `attachTooltip()` again on the same element (e.g. a button whose label/tooltip changes, like Read -> Regenerate) only refreshes the tooltip text instead of stacking a second set of listeners. */
 const wiredElements = new WeakSet<HTMLElement>();
 
@@ -23,6 +33,8 @@ const wiredElements = new WeakSet<HTMLElement>();
 export function initTouchTooltipSupport(plugin: Plugin): void {
 	if (installed) return;
 	installed = true;
+	// Reset on unload so re-enabling the plugin without restarting Obsidian installs the click handler again.
+	plugin.register(resetTouchTooltipState);
 	plugin.registerDomEvent(
 		document,
 		'click',
@@ -60,15 +72,33 @@ export function attachTooltip(el: HTMLElement, text: string): void {
 	let startX = 0;
 	let startY = 0;
 
+	let hideTimer: number | null = null;
+
 	const clearTimer = () => {
 		if (timer === null) return;
 		window.clearTimeout(timer);
 		timer = null;
+		releaseIfIdle();
 	};
 
 	const removeBubble = () => {
+		if (hideTimer !== null) {
+			window.clearTimeout(hideTimer);
+			hideTimer = null;
+		}
 		bubble?.remove();
 		bubble = null;
+		releaseIfIdle();
+	};
+
+	/** Stops tracking this element for unload cleanup once it has no live timer or bubble. */
+	const releaseIfIdle = () => {
+		if (timer === null && bubble === null) liveCleanups.delete(cleanup);
+	};
+
+	const cleanup = () => {
+		clearTimer();
+		removeBubble();
 	};
 
 	const showBubble = () => {
@@ -91,7 +121,8 @@ export function attachTooltip(el: HTMLElement, text: string): void {
 		bubble.setCssStyles({ top: `${top}px`, left: `${left}px` });
 
 		lastLongPressElement = el;
-		window.setTimeout(removeBubble, VISIBLE_MS);
+		liveCleanups.add(cleanup);
+		hideTimer = window.setTimeout(removeBubble, VISIBLE_MS);
 	};
 
 	el.addEventListener('pointerdown', (evt: PointerEvent) => {
@@ -100,6 +131,7 @@ export function attachTooltip(el: HTMLElement, text: string): void {
 		startX = evt.clientX;
 		startY = evt.clientY;
 		timer = window.setTimeout(showBubble, LONG_PRESS_MS);
+		liveCleanups.add(cleanup);
 	});
 	el.addEventListener('pointermove', (evt: PointerEvent) => {
 		if (evt.pointerType === 'mouse' || timer === null) return;
