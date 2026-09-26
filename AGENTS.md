@@ -43,7 +43,7 @@ npm run build
 
 - **Organize code into multiple files**: Split functionality across separate modules rather than putting everything in `main.ts`.
 - Source lives in `src/`. Keep `main.ts` small and focused on plugin lifecycle (loading, unloading, registering commands).
-- Unit tests live in `tests/`, mirroring the folder structure of `src/` (`src/text-utils.ts` is tested by `tests/text-utils.test.ts`). They are type-checked by `npm run build` and linted, but never bundled into `main.js`. Run them with `npm test`.
+- Unit tests live in `tests/`, mirroring the folder structure of `src/` (`src/text/text-utils.ts` is tested by `tests/text/text-utils.test.ts`). They are type-checked by `npm run build` and linted, but never bundled into `main.js`. Run them with `npm test`.
 - **Example file structure**:
     ```
     src/

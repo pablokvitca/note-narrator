@@ -7,7 +7,7 @@
 - **Scope:** `always` (run on every stable release review) or a list of globs. An entry with globs runs only when the diff between the last stable and the new stable touches a matching path; otherwise it is recorded as "Not affected by this diff".
 - **Check:** what the reviewer must establish, with repo-specific hints.
 
-**Repo facts the checks assume** (verify they still hold): plugin id `note-narrator`; TypeScript in `src/` (flat, plus `src/tts/`), tests in `src/*.test.ts`; bundled by `esbuild.config.mjs` into `main.js` (externals: `obsidian`, `electron`, `@codemirror/*`, `@lezer/*`, Node builtins); `isDesktopOnly: false`; settings UI in `src/settings.ts` (Obsidian 1.13 declarative API, custom tab bar); panel view `src/player-view.ts`; engine `src/reader.ts`; CodeMirror extension `src/highlight-extension.ts`; the only network calls are `requestUrl` to `api.elevenlabs.io` in `src/tts/elevenlabs-provider.ts`.
+**Repo facts the checks assume** (verify they still hold): plugin id `note-narrator`; TypeScript in `src/` (folders `ui/`, `settings/`, `text/`, `engine/`, `tts/`), tests in `tests/` mirroring `src/`; bundled by `esbuild.config.mjs` into `main.js` (externals: `obsidian`, `electron`, `@codemirror/*`, `@lezer/*`, Node builtins); `isDesktopOnly: false`; settings UI in `src/settings/` (`setting-tab.ts` plus one file per tab in `sections/`; Obsidian 1.13 declarative API, custom tab bar); panel view `src/ui/player-view.ts`; engine `src/engine/reader.ts`; CodeMirror extension `src/ui/highlight-extension.ts`; the only network calls are `requestUrl` to `api.elevenlabs.io` in `src/tts/elevenlabs-provider.ts`.
 
 Where a check says "report facts", the reviewer must not soften or invent findings, and must cite `file:line`.
 
@@ -87,7 +87,7 @@ Where a check says "report facts", the reviewer must not soften or invent findin
 ### G14 Comply with original licenses and attribute
 - **Guideline:** Comply with the original licenses of any code the plugin uses, including README attribution if required.
 - **Scope:** `src/**`, `styles.css`, `package.json`, `THIRD_PARTY_NOTICES.md`, `README.md`
-- **Check:** what third-party code or assets ship in `main.js`/`styles.css` (bundled deps, copied or derived code, Lucide-derived icon geometry in `src/icons.ts`); required notices present in `THIRD_PARTY_NOTICES.md` and linked from the README.
+- **Check:** what third-party code or assets ship in `main.js`/`styles.css` (bundled deps, copied or derived code, Lucide-derived icon geometry in `src/ui/icons.ts`); required notices present in `THIRD_PARTY_NOTICES.md` and linked from the README.
 
 ### G15 Respect Obsidian's trademark policy
 - **Guideline:** Don't use the "Obsidian" trademark in a way that could confuse users into thinking the plugin is first-party.
@@ -139,12 +139,12 @@ Where a check says "report facts", the reviewer must not soften or invent findin
 
 ### G23 Headings only when there is more than one section
 - **Guideline:** Only use headings under settings if you have more than one section; avoid a top-level heading such as "General", "Settings" or the plugin name; keep general settings at the top without a heading (see Settings, Appearance).
-- **Scope:** `src/settings.ts`
+- **Scope:** `src/settings/**`
 - **Check:** enumerate every `heading:` per tab and page (tree); flag headings over a tab's only section, headings repeating the tab or plugin name, and a missing headingless general group.
 
 ### G24 No "settings" in headings
 - **Guideline:** Avoid the word "settings" in settings headings.
-- **Scope:** `src/settings.ts`
+- **Scope:** `src/settings/**`
 - **Check:** list every heading, page title and tab label; flag any containing "settings" (and near-synonyms as borderline).
 
 ### G25 Sentence case in UI
@@ -171,7 +171,7 @@ Where a check says "report facts", the reviewer must not soften or invent findin
 
 ### G29 Don't detach leaves in onunload
 - **Guideline:** Do not detach leaves in `onunload`; Obsidian restores them in place after an update.
-- **Scope:** `src/main.ts`, `src/player-view.ts`
+- **Scope:** `src/main.ts`, `src/ui/player-view.ts`
 - **Check:** full body of `onunload`; no `detachLeavesOfType`/`.detach()`; panel opened via `activateView` reusing an existing leaf.
 
 ## I. Commands
@@ -200,7 +200,7 @@ Where a check says "report facts", the reviewer must not soften or invent findin
 
 ### G34 Don't manage references to custom views
 - **Guideline:** `registerView(TYPE, () => new View())`, no stored view instances; reach views via `getLeavesOfType`.
-- **Scope:** `src/main.ts`, `src/player-view.ts`
+- **Scope:** `src/main.ts`, `src/ui/player-view.ts`
 - **Check:** the `registerView` factory only returns a new view; no fields, arrays or module variables hold `PlayerView` or leaves; the view unsubscribes from the long-lived `Reader` (via `registerEvent`).
 
 ## K. Vault
@@ -239,7 +239,7 @@ Where a check says "report facts", the reviewer must not soften or invent findin
 
 ### G41 Reconfigure editor extensions correctly
 - **Guideline:** To change a registered editor extension use a stable array plus `workspace.updateOptions()`.
-- **Scope:** `src/highlight-extension.ts`, `src/main.ts`, `src/settings.ts`
+- **Scope:** `src/ui/highlight-extension.ts`, `src/main.ts`, `src/settings/**`
 - **Check:** what is decided at creation versus at render time; whether the extension array is ever replaced; how settings changes reach open editors (see OBS-156).
 
 ## M. Styling
