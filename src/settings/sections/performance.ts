@@ -15,7 +15,6 @@ export class PerformanceSection extends SettingsSection {
 			},
 			{
 				type: 'group',
-				heading: 'Starting playback',
 				visible,
 				items: [
 					{

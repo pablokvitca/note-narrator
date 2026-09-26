@@ -15,7 +15,6 @@ export class GeneralSection extends SettingsSection {
 			},
 			{
 				type: 'group',
-				heading: 'Reading',
 				visible,
 				items: [
 					{

@@ -15,7 +15,6 @@ export class ProvidersSection extends SettingsSection {
 			},
 			{
 				type: 'list',
-				heading: 'Providers',
 				visible,
 				emptyState: 'No providers yet. Add one with the + button.',
 				addItem: { name: 'Add provider', action: () => void this.addProvider() },
@@ -87,7 +86,6 @@ export class ProvidersSection extends SettingsSection {
 				},
 				{
 					type: 'group',
-					heading: 'Delete',
 					items: [
 						this.deleteRow('Delete provider', 'Removes this provider. Narrator profiles that use it are deleted too, after you confirm.', () => {
 							const index = this.settings.providers.indexOf(provider);
