@@ -1,3 +1,7 @@
+/*! Some icon geometry below is derived from Lucide (ISC License; portions from Feather, MIT License).
+ * Copyright (c) for portions of Lucide are held by Cole Bemis 2013-2022 as part of Feather (MIT).
+ * All other copyright (c) for Lucide are held by Lucide Contributors 2022.
+ * Full license texts: THIRD_PARTY_NOTICES.md */
 import { addIcon } from 'obsidian';
 import { SKIP_SECONDS_OPTIONS, SkipSeconds } from '../settings/settings';
 
