@@ -1,6 +1,7 @@
 import { App, Notice, TFile, moment, normalizePath } from 'obsidian';
 import { AudioLinkStatus } from './reader-types';
-import { NoteNarratorSettings } from '../settings/settings';
+import { cleanVaultFolderPath } from './vault-path';
+import { DEFAULT_SETTINGS, NoteNarratorSettings } from '../settings/settings';
 import { ResolvedNarrator, VoiceConfig } from '../settings/profiles';
 import { concatArrayBuffers, sanitizeFilenameComponent } from './audio-utils';
 import { getProviderApiKey, resolveVoiceLabel } from '../tts/registry';
@@ -203,7 +204,9 @@ export class SavedAudio {
 
 	private resolveSaveFolder(sourceFile: TFile | null): string {
 		if (this.settings.saveAudioLocation === 'custom-folder') {
-			return normalizePath(this.settings.saveAudioFolderPath || '/');
+			const cleaned = cleanVaultFolderPath(this.settings.saveAudioFolderPath, this.app.vault.configDir);
+			// A hand-edited data.json can hold a path the settings field would have rejected; fall back rather than write there.
+			return normalizePath(cleaned.ok ? cleaned.path || '/' : DEFAULT_SETTINGS.saveAudioFolderPath);
 		}
 		return sourceFile?.parent?.path ?? '/';
 	}
