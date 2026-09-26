@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chunkNote, isHeadingSkipped, parseHeadingSkipPatterns, sectionHeadingText } from '../../src/text/text-utils';
+import { chunkNote, findHeadingPatternIssues, isHeadingSkipped, parseHeadingSkipPatterns, sectionHeadingText } from '../../src/text/text-utils';
 
 describe('parseHeadingSkipPatterns', () => {
 	it('parses one case-insensitive regex per line, skipping blanks', () => {
@@ -55,5 +55,30 @@ describe('chunkNote skipHeadingPatterns', () => {
 		const note = '## Changelog\nv1.0: initial release.';
 		const chunks = chunkNote(note, 5000, 'sentence', 2, undefined, parseHeadingSkipPatterns('Changelog'));
 		expect(chunks.join(' ')).toContain('initial release');
+	});
+});
+
+describe('findHeadingPatternIssues', () => {
+	it('reports nothing for valid patterns and blank lines', () => {
+		expect(findHeadingPatternIssues('Changelog\n\n  Notes to self  \n^Draft$')).toEqual([]);
+	});
+
+	it('flags patterns that do not compile, with their line number', () => {
+		const issues = findHeadingPatternIssues('ok\n(unclosed\n[bad');
+		expect(issues.map((i) => [i.line, i.kind])).toEqual([
+			[2, 'invalid'],
+			[3, 'invalid'],
+		]);
+		expect(issues[0]!.message).toContain('Line 2');
+	});
+
+	it('flags lookbehind as an iOS 16.4 caveat without calling it invalid', () => {
+		const issues = findHeadingPatternIssues(['(?', '<=Chapter )\\d+\n(?', '<!x)y'].join(''));
+		expect(issues.map((i) => i.kind)).toEqual(['lookbehind', 'lookbehind']);
+		expect(issues[0]!.message).toContain('iOS below 16.4');
+	});
+
+	it('does not treat named groups as lookbehind', () => {
+		expect(findHeadingPatternIssues('(?<name>abc)')).toEqual([]);
 	});
 });

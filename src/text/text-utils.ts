@@ -194,6 +194,36 @@ function splitIntoSections(markdown: string, maxHeadingDepth: number): string[] 
 	return sections;
 }
 
+export interface HeadingPatternIssue {
+	/** 1-based line number in the settings text. */
+	line: number;
+	pattern: string;
+	kind: 'invalid' | 'lookbehind';
+	message: string;
+}
+
+/**
+ * Checks a regex-per-line settings text: lines that don't compile (they are silently skipped when reading) and
+ * lookbehind patterns (`(?<=`, `(?<!`), which compile on desktop but not on iOS below 16.4. Blank lines are ignored.
+ */
+export function findHeadingPatternIssues(raw: string): HeadingPatternIssue[] {
+	const issues: HeadingPatternIssue[] = [];
+	raw.split('\n').forEach((line, i) => {
+		const pattern = line.trim();
+		if (!pattern) return;
+		try {
+			new RegExp(pattern, 'i');
+		} catch (error) {
+			issues.push({ line: i + 1, pattern, kind: 'invalid', message: `Line ${i + 1} is not a valid regular expression and will be skipped: ${error instanceof Error ? error.message : String(error)}` });
+			return;
+		}
+		if (/\(\?<[=!]/.test(pattern)) {
+			issues.push({ line: i + 1, pattern, kind: 'lookbehind', message: `Line ${i + 1} uses a lookbehind, which is not supported on iOS below 16.4; it may be ignored on older iPhones and iPads.` });
+		}
+	});
+	return issues;
+}
+
 /** Parses one regex-per-line settings text into compiled (case-insensitive) patterns, silently dropping invalid ones rather than blocking the whole read. */
 export function parseHeadingSkipPatterns(raw: string): RegExp[] {
 	const patterns: RegExp[] = [];

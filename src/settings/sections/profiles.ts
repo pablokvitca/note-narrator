@@ -1,5 +1,5 @@
 import { DropdownComponent, Notice, SettingDefinitionItem, SettingDefinitionPage, SettingGroupItem } from 'obsidian';
-import { ChunkerStyle } from '../../text/text-utils';
+import { ChunkerStyle, findHeadingPatternIssues } from '../../text/text-utils';
 import { ELEVENLABS_MODELS } from '../../tts/elevenlabs-models';
 import { ElevenLabsVoiceConfig, NarratorProfile, ReadingConfig, ReadingOverrides, createProfile, defaultVoiceConfig, getActiveProfile, getProvider, normalizeProfileSettings, resolveReadingConfig, uniqueName } from '../profiles';
 import { SettingsSection } from '../section';
@@ -296,12 +296,22 @@ export class ProfilesSection extends SettingsSection {
 			),
 			{
 				name: 'Skip sections by heading',
-				desc: "This profile's own list. One regex pattern per line.",
+				desc: "This profile's own list. One regex pattern per line. Lookbehind patterns are not supported on iOS below 16.4.",
 				render: (setting) => {
+					const warning = setting.descEl.createDiv({ cls: 'mod-warning' });
+					const showIssues = (value: string) => {
+						warning.setText(
+							findHeadingPatternIssues(value)
+								.map((issue) => issue.message)
+								.join('\n'),
+						);
+					};
 					setting.addTextArea((area) => {
 						area.setPlaceholder('Changelog');
 						area.inputEl.rows = 3;
+						showIssues(overrides.skipSectionHeadingPatterns ?? '');
 						area.setValue(overrides.skipSectionHeadingPatterns ?? '').onChange(async (value) => {
+							showIssues(value);
 							setOverride(overrides, 'skipSectionHeadingPatterns', value);
 							await this.plugin.saveSettings();
 						});
