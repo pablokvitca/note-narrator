@@ -39,8 +39,15 @@ export default class NoteNarratorPlugin extends Plugin {
 		const refreshIcons = debounce(() => void this.refreshActionIcons(), 1000, true);
 		this.registerEvent(this.app.metadataCache.on('changed', refreshIcons));
 		this.registerEvent(this.app.vault.on('modify', refreshIcons));
+		// The linked audio file being deleted or moved (from the file explorer or outside Obsidian) changes the status too.
+		this.registerEvent(this.app.vault.on('delete', refreshIcons));
+		this.registerEvent(this.app.vault.on('rename', refreshIcons));
+		// A note's link/hash actually changed (audio saved, or cleared from the panel): refresh right away.
+		this.registerEvent(this.reader.on('audio-status-change', () => void this.refreshActionIcons()));
 		this.registerEvent(
 			this.app.workspace.on('file-open', (file) => {
+				// The toolbar button belongs to the view, which is reused when the tab switches notes.
+				void this.refreshActionIcons();
 				if (file instanceof TFile) void this.reader.autoGenerateIfNeeded(file);
 			}),
 		);
