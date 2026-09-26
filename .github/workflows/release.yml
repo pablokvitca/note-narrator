@@ -44,7 +44,7 @@ jobs:
                   fi
 
                   gh release create "$tag" \
-                    main.js manifest.json styles.css \
+                    main.js manifest.json styles.css LICENSE THIRD_PARTY_NOTICES.md \
                     --title "$tag" \
                     --generate-notes \
                     "${prerelease_flag[@]}"

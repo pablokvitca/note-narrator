@@ -57,7 +57,7 @@ jobs:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
               run: |
                   gh release create "${{ steps.version.outputs.beta_version }}" \
-                    main.js manifest.json styles.css \
+                    main.js manifest.json styles.css LICENSE THIRD_PARTY_NOTICES.md \
                     --title "${{ steps.version.outputs.beta_version }}" \
                     --notes "Automatic beta build from \`${{ github.ref_name }}\` @ ${{ github.sha }}. Install via [BRAT](https://github.com/TfTHacker/obsidian42-brat) with beta versions enabled for this plugin. Superseded by the next push to this branch." \
                     --prerelease \
