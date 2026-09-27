@@ -1,6 +1,6 @@
 {
 	"name": "note-narrator",
-	"version": "0.17.0",
+	"version": "0.17.1",
 	"description": "Read notes aloud with text to speech. Requires an ElevenLabs account and API key. ElevenLabs charges for generated audio.",
 	"main": "main.js",
 	"type": "module",
