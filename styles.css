@@ -731,11 +731,11 @@
 	border-radius: 2px;
 }
 
+/* border-bottom instead of text-decoration-color/-thickness/text-underline-offset: same look, without the
+   partial-support warning those properties get flagged for. */
 .note-narrator-highlight-underline {
-	text-decoration: underline;
-	text-decoration-color: var(--interactive-accent);
-	text-decoration-thickness: 2px;
-	text-underline-offset: 3px;
+	border-bottom: 2px solid var(--interactive-accent);
+	padding-bottom: 1px;
 }
 
 /*
