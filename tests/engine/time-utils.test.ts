@@ -1,5 +1,37 @@
 import { describe, expect, it } from 'vitest';
-import { computeFullReadTimes, formatCurrentPartTimeText, formatFullReadTimeText, formatTime, formatTimeDisplay } from '../../src/engine/time-utils';
+import {
+	computeFullReadTimes,
+	formatCurrentPartTimeText,
+	formatFullReadTimeText,
+	formatTime,
+	formatTimeDisplay,
+	formatTimestampForFilename,
+	toLocalISOString,
+} from '../../src/engine/time-utils';
+
+describe('formatTimestampForFilename', () => {
+	it('zero-pads every field, "YYYY-MM-DD HHmmss"', () => {
+		expect(formatTimestampForFilename(new Date(2026, 0, 5, 3, 4, 5))).toBe('2026-01-05 030405');
+		expect(formatTimestampForFilename(new Date(2026, 8, 27, 14, 30, 5))).toBe('2026-09-27 143005');
+	});
+});
+
+describe('toLocalISOString', () => {
+	it('formats as ISO 8601 with milliseconds and a local UTC offset, not "Z"', () => {
+		const s = toLocalISOString(new Date(2026, 8, 27, 14, 30, 5, 123));
+		expect(s).toMatch(/^2026-09-27T14:30:05\.123[+-]\d{2}:\d{2}$/);
+	});
+
+	it("the offset's sign and magnitude match the date's own getTimezoneOffset()", () => {
+		const date = new Date(2026, 8, 27, 14, 30, 5);
+		const s = toLocalISOString(date);
+		const offsetMinutes = -date.getTimezoneOffset();
+		const sign = offsetMinutes >= 0 ? '+' : '-';
+		const abs = Math.abs(offsetMinutes);
+		const expected = `${sign}${String(Math.floor(abs / 60)).padStart(2, '0')}:${String(abs % 60).padStart(2, '0')}`;
+		expect(s.endsWith(expected)).toBe(true);
+	});
+});
 
 describe('formatTime', () => {
 	it('formats whole minutes and seconds with zero-padded seconds', () => {
