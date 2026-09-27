@@ -1,7 +1,7 @@
 {
 	"id": "note-narrator",
 	"name": "Note Narrator",
-	"version": "1.0.0",
+	"version": "1.0.1",
 	"minAppVersion": "1.13.1",
 	"description": "Read notes aloud with text to speech. Requires an ElevenLabs account and API key. ElevenLabs charges for generated audio.",
 	"author": "Pablo Kvitca",
