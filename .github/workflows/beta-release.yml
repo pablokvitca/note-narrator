@@ -14,6 +14,8 @@ on:
 
 permissions:
     contents: write
+    id-token: write
+    attestations: write
 
 jobs:
     beta:
@@ -26,6 +28,14 @@ jobs:
                   cache: 'npm'
             - run: npm ci
             - run: npm run build
+
+            # Signs main.js and styles.css with GitHub's build-provenance attestation, same as the
+            # stable release workflow -- see the comment there. The later manifest.json version
+            # stamp below doesn't touch these two files, so attesting them now is fine.
+            - name: Attest build provenance
+              uses: actions/attest-build-provenance@v2
+              with:
+                  subject-path: 'main.js, styles.css'
 
             - name: Compute beta version
               id: version
