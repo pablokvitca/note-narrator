@@ -70,7 +70,7 @@ export class GeneralSection extends SettingsSection {
 					},
 					{
 						name: 'Max heading depth for sections',
-						desc: 'Headings at or shallower than this depth (1 = #, 2 = ## and shallower, etc.) start a new section. Deeper headings stay within their enclosing section. Only applies to the Markdown-aware chunker. Lookbehind patterns are not supported on iOS below 16.4.',
+						desc: 'Headings at or shallower than this depth (1 = #, 2 = ## and shallower, etc.) start a new section. Deeper headings stay within their enclosing section. Only applies to the Markdown-aware chunker.',
 						control: {
 							type: 'slider',
 							key: 'maxHeadingDepth',
@@ -83,14 +83,28 @@ export class GeneralSection extends SettingsSection {
 					},
 					{
 						name: 'Skip sections by heading',
-						desc: 'One regex pattern per line. Any section whose heading text matches is skipped entirely when chunking/reading -- e.g. to always skip a "Changelog" or "Notes to self" section. Only applies to the Markdown-aware chunker.',
-						control: {
-							type: 'textarea',
-							key: 'skipSectionHeadingPatterns',
-							placeholder: 'Changelog\nNotes to self',
-							rows: 3,
-							validate: (value) => findHeadingPatternIssues(String(value)).find((issue) => issue.kind === 'invalid')?.message,
-							disabled: () => settings.chunkerStyle !== 'markdown-aware',
+						desc: 'One regex pattern per line. Any section whose heading text matches is skipped entirely when chunking/reading -- e.g. to always skip a "Changelog" or "Notes to self" section. Only applies to the Markdown-aware chunker. Lookbehind patterns are not supported on iOS below 16.4.',
+						render: (setting) => {
+							const warning = setting.descEl.createDiv({ cls: 'mod-warning' });
+							const showIssues = (value: string) => {
+								warning.setText(
+									findHeadingPatternIssues(value)
+										.map((issue) => issue.message)
+										.join('\n'),
+								);
+							};
+							setting.addTextArea((area) => {
+								area.setPlaceholder('Changelog\nnotes to self');
+								area.inputEl.rows = 3;
+								showIssues(settings.skipSectionHeadingPatterns);
+								area.setValue(settings.skipSectionHeadingPatterns).onChange(async (value) => {
+									showIssues(value);
+									if (findHeadingPatternIssues(value).some((issue) => issue.kind === 'invalid')) return;
+									settings.skipSectionHeadingPatterns = value;
+									await this.plugin.saveSettings();
+								});
+							});
+							this.trackDisabled(setting, () => settings.chunkerStyle !== 'markdown-aware');
 						},
 					},
 				],

@@ -247,7 +247,7 @@ export class ProfilesSection extends SettingsSection {
 		const global = () => getGlobalReadingConfig(this.settings);
 		const effective = (): ReadingConfig => resolveReadingConfig(global(), overrides);
 
-		const onOff = (value: boolean) => (value ? 'On' : 'Off');
+		const onOff = (value: boolean) => (value ? 'on' : 'off');
 		const booleanRow = (key: 'readTitle' | 'readProperties' | 'stripMarkdownComments' | 'stripCommentDelimiters' | 'announceComments', name: string, disabled?: () => boolean) =>
 			this.dropdownRow(
 				name,
