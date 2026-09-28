@@ -1,8 +1,23 @@
 import { DropdownComponent, Notice, SettingDefinitionItem, SettingDefinitionPage, SettingGroupItem } from 'obsidian';
 import { ChunkerStyle, findHeadingPatternIssues } from '../../text/text-utils';
 import { ELEVENLABS_MODELS } from '../../tts/elevenlabs-models';
+import { GEMINI_MODELS, GEMINI_VOICES } from '../../tts/gemini-models';
 import { OPENAI_MODELS, OPENAI_VOICES } from '../../tts/openai-models';
-import { ElevenLabsVoiceConfig, NarratorProfile, OpenAIVoiceConfig, ReadingConfig, ReadingOverrides, createProfile, defaultVoiceConfig, getActiveProfile, getProvider, normalizeProfileSettings, resolveReadingConfig, uniqueName } from '../profiles';
+import {
+	ElevenLabsVoiceConfig,
+	GeminiVoiceConfig,
+	NarratorProfile,
+	OpenAIVoiceConfig,
+	ReadingConfig,
+	ReadingOverrides,
+	createProfile,
+	defaultVoiceConfig,
+	getActiveProfile,
+	getProvider,
+	normalizeProfileSettings,
+	resolveReadingConfig,
+	uniqueName,
+} from '../profiles';
 import { SettingsSection } from '../section';
 import { getGlobalReadingConfig } from '../settings';
 
@@ -161,6 +176,8 @@ export class ProfilesSection extends SettingsSection {
 			voice = this.voices.voicesByProvider.get(profile.providerId)?.find((v) => v.voiceId === elevenLabsVoice.voiceId)?.name ?? elevenLabsVoice.voiceId;
 		} else if (profile.voice.type === 'openai') {
 			voice = OPENAI_VOICES[profile.voice.voice] ?? profile.voice.voice;
+		} else if (profile.voice.type === 'gemini') {
+			voice = GEMINI_VOICES[profile.voice.voiceName] ?? profile.voice.voiceName;
 		}
 		return [provider?.name ?? 'No provider', voice].filter(Boolean).join(' · ');
 	}
@@ -183,6 +200,8 @@ export class ProfilesSection extends SettingsSection {
 				return this.elevenLabsVoiceRows(profile);
 			case 'openai':
 				return this.openAIVoiceRows(profile);
+			case 'gemini':
+				return this.geminiVoiceRows(profile);
 		}
 	}
 
@@ -280,6 +299,37 @@ export class ProfilesSection extends SettingsSection {
 					voice().instructions = value;
 				},
 				{ placeholder: 'Speak in a calm, measured voice.', disabled: () => !isGpt4oMiniTts() },
+			),
+		];
+	}
+
+	/**
+	 * Rows for a Gemini narrator's voice configuration. Unlike ElevenLabs, Gemini's voices are a small fixed
+	 * set shipped with the model (not fetched per-account), so this is a plain static dropdown with no
+	 * refresh button or network call. Gemini also has no numeric stability/similarity sliders -- style is
+	 * steered with a short natural-language instruction instead, per Google's own examples (e.g. "Say
+	 * cheerfully: ...").
+	 */
+	private geminiVoiceRows(profile: NarratorProfile): SettingGroupItem[] {
+		const voice = (): GeminiVoiceConfig => {
+			if (profile.voice.type !== 'gemini') throw new Error('Narrator profile is not a Gemini profile.');
+			return profile.voice;
+		};
+
+		return [
+			this.dropdownRow('Voice', "One of Gemini's prebuilt voices.", GEMINI_VOICES, () => voice().voiceName, (value) => {
+				voice().voiceName = value;
+			}),
+			this.dropdownRow('Model', 'The Gemini text-to-speech model to use.', GEMINI_MODELS, () => voice().modelId, (value) => {
+				voice().modelId = value;
+			}),
+			this.textRow(
+				'Style instructions',
+				'Optional. A short natural-language instruction steering tone and delivery, e.g. "Say in a calm, warm voice". Prepended to the text sent for narration.',
+				() => voice().stylePrompt,
+				(value) => {
+					voice().stylePrompt = value;
+				},
 			),
 		];
 	}
