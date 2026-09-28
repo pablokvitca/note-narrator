@@ -1,5 +1,7 @@
 import { App } from 'obsidian';
 import type { ProviderEntry, ProviderType, VoiceConfig } from '../settings/profiles';
+import { findAwsVoice } from './aws-models';
+import { AWSProvider } from './aws-provider';
 import { ElevenLabsProvider, getElevenLabsVoiceName } from './elevenlabs-provider';
 import { GEMINI_VOICES } from './gemini-models';
 import { GeminiProvider } from './gemini-provider';
@@ -14,9 +16,9 @@ import { AudioFormat, TTSProvider } from './provider';
 
 /**
  * A provider's credentials, shaped per provider type -- most providers are a single API key, but some (e.g.
- * a request-signing backend) need several distinct fields instead of one opaque string. Only the `elevenlabs`
- * case is actually constructed while `ProviderEntry` itself only has that one variant; the others exist so
- * each provider's own branch can add its case without reshaping this type.
+ * a request-signing backend) need several distinct fields instead of one opaque string. AWS's SigV4
+ * credentials are the clearest example: Polly needs an access key ID, a secret access key, and a region,
+ * which just don't fit the "one API key" shape every other provider uses.
  */
 export type ProviderCredentials =
 	| { type: 'elevenlabs'; apiKey: string }
@@ -24,7 +26,7 @@ export type ProviderCredentials =
 	| { type: 'gemini'; apiKey: string }
 	| { type: 'aws'; accessKeyId: string; secretAccessKey: string; region: string };
 
-/** The provider's credentials from Obsidian's secret storage, or null when none are (fully) configured. */
+/** The provider's credentials from Obsidian's secret storage, or null when they're not fully configured yet. */
 export function getProviderCredentials(app: App, provider: ProviderEntry): ProviderCredentials | null {
 	switch (provider.type) {
 		case 'elevenlabs': {
@@ -38,6 +40,12 @@ export function getProviderCredentials(app: App, provider: ProviderEntry): Provi
 		case 'gemini': {
 			const apiKey = app.secretStorage.getSecret(provider.apiKeySecretId);
 			return apiKey ? { type: 'gemini', apiKey } : null;
+		}
+		case 'aws': {
+			const accessKeyId = app.secretStorage.getSecret(provider.accessKeyIdSecretId);
+			const secretAccessKey = app.secretStorage.getSecret(provider.secretAccessKeySecretId);
+			if (!accessKeyId || !secretAccessKey || !provider.region) return null;
+			return { type: 'aws', accessKeyId, secretAccessKey, region: provider.region };
 		}
 	}
 }
@@ -61,6 +69,9 @@ export function createTTSProvider(provider: ProviderEntry, voice: VoiceConfig, c
 			if (voice.type !== 'gemini') throw new Error("The narrator's voice configuration doesn't match its provider type.");
 			if (credentials.type !== 'gemini') throw new Error("The narrator's credentials don't match its provider type.");
 			return new GeminiProvider(credentials.apiKey, voice, onRateLimited);
+		case 'aws':
+			if (voice.type !== 'aws' || credentials.type !== 'aws') throw new Error("The narrator's voice configuration doesn't match its provider type.");
+			return new AWSProvider(credentials.accessKeyId, credentials.secretAccessKey, credentials.region, voice, onRateLimited);
 	}
 }
 
@@ -84,6 +95,10 @@ export async function resolveVoiceLabel(provider: ProviderEntry, voice: VoiceCon
 			// Gemini's voices are a fixed, static set (not fetched per-account), so there's no network call needed.
 			if (voice.type !== 'gemini') return 'voice';
 			return GEMINI_VOICES[voice.voiceName] ?? voice.voiceName;
+		case 'aws':
+			if (voice.type !== 'aws') return 'voice';
+			// Polly's voice list is static, so this never needs a network call the way ElevenLabs' does.
+			return findAwsVoice(voice.voiceId)?.name ?? voice.voiceId;
 	}
 }
 
@@ -96,5 +111,7 @@ export function providerOutputFormat(type: ProviderType): AudioFormat {
 			return 'mp3';
 		case 'gemini':
 			return 'wav';
+		case 'aws':
+			return 'mp3';
 	}
 }

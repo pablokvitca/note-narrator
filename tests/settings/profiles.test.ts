@@ -117,6 +117,7 @@ describe('Gemini provider type', () => {
 	it('creates a Gemini provider and its default voice configuration', () => {
 		const provider = createProvider('gemini', 'Gemini');
 		expect(provider).toMatchObject({ type: 'gemini', parallelGenerationEnabled: true, maxParallelGeneration: 2, maxBackgroundParallelGeneration: 1 });
+		if (provider.type !== 'gemini') throw new Error('expected a Gemini provider');
 		expect(provider.apiKeySecretId).toBeTruthy();
 
 		const voice = asGemini(defaultVoiceConfig('gemini'));
@@ -235,6 +236,12 @@ describe('helpers', () => {
 	it('uses the OpenAI character limit for an OpenAI voice', () => {
 		expect(providerCharLimit(defaultVoiceConfig('openai'))).toBe(4096);
 	});
+
+	it('looks up the AWS character limit regardless of engine', () => {
+		const provider = createProvider('aws', 'A');
+		const profile = createProfile(provider, 'One');
+		expect(providerCharLimit(profile.voice)).toBe(3000);
+	});
 });
 
 describe('openai provider/voice defaults', () => {
@@ -272,5 +279,34 @@ describe('openai provider/voice defaults', () => {
 		const profile = createProfile(provider, 'One');
 		expect(savedVoiceMatches('21m00Tcm4TlvDq8ikWAM', profile.voice)).toBe(false);
 		expect(savedVoiceMatches(voiceFingerprint(profile.voice), profile.voice)).toBe(true);
+	});
+});
+
+describe('AWS provider/voice defaults', () => {
+	it('creates an AWS provider with two credential secrets and a region', () => {
+		const provider = createProvider('aws', 'Polly');
+		if (provider.type !== 'aws') throw new Error('expected an AWS provider');
+		expect(provider.accessKeyIdSecretId).toBeTruthy();
+		expect(provider.secretAccessKeySecretId).toBeTruthy();
+		expect(provider.accessKeyIdSecretId).not.toBe(provider.secretAccessKeySecretId);
+		expect(provider.region).toBeTruthy();
+	});
+
+	it('defaults to a voice/engine pair that actually supports that engine', () => {
+		const voice = defaultVoiceConfig('aws');
+		if (voice.type !== 'aws') throw new Error('expected an AWS voice config');
+		expect(voice.voiceId).toBeTruthy();
+		expect(voice.engine).toBeTruthy();
+	});
+
+	it('fingerprints an AWS voice by voice ID and engine, not by provider or profile identity', () => {
+		const provider = createProvider('aws', 'A');
+		const a = createProfile(provider, 'One');
+		const b = createProfile(provider, 'Two');
+		expect(voiceFingerprint(a.voice)).toBe(voiceFingerprint(b.voice));
+
+		if (a.voice.type !== 'aws') throw new Error('expected an AWS voice');
+		const changedEngine = { ...a.voice, engine: 'standard' as const };
+		expect(voiceFingerprint(changedEngine)).not.toBe(voiceFingerprint(a.voice));
 	});
 });

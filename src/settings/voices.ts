@@ -3,7 +3,12 @@ import { ElevenLabsVoice, listElevenLabsVoices } from '../tts/elevenlabs-provide
 import { ProviderEntry } from './profiles';
 import { getProviderCredentials } from '../tts/registry';
 
-/** The voices each provider's account offers, loaded on demand for the narrator profile voice dropdown. */
+/**
+ * The voices each ElevenLabs provider's account offers, loaded on demand for the narrator profile voice
+ * dropdown. AWS providers don't use this cache: Polly's voice list is static (see `aws-models.ts`), so its
+ * settings UI reads `AWS_POLLY_VOICES` directly instead of going through here. Generalizing this cache to
+ * cover both shapes (one fetched per-account, one static) is a separate decision -- left alone for now.
+ */
 export class VoiceCache {
 	readonly voicesByProvider = new Map<string, ElevenLabsVoice[]>();
 	private voiceLoads = new Map<string, Promise<void>>();
@@ -22,8 +27,9 @@ export class VoiceCache {
 		dropdown.setValue(currentVoiceId);
 	}
 
-	/** Loads (once, unless `force`) the voices available to a provider, for the profile voice dropdown. */
+	/** Loads (once, unless `force`) the voices available to an ElevenLabs provider, for the profile voice dropdown. */
 	ensureVoices(provider: ProviderEntry, notify = false): Promise<void> {
+		if (provider.type !== 'elevenlabs') return Promise.resolve();
 		if (this.voicesByProvider.has(provider.id)) return Promise.resolve();
 		const existing = this.voiceLoads.get(provider.id);
 		if (existing) return existing;

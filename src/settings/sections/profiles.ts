@@ -1,9 +1,11 @@
 import { DropdownComponent, Notice, SettingDefinitionItem, SettingDefinitionPage, SettingGroupItem } from 'obsidian';
 import { ChunkerStyle, findHeadingPatternIssues } from '../../text/text-utils';
+import { AWS_ENGINE_LABELS, AWS_POLLY_VOICES, awsVoicesForEngine } from '../../tts/aws-models';
 import { ELEVENLABS_MODELS } from '../../tts/elevenlabs-models';
 import { GEMINI_MODELS, GEMINI_VOICES } from '../../tts/gemini-models';
 import { OPENAI_MODELS, OPENAI_VOICES } from '../../tts/openai-models';
 import {
+	AWSVoiceConfig,
 	ElevenLabsVoiceConfig,
 	GeminiVoiceConfig,
 	NarratorProfile,
@@ -178,6 +180,9 @@ export class ProfilesSection extends SettingsSection {
 			voice = OPENAI_VOICES[profile.voice.voice] ?? profile.voice.voice;
 		} else if (profile.voice.type === 'gemini') {
 			voice = GEMINI_VOICES[profile.voice.voiceName] ?? profile.voice.voiceName;
+		} else if (profile.voice.type === 'aws') {
+			const awsVoice = profile.voice;
+			voice = AWS_POLLY_VOICES.find((v) => v.voiceId === awsVoice.voiceId)?.name ?? awsVoice.voiceId;
 		}
 		return [provider?.name ?? 'No provider', voice].filter(Boolean).join(' · ');
 	}
@@ -202,6 +207,8 @@ export class ProfilesSection extends SettingsSection {
 				return this.openAIVoiceRows(profile);
 			case 'gemini':
 				return this.geminiVoiceRows(profile);
+			case 'aws':
+				return this.awsVoiceRows(profile);
 		}
 	}
 
@@ -331,6 +338,58 @@ export class ProfilesSection extends SettingsSection {
 					voice().stylePrompt = value;
 				},
 			),
+		];
+	}
+
+	/**
+	 * Rows for a profile using Amazon Polly. Unlike ElevenLabs' account-fetched voices, Polly's voice list is
+	 * static (`AWS_POLLY_VOICES`, see aws-models.ts), so there's no refresh button or async load here -- and
+	 * the voice options offered depend on the chosen engine, since not every voice supports every engine.
+	 */
+	private awsVoiceRows(profile: NarratorProfile): SettingGroupItem[] {
+		const voice = (): AWSVoiceConfig => {
+			if (profile.voice.type !== 'aws') throw new Error('Narrator profile is not an Amazon Polly profile.');
+			return profile.voice;
+		};
+
+		let voiceDropdown!: DropdownComponent;
+		const populateVoiceDropdown = () => {
+			const options = awsVoicesForEngine(voice().engine);
+			voiceDropdown.selectEl.empty();
+			for (const option of options) voiceDropdown.addOption(option.voiceId, `${option.name} (${option.languageName})`);
+			if (!options.some((option) => option.voiceId === voice().voiceId)) voiceDropdown.addOption(voice().voiceId, `${voice().voiceId} (custom)`);
+			voiceDropdown.setValue(voice().voiceId);
+		};
+
+		return [
+			this.dropdownRow(
+				'Engine',
+				'The Polly synthesis engine to use. Not every voice supports every engine.',
+				AWS_ENGINE_LABELS,
+				() => voice().engine,
+				(value) => {
+					const config = voice();
+					config.engine = value as AWSVoiceConfig['engine'];
+					if (!awsVoicesForEngine(config.engine).some((v) => v.voiceId === config.voiceId)) {
+						config.voiceId = awsVoicesForEngine(config.engine)[0]?.voiceId ?? config.voiceId;
+					}
+					populateVoiceDropdown();
+				},
+			),
+			{
+				name: 'Voice',
+				desc: 'Voices offered by the chosen engine. See https://docs.aws.amazon.com/polly/latest/dg/voicelist.html for the full list and language coverage.',
+				render: (setting) => {
+					setting.addDropdown((dropdown) => {
+						voiceDropdown = dropdown;
+						populateVoiceDropdown();
+						dropdown.onChange(async (value) => {
+							voice().voiceId = value;
+							await this.plugin.saveSettings();
+						});
+					});
+				},
+			},
 		];
 	}
 

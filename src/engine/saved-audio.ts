@@ -66,6 +66,8 @@ export class SavedAudio {
 				return voice.voice;
 			case 'gemini':
 				return voice.voiceName;
+			case 'aws':
+				return voice.voiceId;
 		}
 	}
 
