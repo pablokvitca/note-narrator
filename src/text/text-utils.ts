@@ -289,6 +289,18 @@ export function chunkNote(
 	return chunkBySentence(stripMarkdown(rawText, stripOptions).trim(), maxLength);
 }
 
+/**
+ * The note body's first heading (any level, `#` through `######`, anywhere in the body, not just at the
+ * very top), with inline Markdown stripped the same way the reader strips regular text -- so
+ * `# **My Note**` matches a title of `My Note`. Null if the body (already past frontmatter) has no heading.
+ */
+export function firstHeadingText(body: string): string | null {
+	const match = /^#{1,6}[ \t]+(.+)$/m.exec(body);
+	if (!match) return null;
+	const text = stripMarkdown((match[1] ?? '').trim(), DEFAULT_STRIP_MARKDOWN_OPTIONS).trim();
+	return text || null;
+}
+
 function formatPropertyValue(value: unknown): string {
 	if (Array.isArray(value)) return value.map(formatPropertyValue).join(', ');
 	if (value === null || value === undefined) return '';
@@ -297,15 +309,21 @@ function formatPropertyValue(value: unknown): string {
 	return JSON.stringify(value);
 }
 
-/** Builds the optional spoken preamble (title, then properties) prepended before a note's content. */
+/**
+ * Builds the optional spoken preamble (title, then properties) prepended before a note's content. `body`
+ * (the note text after frontmatter, before any stripping) is only used for `skipTitleWhenMatchingHeading`;
+ * pass an empty string if that option is off and the body isn't otherwise available.
+ */
 export function buildReadingPreamble(
 	title: string | null,
 	frontmatter: Record<string, unknown> | undefined,
-	options: { readTitle: boolean; readProperties: boolean },
+	body: string,
+	options: { readTitle: boolean; readProperties: boolean; skipTitleWhenMatchingHeading: boolean },
 ): string {
 	const parts: string[] = [];
 
-	if (options.readTitle && title) {
+	const skipTitle = options.skipTitleWhenMatchingHeading && title !== null && title === firstHeadingText(body);
+	if (options.readTitle && title && !skipTitle) {
 		parts.push(title);
 	}
 
