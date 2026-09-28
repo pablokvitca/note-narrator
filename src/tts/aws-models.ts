@@ -9,6 +9,9 @@
  * so a static list avoids a network round trip for something that rarely changes.
  */
 
+/** How Amazon Polly is named in the settings and in error messages. */
+export const AWS_POLLY_NAME = 'Amazon Polly';
+
 export type AWSEngine = 'standard' | 'neural' | 'long-form' | 'generative';
 
 export const AWS_ENGINE_LABELS: Record<AWSEngine, string> = {

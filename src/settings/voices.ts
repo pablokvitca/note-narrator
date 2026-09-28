@@ -3,7 +3,7 @@ import { ElevenLabsVoice, listElevenLabsVoices } from '../tts/elevenlabs-provide
 import { ProviderEntry, ProviderType } from './profiles';
 import { getProviderCredentials } from '../tts/registry';
 
-/** The voices each provider's account offers, loaded on demand for the narrator profile voice dropdown. */
+/** The voices each ElevenLabs provider's account offers, loaded on demand for the narrator profile voice dropdown. Other provider types have fixed voice lists. */
 export class VoiceCache {
 	readonly voicesByProvider = new Map<string, ElevenLabsVoice[]>();
 	private voiceLoads = new Map<string, Promise<void>>();
@@ -29,8 +29,6 @@ export class VoiceCache {
 		if (existing) return existing;
 
 		const credentials = getProviderCredentials(this.app, provider);
-		// VoiceCache is ElevenLabs-only today (see the class doc); a provider whose credentials aren't the
-		// single-API-key elevenlabs shape has no voice list to fetch here.
 		if (!credentials || credentials.type !== ProviderType.ElevenLabs) return Promise.resolve();
 
 		const load = (async () => {

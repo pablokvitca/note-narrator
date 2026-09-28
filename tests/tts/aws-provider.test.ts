@@ -1,5 +1,6 @@
 import type { RequestUrlResponse } from 'obsidian';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ProviderType } from '../../src/settings/profiles';
 
 /**
  * A request as `requestUrl` receives it -- just the fields this provider (and these tests) care about,
@@ -60,7 +61,7 @@ describe('AWSProvider.synthesize', () => {
 
 	it('signs and sends the request, returning the audio bytes on success', async () => {
 		requestUrl.mockResolvedValueOnce(audioResponse([1, 2, 3]));
-		const provider = new AWSProvider('AKID', 'secret', 'us-east-1', { type: 'aws', voiceId: 'Joanna', engine: 'neural' });
+		const provider = new AWSProvider('AKID', 'secret', 'us-east-1', { type: ProviderType.AWS, voiceId: 'Joanna', engine: 'neural' });
 
 		const result = await provider.synthesize('Hello world');
 
@@ -76,7 +77,7 @@ describe('AWSProvider.synthesize', () => {
 
 	it('uses a different region in the request URL and signature scope', async () => {
 		requestUrl.mockResolvedValueOnce(audioResponse([9]));
-		const provider = new AWSProvider('AKID', 'secret', 'eu-west-1', { type: 'aws', voiceId: 'Amy', engine: 'standard' });
+		const provider = new AWSProvider('AKID', 'secret', 'eu-west-1', { type: ProviderType.AWS, voiceId: 'Amy', engine: 'standard' });
 
 		await provider.synthesize('Bonjour');
 
@@ -91,7 +92,7 @@ describe('AWSProvider.synthesize', () => {
 			.mockResolvedValueOnce(jsonResponse(400, { __type: 'ThrottlingException', message: 'Rate exceeded' }))
 			.mockResolvedValueOnce(audioResponse([7, 8]));
 		const onRateLimited = vi.fn();
-		const provider = new AWSProvider('AKID', 'secret', 'us-east-1', { type: 'aws', voiceId: 'Joanna', engine: 'neural' }, onRateLimited);
+		const provider = new AWSProvider('AKID', 'secret', 'us-east-1', { type: ProviderType.AWS, voiceId: 'Joanna', engine: 'neural' }, onRateLimited);
 
 		const result = await provider.synthesize('Retry me');
 
@@ -102,14 +103,14 @@ describe('AWSProvider.synthesize', () => {
 
 	it('does not retry a non-throttling error', async () => {
 		requestUrl.mockResolvedValueOnce(jsonResponse(400, { __type: 'ValidationException', message: 'Invalid voice' }));
-		const provider = new AWSProvider('AKID', 'secret', 'us-east-1', { type: 'aws', voiceId: 'Joanna', engine: 'neural' });
+		const provider = new AWSProvider('AKID', 'secret', 'us-east-1', { type: ProviderType.AWS, voiceId: 'Joanna', engine: 'neural' });
 
 		await expect(provider.synthesize('Bad request')).rejects.toThrow(/Amazon Polly request failed \(400\)/);
 		expect(requestUrl).toHaveBeenCalledTimes(1);
 	});
 
 	it('checks isCancelled before each attempt and never calls requestUrl once cancelled', async () => {
-		const provider = new AWSProvider('AKID', 'secret', 'us-east-1', { type: 'aws', voiceId: 'Joanna', engine: 'neural' });
+		const provider = new AWSProvider('AKID', 'secret', 'us-east-1', { type: ProviderType.AWS, voiceId: 'Joanna', engine: 'neural' });
 
 		await expect(provider.synthesize('Text', () => true)).rejects.toThrow('Generation was cancelled.');
 		expect(requestUrl).not.toHaveBeenCalled();

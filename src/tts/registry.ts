@@ -5,6 +5,8 @@ import { GeminiProvider } from './gemini-provider';
 import { OPENAI_VOICES } from './openai-models';
 import { OpenAIProvider } from './openai-provider';
 import { AudioFormat, TTSProvider } from './provider';
+import { findAwsVoice } from './aws-models';
+import { AWSProvider } from './aws-provider';
 
 /*
  * The one place that maps a provider *type* to its implementation. Adding a TTS backend means adding a
@@ -15,7 +17,9 @@ import { AudioFormat, TTSProvider } from './provider';
  * A provider's credentials, shaped per provider type: most are a single API key, but a provider that signs its
  * requests needs several fields instead of one string. Each provider type adds its own member.
  */
-export type ProviderCredentials = { type: ProviderType.ElevenLabs | ProviderType.OpenAI | ProviderType.Gemini; apiKey: string };
+export type ProviderCredentials =
+	| { type: ProviderType.ElevenLabs | ProviderType.OpenAI | ProviderType.Gemini; apiKey: string }
+	| { type: ProviderType.AWS; accessKeyId: string; secretAccessKey: string; region: string };
 
 /** The provider's credentials from Obsidian's secret storage, or null when they aren't all set. */
 export function getProviderCredentials(app: App, provider: ProviderEntry): ProviderCredentials | null {
@@ -32,6 +36,12 @@ export function getProviderCredentials(app: App, provider: ProviderEntry): Provi
 			const apiKey = app.secretStorage.getSecret(provider.apiKeySecretId);
 			return apiKey ? { type: ProviderType.Gemini, apiKey } : null;
 		}
+		case ProviderType.AWS: {
+			const accessKeyId = app.secretStorage.getSecret(provider.accessKeyIdSecretId);
+			const secretAccessKey = app.secretStorage.getSecret(provider.secretAccessKeySecretId);
+			if (!accessKeyId || !secretAccessKey || !provider.region) return null;
+			return { type: ProviderType.AWS, accessKeyId, secretAccessKey, region: provider.region };
+		}
 	}
 }
 
@@ -42,6 +52,8 @@ export function credentialsLabel(type: ProviderType): string {
 		case ProviderType.OpenAI:
 		case ProviderType.Gemini:
 			return 'API key';
+		case ProviderType.AWS:
+			return 'access keys';
 	}
 }
 
@@ -64,6 +76,10 @@ export function createTTSProvider(provider: ProviderEntry, voice: VoiceConfig, c
 			if (voice.type !== ProviderType.Gemini) throw new Error("The narrator's voice configuration doesn't match its provider type.");
 			if (credentials.type !== ProviderType.Gemini) throw new Error("The narrator's credentials don't match its provider type.");
 			return new GeminiProvider(credentials.apiKey, voice, onRateLimited);
+		case ProviderType.AWS:
+			if (voice.type !== ProviderType.AWS) throw new Error("The narrator's voice configuration doesn't match its provider type.");
+			if (credentials.type !== ProviderType.AWS) throw new Error("The narrator's credentials don't match its provider type.");
+			return new AWSProvider(credentials.accessKeyId, credentials.secretAccessKey, credentials.region, voice, onRateLimited);
 	}
 }
 
@@ -86,6 +102,9 @@ export async function resolveVoiceLabel(provider: ProviderEntry, voice: VoiceCon
 		case ProviderType.Gemini:
 			// A fixed list, named by its IDs: nothing to look up.
 			return fallbackVoiceLabel(voice);
+		case ProviderType.AWS:
+			if (voice.type !== ProviderType.AWS) return 'voice';
+			return findAwsVoice(voice.voiceId)?.name ?? voice.voiceId;
 	}
 }
 
@@ -98,6 +117,8 @@ export function fallbackVoiceLabel(voice: VoiceConfig): string {
 			return voice.voice;
 		case ProviderType.Gemini:
 			return voice.voiceName;
+		case ProviderType.AWS:
+			return voice.voiceId;
 	}
 }
 
@@ -106,6 +127,7 @@ export function providerOutputFormat(type: ProviderType): AudioFormat {
 	switch (type) {
 		case ProviderType.ElevenLabs:
 		case ProviderType.OpenAI:
+		case ProviderType.AWS:
 			return AudioFormat.Mp3;
 		case ProviderType.Gemini:
 			return AudioFormat.Wav;

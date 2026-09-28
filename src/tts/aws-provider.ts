@@ -1,5 +1,6 @@
 import { RequestUrlResponse, requestUrl } from 'obsidian';
 import type { AWSVoiceConfig } from '../settings/profiles';
+import { AWS_POLLY_NAME } from './aws-models';
 import { signAwsRequest } from './aws-sigv4';
 import { AudioFormat, TTSProvider } from './provider';
 import { RetryPolicy, requestWithRetry } from './request';
@@ -22,7 +23,7 @@ export function isThrottlingResponse(response: RequestUrlResponse): boolean {
 }
 
 export class AWSProvider implements TTSProvider {
-	readonly outputFormat: AudioFormat = 'mp3';
+	readonly outputFormat = AudioFormat.Mp3;
 
 	constructor(
 		private accessKeyId: string,
@@ -37,7 +38,7 @@ export class AWSProvider implements TTSProvider {
 		const url = `https://polly.${this.region}.amazonaws.com/v1/speech`;
 		const body = JSON.stringify({ Engine: this.voice.engine, OutputFormat: 'mp3', Text: text, VoiceId: this.voice.voiceId });
 		const response = await requestWithRetry(
-			'Amazon Polly',
+			AWS_POLLY_NAME,
 			async () => {
 				// Signed again for every attempt: a signature carries the time it was made.
 				const headers = await signAwsRequest({
