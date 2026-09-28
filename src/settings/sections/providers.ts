@@ -1,4 +1,5 @@
 import { SecretComponent, SettingDefinitionItem, SettingDefinitionPage, SettingGroupItem } from 'obsidian';
+import { AWS_POLLY_REGIONS } from '../../tts/aws-models';
 import { ConfirmModal } from '../../ui/confirm-modal';
 import { PROVIDER_TYPE_LABELS, ProviderEntry, ProviderType, createProfile, createProvider, defaultVoiceConfig, normalizeProfileSettings, uniqueName } from '../profiles';
 import { SettingsSection } from '../section';
@@ -146,6 +147,42 @@ export class ProvidersSection extends SettingsSection {
 							);
 						},
 					},
+				];
+			case 'aws':
+				return [
+					{
+						name: 'Access key ID',
+						desc: 'The AWS IAM access key ID for an account/role with Polly access (the "polly:SynthesizeSpeech" permission). Stored in Obsidian\'s secret storage, not in this plugin\'s settings file.',
+						render: (setting) => {
+							setting.addComponent((el) =>
+								new SecretComponent(this.app, el).setValue(provider.accessKeyIdSecretId).onChange(async (value) => {
+									provider.accessKeyIdSecretId = value;
+									await this.plugin.saveSettings();
+								}),
+							);
+						},
+					},
+					{
+						name: 'Secret access key',
+						desc: "Stored in Obsidian's secret storage, not in this plugin's settings file.",
+						render: (setting) => {
+							setting.addComponent((el) =>
+								new SecretComponent(this.app, el).setValue(provider.secretAccessKeySecretId).onChange(async (value) => {
+									provider.secretAccessKeySecretId = value;
+									await this.plugin.saveSettings();
+								}),
+							);
+						},
+					},
+					this.dropdownRow(
+						'Region',
+						"The AWS region Polly requests are sent to. Not every voice or engine is available in every region -- check AWS's own Polly voice/region documentation if a voice you expect is missing.",
+						AWS_POLLY_REGIONS,
+						() => provider.region,
+						(value) => {
+							provider.region = value;
+						},
+					),
 				];
 		}
 	}

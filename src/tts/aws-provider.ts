@@ -1,7 +1,7 @@
 import { requestUrl } from 'obsidian';
 import type { AWSVoiceConfig } from '../settings/profiles';
 import { signAwsRequest } from './aws-sigv4';
-import { TTSProvider } from './provider';
+import { AudioFormat, TTSProvider } from './provider';
 
 /**
  * With a high "max parallel chunk generation" setting, many requests can be dispatched at once and hit
@@ -33,6 +33,8 @@ function isThrottlingResponse(status: number, bodyText: string): boolean {
 }
 
 export class AWSProvider implements TTSProvider {
+	readonly outputFormat: AudioFormat = 'mp3';
+
 	constructor(
 		private accessKeyId: string,
 		private secretAccessKey: string,
