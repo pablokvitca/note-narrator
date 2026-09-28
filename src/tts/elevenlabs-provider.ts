@@ -1,6 +1,6 @@
 import { requestUrl } from 'obsidian';
 import type { ElevenLabsVoiceConfig } from '../settings/profiles';
-import { TTSProvider } from './provider';
+import { AudioFormat, TTSProvider } from './provider';
 
 export interface ElevenLabsVoice {
 	voiceId: string;
@@ -59,6 +59,8 @@ function sleep(ms: number): Promise<void> {
 }
 
 export class ElevenLabsProvider implements TTSProvider {
+	readonly outputFormat: AudioFormat = 'mp3';
+
 	constructor(
 		private apiKey: string,
 		private voice: ElevenLabsVoiceConfig,

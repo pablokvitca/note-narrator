@@ -4,7 +4,7 @@ import { cleanVaultFolderPath } from './vault-path';
 import { DEFAULT_SETTINGS, NoteNarratorSettings } from '../settings/settings';
 import { ResolvedNarrator, VoiceConfig } from '../settings/profiles';
 import { concatArrayBuffers, sanitizeFilenameComponent } from './audio-utils';
-import { getProviderApiKey, resolveVoiceLabel } from '../tts/registry';
+import { getProviderCredentials, providerOutputFormat, resolveVoiceLabel } from '../tts/registry';
 import { hashText, stripFrontmatter } from '../text/text-utils';
 
 /**
@@ -22,9 +22,10 @@ export class SavedAudio {
 
 	async saveAudioFile(chunks: ArrayBuffer[], sourceFile: TFile | null, chunkDurations: number[], narrator: ResolvedNarrator): Promise<void> {
 		try {
-			const apiKey = getProviderApiKey(this.app, narrator.provider);
-			const voiceName = apiKey ? await resolveVoiceLabel(narrator.provider, narrator.voice, apiKey) : this.voiceFallbackLabel(narrator.voice);
-			const data = concatArrayBuffers(chunks);
+			const credentials = getProviderCredentials(this.app, narrator.provider);
+			const voiceName = credentials ? await resolveVoiceLabel(narrator.provider, narrator.voice, credentials) : this.voiceFallbackLabel(narrator.voice);
+			const format = providerOutputFormat(narrator.provider.type);
+			const data = concatArrayBuffers(chunks, format);
 
 			const existingAudioFile =
 				this.settings.saveVersioning === 'replace' && this.settings.linkAudioInNote && sourceFile
@@ -41,7 +42,7 @@ export class SavedAudio {
 				await this.ensureFolder(folderPath);
 				const noteName = sourceFile?.basename ?? `Reading ${moment().format('YYYY-MM-DD HHmmss')}`;
 				const baseName = sanitizeFilenameComponent(`${noteName} (${voiceName})`);
-				const path = await this.uniquePath(folderPath, baseName, 'mp3');
+				const path = await this.uniquePath(folderPath, baseName, format);
 				audioFile = await this.app.vault.createBinary(path, data);
 				new Notice(`Saved audio to ${path}`);
 			}
