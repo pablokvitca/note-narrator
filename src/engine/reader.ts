@@ -6,7 +6,7 @@ import { HighlightGranularity, NoteNarratorSettings } from '../settings/settings
 import { ResolvedNarrator, generationWindow } from '../settings/profiles';
 import { buildBackgroundJobInfo, hasPendingGeneration } from './background-job';
 import { chunkNote, stripFrontmatter } from '../text/text-utils';
-import { createTTSProvider, getProviderApiKey, missingApiKeyMessage } from '../tts/registry';
+import { createTTSProvider, getProviderCredentials, missingApiKeyMessage, providerOutputFormat } from '../tts/registry';
 import { NoteText } from './note-text';
 import { SavedAudio } from './saved-audio';
 
@@ -418,8 +418,8 @@ export class Reader extends Events {
 			new Notice('Add a provider and a narrator profile in the Note Narrator settings.');
 			return;
 		}
-		const apiKey = getProviderApiKey(this.app, narrator.provider);
-		if (!apiKey) {
+		const credentials = getProviderCredentials(this.app, narrator.provider);
+		if (!credentials) {
 			new Notice(missingApiKeyMessage(narrator.provider));
 			return;
 		}
@@ -464,7 +464,7 @@ export class Reader extends Events {
 			chunkInFlight: new Array<boolean>(chunks.length).fill(false),
 			chunkDurations: new Array<number | undefined>(chunks.length).fill(undefined),
 			positions,
-			provider: createTTSProvider(narrator.provider, narrator.voice, apiKey, () => this.handleRateLimited(job)),
+			provider: createTTSProvider(narrator.provider, narrator.voice, credentials, () => this.handleRateLimited(job)),
 			narrator,
 			sourceFileForSave: options.allowSave ? sourceFile : null,
 			savedForSession: false,
@@ -673,8 +673,8 @@ export class Reader extends Events {
 
 			const narrator = this.noteText.getActiveNarrator();
 			if (!narrator) return;
-			const apiKey = getProviderApiKey(this.app, narrator.provider);
-			if (!apiKey) return;
+			const credentials = getProviderCredentials(this.app, narrator.provider);
+			if (!credentials) return;
 
 			const rawText = await this.app.vault.cachedRead(file);
 			const body = stripFrontmatter(rawText);
@@ -693,7 +693,7 @@ export class Reader extends Events {
 			);
 			if (chunks.length === 0) return;
 
-			const provider = createTTSProvider(narrator.provider, narrator.voice, apiKey);
+			const provider = createTTSProvider(narrator.provider, narrator.voice, credentials);
 
 			const buffers: ArrayBuffer[] = [];
 			const chunkDurations: number[] = [];
@@ -800,7 +800,11 @@ export class Reader extends Events {
 	/** `savedTimeline`, when given, is a saved-playback timeline for the whole (single, concatenated) `audioData` -- used to keep `state.chunkIndex` in sync with elapsed time on every tick, since there's no per-chunk audio element to drive it here the way a live read's chunk-by-chunk loop does. */
 	private playChunk(job: GenerationJob | null, audioData: ArrayBuffer, index: number, count: number): Promise<ChunkOutcome> {
 		return new Promise((resolve) => {
-			const blob = new Blob([audioData], { type: 'audio/mpeg' });
+			// Saved-file playback (job === null) has no narrator to look up a format from -- default to mp3,
+			// which matches every saved file's actual encoding today (the only provider, ElevenLabs, is mp3-only).
+			const narrator = job?.narrator;
+			const format = narrator ? providerOutputFormat(narrator.provider.type) : 'mp3';
+			const blob = new Blob([audioData], { type: format === 'wav' ? 'audio/wav' : 'audio/mpeg' });
 			const url = URL.createObjectURL(blob);
 			const audio = new Audio(url);
 			audio.playbackRate = this.currentPlaybackRate;

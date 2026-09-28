@@ -1,5 +1,23 @@
-/** Concatenates raw MPEG chunks into a single buffer; ElevenLabs' output has no mid-stream headers, so naive concatenation plays back correctly. */
-export function concatArrayBuffers(buffers: ArrayBuffer[]): ArrayBuffer {
+import type { AudioFormat } from '../tts/provider';
+
+/**
+ * Concatenates a provider's raw audio chunks into a single buffer.
+ *
+ * For `'mp3'`, naive byte concatenation plays back correctly -- ElevenLabs' (and other MPEG) output has no
+ * mid-stream headers to worry about. For `'wav'`, this is NOT correctly implemented: each chunk is its own
+ * self-contained RIFF/WAVE file with its own header and declared data length, so byte-concatenating several
+ * of them produces one file whose header only describes the first chunk -- playback beyond the first chunk's
+ * data is undefined (most players will just stop, some may play garbage). A correct fix needs to re-mux the
+ * PCM data of every chunk into one new WAV container, which is out of scope here; this only logs so a 'wav'
+ * caller with more than one chunk doesn't fail silently.
+ */
+export function concatArrayBuffers(buffers: ArrayBuffer[], format: AudioFormat): ArrayBuffer {
+	if (format === 'wav' && buffers.length > 1) {
+		console.warn(
+			'Note Narrator: concatenating multiple WAV chunks is not correctly implemented (only the first chunk\'s header is valid) -- playback past the first chunk may be corrupt.',
+		);
+	}
+
 	const totalLength = buffers.reduce((sum, buffer) => sum + buffer.byteLength, 0);
 	const result = new Uint8Array(totalLength);
 	let offset = 0;
