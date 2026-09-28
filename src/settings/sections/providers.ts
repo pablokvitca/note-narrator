@@ -10,6 +10,7 @@ const DOCS_URL = 'https://publish.obsidian.md/pablokvitca-plugin-note-narrator/n
 const PROVIDER_SETUP_GUIDES: Record<ProviderType, string> = {
 	[ProviderType.ElevenLabs]: `${DOCS_URL}/getting-started/setting-up-elevenlabs`,
 	[ProviderType.OpenAI]: `${DOCS_URL}/getting-started/setting-up-openai`,
+	[ProviderType.Gemini]: `${DOCS_URL}/getting-started/setting-up-google-gemini`,
 };
 
 export class ProvidersSection extends SettingsSection {
@@ -146,6 +147,7 @@ export class ProvidersSection extends SettingsSection {
 				// A different key can mean a different account, with a different set of voices.
 				return [this.apiKeyRow(provider, () => this.voices.voicesByProvider.delete(provider.id))];
 			case ProviderType.OpenAI:
+			case ProviderType.Gemini:
 				return [this.apiKeyRow(provider)];
 		}
 	}

@@ -1,8 +1,9 @@
 import { DropdownComponent, Notice, SettingDefinitionItem, SettingDefinitionPage, SettingGroupItem } from 'obsidian';
 import { ChunkerStyle, findHeadingPatternIssues } from '../../text/text-utils';
 import { DEFAULT_ELEVENLABS_MODEL_ID, ELEVENLABS_MODELS } from '../../tts/elevenlabs-models';
+import { DEFAULT_GEMINI_MODEL_ID, DEFAULT_GEMINI_VOICE_NAME, GEMINI_MODELS, GEMINI_VOICES } from '../../tts/gemini-models';
 import { DEFAULT_OPENAI_MODEL, DEFAULT_OPENAI_VOICE, OPENAI_INSTRUCTION_MODELS, OPENAI_MODELS, OPENAI_VOICES } from '../../tts/openai-models';
-import { ProviderType, ElevenLabsVoiceConfig, NarratorProfile, OpenAIVoiceConfig, ReadingConfig, ReadingOverrides, createProfile, defaultVoiceConfig, getActiveProfile, getProvider, normalizeProfileSettings, resolveReadingConfig, uniqueName } from '../profiles';
+import { ProviderType, ElevenLabsVoiceConfig, GeminiVoiceConfig, NarratorProfile, OpenAIVoiceConfig, ReadingConfig, ReadingOverrides, createProfile, defaultVoiceConfig, getActiveProfile, getProvider, normalizeProfileSettings, resolveReadingConfig, uniqueName } from '../profiles';
 import { SettingsSection } from '../section';
 import { getGlobalReadingConfig } from '../settings';
 
@@ -16,6 +17,8 @@ function withDefaultMarked(options: Record<string, string>, defaultValue: string
 const MODEL_OPTIONS = withDefaultMarked(ELEVENLABS_MODELS, DEFAULT_ELEVENLABS_MODEL_ID);
 const OPENAI_MODEL_OPTIONS = withDefaultMarked(OPENAI_MODELS, DEFAULT_OPENAI_MODEL);
 const OPENAI_VOICE_OPTIONS = withDefaultMarked(OPENAI_VOICES, DEFAULT_OPENAI_VOICE);
+const GEMINI_MODEL_OPTIONS = withDefaultMarked(GEMINI_MODELS, DEFAULT_GEMINI_MODEL_ID);
+const GEMINI_VOICE_OPTIONS = withDefaultMarked(GEMINI_VOICES, DEFAULT_GEMINI_VOICE_NAME);
 
 export class ProfilesSection extends SettingsSection {
 	/** Reloads a profile's voice dropdown (keyed by profile id) after its provider changes, while its page is open. */
@@ -181,6 +184,8 @@ export class ProfilesSection extends SettingsSection {
 				return this.voices.voicesByProvider.get(profile.providerId)?.find((v) => v.voiceId === voice.voiceId)?.name ?? voice.voiceId;
 			case ProviderType.OpenAI:
 				return OPENAI_VOICES[voice.voice] ?? voice.voice;
+			case ProviderType.Gemini:
+				return voice.voiceName;
 		}
 	}
 
@@ -208,6 +213,8 @@ export class ProfilesSection extends SettingsSection {
 				return this.elevenLabsVoiceRows(profile);
 			case ProviderType.OpenAI:
 				return this.openAIVoiceRows(profile);
+			case ProviderType.Gemini:
+				return this.geminiVoiceRows(profile);
 		}
 	}
 
@@ -301,6 +308,32 @@ export class ProfilesSection extends SettingsSection {
 					voice().instructions = value;
 				},
 				{ placeholder: 'Speak in a calm, measured voice.', disabled: () => !OPENAI_INSTRUCTION_MODELS.has(voice().model) },
+			),
+		];
+	}
+
+	/** Like {@link elevenLabsVoiceRows}, these read `profile.voice` when they render or change. */
+	private geminiVoiceRows(profile: NarratorProfile): SettingGroupItem[] {
+		const voice = (): GeminiVoiceConfig => {
+			if (profile.voice.type !== ProviderType.Gemini) throw new Error('Narrator profile is not a Gemini profile.');
+			return profile.voice;
+		};
+
+		return [
+			this.dropdownRow('Voice', "One of Gemini's prebuilt voices.", GEMINI_VOICE_OPTIONS, () => voice().voiceName, (value) => {
+				voice().voiceName = value;
+			}),
+			this.dropdownRow('Model', 'The Gemini text-to-speech model to use.', GEMINI_MODEL_OPTIONS, () => voice().modelId, (value) => {
+				voice().modelId = value;
+			}),
+			this.textRow(
+				'Instructions',
+				'Optional guidance on tone and delivery, read by the model before each part. For example: Say in a calm, warm voice.',
+				() => voice().instructions,
+				(value) => {
+					voice().instructions = value;
+				},
+				{ placeholder: 'Say in a calm, warm voice' },
 			),
 		];
 	}
