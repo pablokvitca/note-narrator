@@ -59,7 +59,7 @@ export class SavedAudio {
 
 	/** Label for a saved filename when the voice's real name can't be looked up (no API key). */
 	private voiceFallbackLabel(voice: VoiceConfig): string {
-		return voice.voiceId;
+		return voice.type === 'elevenlabs' ? voice.voiceId : voice.voice;
 	}
 
 	private findExistingAudioFile(sourceFile: TFile): TFile | null {

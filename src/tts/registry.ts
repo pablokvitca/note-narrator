@@ -1,6 +1,8 @@
 import { App } from 'obsidian';
 import type { ProviderEntry, ProviderType, VoiceConfig } from '../settings/profiles';
 import { ElevenLabsProvider, getElevenLabsVoiceName } from './elevenlabs-provider';
+import { OPENAI_VOICES } from './openai-models';
+import { OpenAIProvider } from './openai-provider';
 import { AudioFormat, TTSProvider } from './provider';
 
 /*
@@ -27,6 +29,10 @@ export function getProviderCredentials(app: App, provider: ProviderEntry): Provi
 			const apiKey = app.secretStorage.getSecret(provider.apiKeySecretId);
 			return apiKey ? { type: 'elevenlabs', apiKey } : null;
 		}
+		case 'openai': {
+			const apiKey = app.secretStorage.getSecret(provider.apiKeySecretId);
+			return apiKey ? { type: 'openai', apiKey } : null;
+		}
 	}
 }
 
@@ -41,6 +47,10 @@ export function createTTSProvider(provider: ProviderEntry, voice: VoiceConfig, c
 			if (voice.type !== 'elevenlabs') throw new Error("The narrator's voice configuration doesn't match its provider type.");
 			if (credentials.type !== 'elevenlabs') throw new Error("The narrator's credentials don't match its provider type.");
 			return new ElevenLabsProvider(credentials.apiKey, voice, onRateLimited);
+		case 'openai':
+			if (voice.type !== 'openai') throw new Error("The narrator's voice configuration doesn't match its provider type.");
+			if (credentials.type !== 'openai') throw new Error("The narrator's credentials don't match its provider type.");
+			return new OpenAIProvider(credentials.apiKey, voice, onRateLimited);
 	}
 }
 
@@ -56,6 +66,10 @@ export async function resolveVoiceLabel(provider: ProviderEntry, voice: VoiceCon
 				console.error('Note Narrator: failed to resolve voice name for filename', error);
 				return voice.voiceId;
 			}
+		case 'openai':
+			// OpenAI's voices are a fixed, named list (no per-account lookup needed).
+			if (voice.type !== 'openai') return 'voice';
+			return OPENAI_VOICES[voice.voice] ?? voice.voice;
 	}
 }
 
@@ -63,6 +77,8 @@ export async function resolveVoiceLabel(provider: ProviderEntry, voice: VoiceCon
 export function providerOutputFormat(type: ProviderType): AudioFormat {
 	switch (type) {
 		case 'elevenlabs':
+			return 'mp3';
+		case 'openai':
 			return 'mp3';
 	}
 }

@@ -1,7 +1,8 @@
 import { DropdownComponent, Notice, SettingDefinitionItem, SettingDefinitionPage, SettingGroupItem } from 'obsidian';
 import { ChunkerStyle, findHeadingPatternIssues } from '../../text/text-utils';
 import { ELEVENLABS_MODELS } from '../../tts/elevenlabs-models';
-import { ElevenLabsVoiceConfig, NarratorProfile, ReadingConfig, ReadingOverrides, createProfile, defaultVoiceConfig, getActiveProfile, getProvider, normalizeProfileSettings, resolveReadingConfig, uniqueName } from '../profiles';
+import { OPENAI_MODELS, OPENAI_VOICES } from '../../tts/openai-models';
+import { ElevenLabsVoiceConfig, NarratorProfile, OpenAIVoiceConfig, ReadingConfig, ReadingOverrides, createProfile, defaultVoiceConfig, getActiveProfile, getProvider, normalizeProfileSettings, resolveReadingConfig, uniqueName } from '../profiles';
 import { SettingsSection } from '../section';
 import { getGlobalReadingConfig } from '../settings';
 
@@ -154,7 +155,13 @@ export class ProfilesSection extends SettingsSection {
 
 	private profileSummary(profile: NarratorProfile): string {
 		const provider = getProvider(this.settings, profile.providerId);
-		const voice = profile.voice.type === 'elevenlabs' ? (this.voices.voicesByProvider.get(profile.providerId)?.find((v) => v.voiceId === profile.voice.voiceId)?.name ?? profile.voice.voiceId) : '';
+		let voice = '';
+		if (profile.voice.type === 'elevenlabs') {
+			const elevenLabsVoice = profile.voice;
+			voice = this.voices.voicesByProvider.get(profile.providerId)?.find((v) => v.voiceId === elevenLabsVoice.voiceId)?.name ?? elevenLabsVoice.voiceId;
+		} else if (profile.voice.type === 'openai') {
+			voice = OPENAI_VOICES[profile.voice.voice] ?? profile.voice.voice;
+		}
 		return [provider?.name ?? 'No provider', voice].filter(Boolean).join(' · ');
 	}
 
@@ -174,6 +181,8 @@ export class ProfilesSection extends SettingsSection {
 		switch (profile.voice.type) {
 			case 'elevenlabs':
 				return this.elevenLabsVoiceRows(profile);
+			case 'openai':
+				return this.openAIVoiceRows(profile);
 		}
 	}
 
@@ -239,6 +248,39 @@ export class ProfilesSection extends SettingsSection {
 			this.sliderRow('Similarity boost', 'How closely the output should match the original voice.', { min: 0, max: 1, step: 0.05 }, () => voice().similarityBoost, (value) => {
 				voice().similarityBoost = value;
 			}),
+		];
+	}
+
+	/**
+	 * Rows read `profile.voice` when they render or change, never from a value captured up front: the
+	 * page can stay open while the profile's provider is swapped.
+	 */
+	private openAIVoiceRows(profile: NarratorProfile): SettingGroupItem[] {
+		const voice = (): OpenAIVoiceConfig => {
+			if (profile.voice.type !== 'openai') throw new Error('Narrator profile is not an OpenAI profile.');
+			return profile.voice;
+		};
+		const isGpt4oMiniTts = () => voice().model === 'gpt-4o-mini-tts';
+
+		return [
+			this.dropdownRow('Voice', "One of OpenAI's built-in voices.", OPENAI_VOICES, () => voice().voice, (value) => {
+				voice().voice = value;
+			}),
+			this.dropdownRow('Model', 'The OpenAI text-to-speech model to use.', OPENAI_MODELS, () => voice().model, (value) => {
+				voice().model = value;
+			}),
+			this.sliderRow('Speed', 'Playback speed of the generated audio.', { min: 0.25, max: 4, step: 0.05 }, () => voice().speed, (value) => {
+				voice().speed = value;
+			}),
+			this.textRow(
+				'Instructions',
+				'Optional natural-language guidance for tone, accent, or pacing. Only used by the GPT-4o mini TTS model.',
+				() => voice().instructions,
+				(value) => {
+					voice().instructions = value;
+				},
+				{ placeholder: 'Speak in a calm, measured voice.', disabled: () => !isGpt4oMiniTts() },
+			),
 		];
 	}
 
