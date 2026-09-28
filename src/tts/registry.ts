@@ -1,6 +1,8 @@
 import { App } from 'obsidian';
 import type { ProviderEntry, ProviderType, VoiceConfig } from '../settings/profiles';
 import { ElevenLabsProvider, getElevenLabsVoiceName } from './elevenlabs-provider';
+import { GEMINI_VOICES } from './gemini-models';
+import { GeminiProvider } from './gemini-provider';
 import { OPENAI_VOICES } from './openai-models';
 import { OpenAIProvider } from './openai-provider';
 import { AudioFormat, TTSProvider } from './provider';
@@ -33,6 +35,10 @@ export function getProviderCredentials(app: App, provider: ProviderEntry): Provi
 			const apiKey = app.secretStorage.getSecret(provider.apiKeySecretId);
 			return apiKey ? { type: 'openai', apiKey } : null;
 		}
+		case 'gemini': {
+			const apiKey = app.secretStorage.getSecret(provider.apiKeySecretId);
+			return apiKey ? { type: 'gemini', apiKey } : null;
+		}
 	}
 }
 
@@ -51,6 +57,10 @@ export function createTTSProvider(provider: ProviderEntry, voice: VoiceConfig, c
 			if (voice.type !== 'openai') throw new Error("The narrator's voice configuration doesn't match its provider type.");
 			if (credentials.type !== 'openai') throw new Error("The narrator's credentials don't match its provider type.");
 			return new OpenAIProvider(credentials.apiKey, voice, onRateLimited);
+		case 'gemini':
+			if (voice.type !== 'gemini') throw new Error("The narrator's voice configuration doesn't match its provider type.");
+			if (credentials.type !== 'gemini') throw new Error("The narrator's credentials don't match its provider type.");
+			return new GeminiProvider(credentials.apiKey, voice, onRateLimited);
 	}
 }
 
@@ -70,6 +80,10 @@ export async function resolveVoiceLabel(provider: ProviderEntry, voice: VoiceCon
 			// OpenAI's voices are a fixed, named list (no per-account lookup needed).
 			if (voice.type !== 'openai') return 'voice';
 			return OPENAI_VOICES[voice.voice] ?? voice.voice;
+		case 'gemini':
+			// Gemini's voices are a fixed, static set (not fetched per-account), so there's no network call needed.
+			if (voice.type !== 'gemini') return 'voice';
+			return GEMINI_VOICES[voice.voiceName] ?? voice.voiceName;
 	}
 }
 
@@ -80,5 +94,7 @@ export function providerOutputFormat(type: ProviderType): AudioFormat {
 			return 'mp3';
 		case 'openai':
 			return 'mp3';
+		case 'gemini':
+			return 'wav';
 	}
 }

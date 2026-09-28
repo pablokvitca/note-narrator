@@ -4,6 +4,7 @@ import {
 	createProvider,
 	defaultVoiceConfig,
 	ElevenLabsVoiceConfig,
+	GeminiVoiceConfig,
 	generationWindow,
 	getDropdownProfiles,
 	migrateProfileSettings,
@@ -22,6 +23,18 @@ function settingsWith(profileCount: number): ProfileSettings {
 	const provider = createProvider('elevenlabs', 'ElevenLabs');
 	const profiles = Array.from({ length: profileCount }, (_, i) => createProfile(provider, `Profile ${i + 1}`));
 	return { providers: [provider], profiles, activeProfileId: profiles[0]?.id ?? '' };
+}
+
+/** Runtime-asserts (and narrows) a voice config to ElevenLabs', for tests that need its ElevenLabs-only fields. */
+function asElevenLabs(voice: { type: string }): ElevenLabsVoiceConfig {
+	if (voice.type !== 'elevenlabs') throw new Error('Expected an ElevenLabs voice config.');
+	return voice as ElevenLabsVoiceConfig;
+}
+
+/** Runtime-asserts (and narrows) a voice config to Gemini's, for tests that need its Gemini-only fields. */
+function asGemini(voice: { type: string }): GeminiVoiceConfig {
+	if (voice.type !== 'gemini') throw new Error('Expected a Gemini voice config.');
+	return voice as GeminiVoiceConfig;
 }
 
 describe('migrateProfileSettings', () => {
@@ -71,9 +84,9 @@ describe('migrateProfileSettings', () => {
 		const migrated = migrateProfileSettings({ voiceId: 42, stability: 'high', maxParallelGeneration: NaN });
 		const profile = (migrated.profiles as ProfileSettings['profiles'])[0];
 		const provider = (migrated.providers as ProfileSettings['providers'])[0];
-		const voice = profile?.voice as ElevenLabsVoiceConfig | undefined;
-		expect(voice?.voiceId).toBe('21m00Tcm4TlvDq8ikWAM');
-		expect(voice?.stability).toBe(0.5);
+		const voice = asElevenLabs(profile!.voice);
+		expect(voice.voiceId).toBe('21m00Tcm4TlvDq8ikWAM');
+		expect(voice.stability).toBe(0.5);
 		expect(provider?.maxParallelGeneration).toBe(2);
 	});
 });
@@ -94,10 +107,43 @@ describe('voiceFingerprint / savedVoiceMatches', () => {
 	it('treats a legacy raw voice ID as a match for that voice only', () => {
 		const provider = createProvider('elevenlabs', 'A');
 		const profile = createProfile(provider, 'One');
-		const voice = profile.voice as ElevenLabsVoiceConfig;
-		expect(savedVoiceMatches(voice.voiceId, profile.voice)).toBe(true);
+		expect(savedVoiceMatches(asElevenLabs(profile.voice).voiceId, profile.voice)).toBe(true);
 		expect(savedVoiceMatches(voiceFingerprint(profile.voice), profile.voice)).toBe(true);
 		expect(savedVoiceMatches('some-other-voice', profile.voice)).toBe(false);
+	});
+});
+
+describe('Gemini provider type', () => {
+	it('creates a Gemini provider and its default voice configuration', () => {
+		const provider = createProvider('gemini', 'Gemini');
+		expect(provider).toMatchObject({ type: 'gemini', parallelGenerationEnabled: true, maxParallelGeneration: 2, maxBackgroundParallelGeneration: 1 });
+		expect(provider.apiKeySecretId).toBeTruthy();
+
+		const voice = asGemini(defaultVoiceConfig('gemini'));
+		expect(voice).toMatchObject({ type: 'gemini', voiceName: 'Kore', modelId: 'gemini-2.5-flash-preview-tts', stylePrompt: '' });
+	});
+
+	it('fingerprints Gemini voices by voice name, model, and style prompt (not the legacy ElevenLabs voiceId fallback)', () => {
+		const provider = createProvider('gemini', 'A');
+		const profile = createProfile(provider, 'One');
+		const other = createProfile(provider, 'Two');
+		expect(voiceFingerprint(profile.voice)).toBe(voiceFingerprint(other.voice));
+
+		const changedVoice = { ...asGemini(profile.voice), voiceName: 'Puck' };
+		expect(voiceFingerprint(changedVoice)).not.toBe(voiceFingerprint(profile.voice));
+		const changedStyle = { ...asGemini(profile.voice), stylePrompt: 'Say cheerfully' };
+		expect(voiceFingerprint(changedStyle)).not.toBe(voiceFingerprint(profile.voice));
+
+		// Gemini never had a pre-profile era, so there's no legacy raw-id fallback to match against.
+		expect(savedVoiceMatches('Kore', profile.voice)).toBe(false);
+		expect(savedVoiceMatches(voiceFingerprint(profile.voice), profile.voice)).toBe(true);
+	});
+
+	it('looks up the Gemini model character limit, falling back for an unknown model', () => {
+		const provider = createProvider('gemini', 'A');
+		const profile = createProfile(provider, 'One');
+		expect(providerCharLimit(profile.voice)).toBe(5000);
+		expect(providerCharLimit({ ...asGemini(profile.voice), modelId: 'unknown' })).toBe(5000);
 	});
 });
 

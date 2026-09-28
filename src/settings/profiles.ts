@@ -1,5 +1,6 @@
 import { ChunkerStyle, hashText } from '../text/text-utils';
 import { DEFAULT_ELEVENLABS_CHAR_LIMIT, ELEVENLABS_MODEL_CHAR_LIMITS } from '../tts/elevenlabs-models';
+import { DEFAULT_GEMINI_CHAR_LIMIT, DEFAULT_GEMINI_MODEL_ID, DEFAULT_GEMINI_VOICE_NAME, GEMINI_MODEL_CHAR_LIMITS } from '../tts/gemini-models';
 import { OPENAI_CHAR_LIMIT } from '../tts/openai-models';
 
 /*
@@ -11,11 +12,12 @@ import { OPENAI_CHAR_LIMIT } from '../tts/openai-models';
  * that provider type's voice configuration, and may override the global reading settings.
  */
 
-export type ProviderType = 'elevenlabs' | 'openai';
+export type ProviderType = 'elevenlabs' | 'openai' | 'gemini';
 
 export const PROVIDER_TYPE_LABELS: Record<ProviderType, string> = {
 	elevenlabs: 'ElevenLabs',
 	openai: 'OpenAI',
+	gemini: 'Google Gemini',
 };
 
 interface ProviderBase {
@@ -41,7 +43,13 @@ export interface OpenAIProviderEntry extends ProviderBase {
 	apiKeySecretId: string;
 }
 
-export type ProviderEntry = ElevenLabsProviderEntry | OpenAIProviderEntry;
+export interface GeminiProviderEntry extends ProviderBase {
+	type: 'gemini';
+	/** Name of the secret in Obsidian's SecretStorage holding the Gemini API key. */
+	apiKeySecretId: string;
+}
+
+export type ProviderEntry = ElevenLabsProviderEntry | OpenAIProviderEntry | GeminiProviderEntry;
 
 export interface ElevenLabsVoiceConfig {
 	type: 'elevenlabs';
@@ -61,8 +69,17 @@ export interface OpenAIVoiceConfig {
 	instructions: string;
 }
 
+export interface GeminiVoiceConfig {
+	type: 'gemini';
+	/** One of Gemini's fixed prebuilt voice names (e.g. "Kore"), used verbatim as the request's `voiceName`. */
+	voiceName: string;
+	modelId: string;
+	/** Optional natural-language style/tone instruction (Gemini has no numeric sliders like ElevenLabs' stability/similarity; style is steered by prepending an instruction to the text instead). */
+	stylePrompt: string;
+}
+
 /** A provider type's own voice configuration; the `type` always matches the owning provider's. */
-export type VoiceConfig = ElevenLabsVoiceConfig | OpenAIVoiceConfig;
+export type VoiceConfig = ElevenLabsVoiceConfig | OpenAIVoiceConfig | GeminiVoiceConfig;
 
 /** The reading settings a narrator profile may override; the global values are the defaults. */
 export interface ReadingConfig {
@@ -121,6 +138,7 @@ export const DEFAULT_ELEVENLABS_API_KEY_SECRET_ID = 'elevenlabs-api-key';
 export const DEFAULT_ELEVENLABS_VOICE_ID = '21m00Tcm4TlvDq8ikWAM';
 export const DEFAULT_OPENAI_API_KEY_SECRET_ID = 'openai-api-key';
 export const DEFAULT_OPENAI_VOICE = 'alloy';
+export const DEFAULT_GEMINI_API_KEY_SECRET_ID = 'gemini-api-key';
 
 export function newId(prefix: string): string {
 	const random = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID().slice(0, 8) : Math.random().toString(36).slice(2, 10);
@@ -149,6 +167,16 @@ export function createProvider(type: ProviderType, name: string): ProviderEntry 
 				maxParallelGeneration: 2,
 				maxBackgroundParallelGeneration: 1,
 			};
+		case 'gemini':
+			return {
+				id: newId('provider'),
+				name,
+				type,
+				apiKeySecretId: DEFAULT_GEMINI_API_KEY_SECRET_ID,
+				parallelGenerationEnabled: true,
+				maxParallelGeneration: 2,
+				maxBackgroundParallelGeneration: 1,
+			};
 	}
 }
 
@@ -158,6 +186,8 @@ export function defaultVoiceConfig(type: ProviderType): VoiceConfig {
 			return { type, voiceId: DEFAULT_ELEVENLABS_VOICE_ID, modelId: 'eleven_multilingual_v2', stability: 0.5, similarityBoost: 0.75 };
 		case 'openai':
 			return { type, voice: DEFAULT_OPENAI_VOICE, model: 'gpt-4o-mini-tts', speed: 1, instructions: '' };
+		case 'gemini':
+			return { type, voiceName: DEFAULT_GEMINI_VOICE_NAME, modelId: DEFAULT_GEMINI_MODEL_ID, stylePrompt: '' };
 	}
 }
 
@@ -206,12 +236,15 @@ export function voiceFingerprint(voice: VoiceConfig): string {
 			return hashText(JSON.stringify([voice.type, voice.voiceId, voice.modelId, voice.stability, voice.similarityBoost]));
 		case 'openai':
 			return hashText(JSON.stringify([voice.type, voice.voice, voice.model, voice.speed, voice.instructions]));
+		case 'gemini':
+			return hashText(JSON.stringify([voice.type, voice.voiceName, voice.modelId, voice.stylePrompt]));
 	}
 }
 
 /**
  * Whether a saved audio file's recorded narrator matches the profile now selected. Audio saved before
- * profiles existed recorded the raw voice ID, so that still counts as a match for the same voice.
+ * profiles existed recorded the raw ElevenLabs voice ID (the only provider that existed pre-profiles), so
+ * that still counts as a match for the same voice.
  */
 export function savedVoiceMatches(stored: string, voice: VoiceConfig): boolean {
 	// The raw-voice-ID fallback predates provider types other than ElevenLabs, so it only applies to it.
@@ -240,6 +273,7 @@ export function resolveReadingConfig(global: ReadingConfig, overrides: ReadingOv
 export function providerCharLimit(voice: VoiceConfig | undefined): number {
 	if (voice?.type === 'elevenlabs') return ELEVENLABS_MODEL_CHAR_LIMITS[voice.modelId] ?? DEFAULT_ELEVENLABS_CHAR_LIMIT;
 	if (voice?.type === 'openai') return OPENAI_CHAR_LIMIT;
+	if (voice?.type === 'gemini') return GEMINI_MODEL_CHAR_LIMITS[voice.modelId] ?? DEFAULT_GEMINI_CHAR_LIMIT;
 	return DEFAULT_ELEVENLABS_CHAR_LIMIT;
 }
 

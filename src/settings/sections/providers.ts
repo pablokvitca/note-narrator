@@ -132,6 +132,21 @@ export class ProvidersSection extends SettingsSection {
 						},
 					},
 				];
+			case 'gemini':
+				return [
+					{
+						name: 'API key',
+						desc: "Your Google Gemini API key, stored in Obsidian's secret storage, not in this plugin's settings file.",
+						render: (setting) => {
+							setting.addComponent((el) =>
+								new SecretComponent(this.app, el).setValue(provider.apiKeySecretId).onChange(async (value) => {
+									provider.apiKeySecretId = value;
+									await this.plugin.saveSettings();
+								}),
+							);
+						},
+					},
+				];
 		}
 	}
 
