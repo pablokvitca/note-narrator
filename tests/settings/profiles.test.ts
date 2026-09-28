@@ -2,10 +2,13 @@ import { describe, expect, it } from 'vitest';
 import {
 	createProfile,
 	createProvider,
+	defaultVoiceConfig,
+	ElevenLabsVoiceConfig,
 	generationWindow,
 	getDropdownProfiles,
 	migrateProfileSettings,
 	normalizeProfileSettings,
+	OpenAIVoiceConfig,
 	ProfileSettings,
 	providerCharLimit,
 	resolveNarrator,
@@ -68,8 +71,9 @@ describe('migrateProfileSettings', () => {
 		const migrated = migrateProfileSettings({ voiceId: 42, stability: 'high', maxParallelGeneration: NaN });
 		const profile = (migrated.profiles as ProfileSettings['profiles'])[0];
 		const provider = (migrated.providers as ProfileSettings['providers'])[0];
-		expect(profile?.voice.voiceId).toBe('21m00Tcm4TlvDq8ikWAM');
-		expect(profile?.voice.stability).toBe(0.5);
+		const voice = profile?.voice as ElevenLabsVoiceConfig | undefined;
+		expect(voice?.voiceId).toBe('21m00Tcm4TlvDq8ikWAM');
+		expect(voice?.stability).toBe(0.5);
 		expect(provider?.maxParallelGeneration).toBe(2);
 	});
 });
@@ -90,7 +94,8 @@ describe('voiceFingerprint / savedVoiceMatches', () => {
 	it('treats a legacy raw voice ID as a match for that voice only', () => {
 		const provider = createProvider('elevenlabs', 'A');
 		const profile = createProfile(provider, 'One');
-		expect(savedVoiceMatches(profile.voice.voiceId, profile.voice)).toBe(true);
+		const voice = profile.voice as ElevenLabsVoiceConfig;
+		expect(savedVoiceMatches(voice.voiceId, profile.voice)).toBe(true);
 		expect(savedVoiceMatches(voiceFingerprint(profile.voice), profile.voice)).toBe(true);
 		expect(savedVoiceMatches('some-other-voice', profile.voice)).toBe(false);
 	});
@@ -175,8 +180,51 @@ describe('helpers', () => {
 	it('looks up the model character limit', () => {
 		const provider = createProvider('elevenlabs', 'A');
 		const profile = createProfile(provider, 'One');
-		expect(providerCharLimit(profile.voice)).toBe(10000);
-		expect(providerCharLimit({ ...profile.voice, modelId: 'eleven_flash_v2_5' })).toBe(40000);
-		expect(providerCharLimit({ ...profile.voice, modelId: 'unknown' })).toBe(5000);
+		const voice = profile.voice as ElevenLabsVoiceConfig;
+		expect(providerCharLimit(voice)).toBe(10000);
+		expect(providerCharLimit({ ...voice, modelId: 'eleven_flash_v2_5' })).toBe(40000);
+		expect(providerCharLimit({ ...voice, modelId: 'unknown' })).toBe(5000);
+	});
+
+	it('uses the OpenAI character limit for an OpenAI voice', () => {
+		expect(providerCharLimit(defaultVoiceConfig('openai'))).toBe(4096);
+	});
+});
+
+describe('openai provider/voice defaults', () => {
+	it('creates an OpenAI provider with sensible defaults', () => {
+		const provider = createProvider('openai', 'OpenAI');
+		expect(provider).toMatchObject({
+			type: 'openai',
+			name: 'OpenAI',
+			parallelGenerationEnabled: true,
+			maxParallelGeneration: 2,
+			maxBackgroundParallelGeneration: 1,
+		});
+		expect(provider).toHaveProperty('apiKeySecretId');
+	});
+
+	it('creates a default OpenAI voice configuration', () => {
+		const voice = defaultVoiceConfig('openai') as OpenAIVoiceConfig;
+		expect(voice).toMatchObject({ type: 'openai', voice: 'alloy', model: 'gpt-4o-mini-tts', speed: 1, instructions: '' });
+	});
+
+	it('gives an OpenAI profile a fingerprint that changes with its voice settings', () => {
+		const provider = createProvider('openai', 'OpenAI');
+		const a = createProfile(provider, 'One');
+		const b = createProfile(provider, 'Two');
+		expect(voiceFingerprint(a.voice)).toBe(voiceFingerprint(b.voice));
+
+		const changedVoice = { ...(a.voice as OpenAIVoiceConfig), voice: 'nova' };
+		expect(voiceFingerprint(changedVoice)).not.toBe(voiceFingerprint(a.voice));
+		const changedSpeed = { ...(a.voice as OpenAIVoiceConfig), speed: 1.5 };
+		expect(voiceFingerprint(changedSpeed)).not.toBe(voiceFingerprint(a.voice));
+	});
+
+	it('does not match a stale ElevenLabs raw voice ID against an OpenAI voice', () => {
+		const provider = createProvider('openai', 'OpenAI');
+		const profile = createProfile(provider, 'One');
+		expect(savedVoiceMatches('21m00Tcm4TlvDq8ikWAM', profile.voice)).toBe(false);
+		expect(savedVoiceMatches(voiceFingerprint(profile.voice), profile.voice)).toBe(true);
 	});
 });

@@ -117,6 +117,21 @@ export class ProvidersSection extends SettingsSection {
 						},
 					},
 				];
+			case 'openai':
+				return [
+					{
+						name: 'API key',
+						desc: "Stored in Obsidian's secret storage, not in this plugin's settings file.",
+						render: (setting) => {
+							setting.addComponent((el) =>
+								new SecretComponent(this.app, el).setValue(provider.apiKeySecretId).onChange(async (value) => {
+									provider.apiKeySecretId = value;
+									await this.plugin.saveSettings();
+								}),
+							);
+						},
+					},
+				];
 		}
 	}
 
