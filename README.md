@@ -28,9 +28,10 @@ Full documentation is at **[the Note Narrator docs](https://publish.obsidian.md/
 
 ## Install
 
-Note Narrator is **not in the Obsidian community plugin directory yet**. Requires **Obsidian 1.13.1 or newer**.
+Requires **Obsidian 1.13.1 or newer**.
 
-- **BRAT (recommended):** install [BRAT](https://github.com/TfTHacker/obsidian42-brat), run **BRAT: Add a beta plugin for testing**, and enter `pablokvitca/note-narrator`.
+- **Community plugins (recommended):** open **Settings → Community plugins → Browse**, search for **Note Narrator**, and install it.
+- **BRAT:** install [BRAT](https://github.com/TfTHacker/obsidian42-brat), run **BRAT: Add a beta plugin for testing**, and enter `pablokvitca/note-narrator`, to get updates ahead of the community directory or a beta build.
 - **Manually:** download `main.js`, `manifest.json` and `styles.css` from the [latest release](https://github.com/pablokvitca/note-narrator/releases/latest) into `<your vault>/.obsidian/plugins/note-narrator/`, then enable it under **Settings → Community plugins**.
 
 ## Quick start
