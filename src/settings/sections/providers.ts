@@ -9,6 +9,7 @@ const DOCS_URL = 'https://publish.obsidian.md/pablokvitca-plugin-note-narrator/n
 /** Each provider type's setup guide in the docs, linked from its credential rows. */
 const PROVIDER_SETUP_GUIDES: Record<ProviderType, string> = {
 	[ProviderType.ElevenLabs]: `${DOCS_URL}/getting-started/setting-up-elevenlabs`,
+	[ProviderType.OpenAI]: `${DOCS_URL}/getting-started/setting-up-openai`,
 };
 
 export class ProvidersSection extends SettingsSection {
@@ -142,23 +143,27 @@ export class ProvidersSection extends SettingsSection {
 	private providerCredentialRows(provider: ProviderEntry): SettingGroupItem[] {
 		switch (provider.type) {
 			case ProviderType.ElevenLabs:
-				return [
-					{
-						name: 'API key',
-						desc: "Stored in Obsidian's secret storage, not in this plugin's settings file.",
-						render: (setting) => {
-							setting.addComponent((el) =>
-								new SecretComponent(this.app, el).setValue(provider.apiKeySecretId).onChange(async (value) => {
-									provider.apiKeySecretId = value;
-									await this.plugin.saveSettings();
-									// A different key can mean a different account, with a different set of voices.
-									this.voices.voicesByProvider.delete(provider.id);
-								}),
-							);
-						},
-					},
-				];
+				// A different key can mean a different account, with a different set of voices.
+				return [this.apiKeyRow(provider, () => this.voices.voicesByProvider.delete(provider.id))];
+			case ProviderType.OpenAI:
+				return [this.apiKeyRow(provider)];
 		}
+	}
+
+	private apiKeyRow(provider: ProviderEntry & { apiKeySecretId: string }, onChange?: () => void): SettingGroupItem {
+		return {
+			name: 'API key',
+			desc: "Stored in Obsidian's secret storage, not in this plugin's settings file.",
+			render: (setting) => {
+				setting.addComponent((el) =>
+					new SecretComponent(this.app, el).setValue(provider.apiKeySecretId).onChange(async (value) => {
+						provider.apiKeySecretId = value;
+						await this.plugin.saveSettings();
+						onChange?.();
+					}),
+				);
+			},
+		};
 	}
 
 	/** Lists the provider types under the `+` button; nothing is added until one is chosen. */

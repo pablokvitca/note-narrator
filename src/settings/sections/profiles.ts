@@ -1,16 +1,22 @@
 import { DropdownComponent, Notice, SettingDefinitionItem, SettingDefinitionPage, SettingGroupItem } from 'obsidian';
 import { ChunkerStyle, findHeadingPatternIssues } from '../../text/text-utils';
 import { DEFAULT_ELEVENLABS_MODEL_ID, ELEVENLABS_MODELS } from '../../tts/elevenlabs-models';
-import { ElevenLabsVoiceConfig, NarratorProfile, ProviderType, ReadingConfig, ReadingOverrides, createProfile, defaultVoiceConfig, getActiveProfile, getProvider, normalizeProfileSettings, resolveReadingConfig, uniqueName } from '../profiles';
+import { DEFAULT_OPENAI_MODEL, DEFAULT_OPENAI_VOICE, OPENAI_INSTRUCTION_MODELS, OPENAI_MODELS, OPENAI_VOICES } from '../../tts/openai-models';
+import { ProviderType, ElevenLabsVoiceConfig, NarratorProfile, OpenAIVoiceConfig, ReadingConfig, ReadingOverrides, createProfile, defaultVoiceConfig, getActiveProfile, getProvider, normalizeProfileSettings, resolveReadingConfig, uniqueName } from '../profiles';
 import { SettingsSection } from '../section';
 import { getGlobalReadingConfig } from '../settings';
 
 const INHERIT = 'inherit';
 
-/** The Model dropdown's options: the model list, with the default marked like every other dropdown's. */
-const MODEL_OPTIONS: Record<string, string> = Object.fromEntries(
-	Object.entries(ELEVENLABS_MODELS).map(([id, label]) => [id, id === DEFAULT_ELEVENLABS_MODEL_ID ? `${label} (default)` : label]),
-);
+/** A dropdown's options with the default marked, like every other dropdown's. */
+function withDefaultMarked(options: Record<string, string>, defaultValue: string): Record<string, string> {
+	return Object.fromEntries(Object.entries(options).map(([id, label]) => [id, id === defaultValue ? `${label} (default)` : label]));
+}
+
+const MODEL_OPTIONS = withDefaultMarked(ELEVENLABS_MODELS, DEFAULT_ELEVENLABS_MODEL_ID);
+const OPENAI_MODEL_OPTIONS = withDefaultMarked(OPENAI_MODELS, DEFAULT_OPENAI_MODEL);
+const OPENAI_VOICE_OPTIONS = withDefaultMarked(OPENAI_VOICES, DEFAULT_OPENAI_VOICE);
+
 export class ProfilesSection extends SettingsSection {
 	/** Reloads a profile's voice dropdown (keyed by profile id) after its provider changes, while its page is open. */
 	private voiceRefreshers = new Map<string, () => void>();
@@ -165,8 +171,17 @@ export class ProfilesSection extends SettingsSection {
 
 	private profileSummary(profile: NarratorProfile): string {
 		const provider = getProvider(this.settings, profile.providerId);
-		const voice = profile.voice.type === ProviderType.ElevenLabs ? (this.voices.voicesByProvider.get(profile.providerId)?.find((v) => v.voiceId === profile.voice.voiceId)?.name ?? profile.voice.voiceId) : '';
-		return [provider?.name ?? 'No provider', voice].filter(Boolean).join(' · ');
+		return [provider?.name ?? 'No provider', this.voiceName(profile)].filter(Boolean).join(' · ');
+	}
+
+	private voiceName(profile: NarratorProfile): string {
+		const voice = profile.voice;
+		switch (voice.type) {
+			case ProviderType.ElevenLabs:
+				return this.voices.voicesByProvider.get(profile.providerId)?.find((v) => v.voiceId === voice.voiceId)?.name ?? voice.voiceId;
+			case ProviderType.OpenAI:
+				return OPENAI_VOICES[voice.voice] ?? voice.voice;
+		}
 	}
 
 	private async changeProfileProvider(profile: NarratorProfile, providerId: string): Promise<void> {
@@ -191,6 +206,8 @@ export class ProfilesSection extends SettingsSection {
 		switch (profile.voice.type) {
 			case ProviderType.ElevenLabs:
 				return this.elevenLabsVoiceRows(profile);
+			case ProviderType.OpenAI:
+				return this.openAIVoiceRows(profile);
 		}
 	}
 
@@ -256,6 +273,35 @@ export class ProfilesSection extends SettingsSection {
 			this.sliderRow('Similarity boost', 'How closely the output should match the original voice.', { min: 0, max: 1, step: 0.05 }, () => voice().similarityBoost, (value) => {
 				voice().similarityBoost = value;
 			}),
+		];
+	}
+
+	/** Like {@link elevenLabsVoiceRows}, these read `profile.voice` when they render or change. */
+	private openAIVoiceRows(profile: NarratorProfile): SettingGroupItem[] {
+		const voice = (): OpenAIVoiceConfig => {
+			if (profile.voice.type !== ProviderType.OpenAI) throw new Error('Narrator profile is not an OpenAI profile.');
+			return profile.voice;
+		};
+
+		return [
+			this.dropdownRow('Voice', "One of OpenAI's built-in voices.", OPENAI_VOICE_OPTIONS, () => voice().voice, (value) => {
+				voice().voice = value;
+			}),
+			this.dropdownRow('Model', 'The OpenAI text-to-speech model to use.', OPENAI_MODEL_OPTIONS, () => voice().model, (value) => {
+				voice().model = value;
+			}),
+			this.sliderRow('Speaking speed', 'How fast the voice speaks, set when the audio is generated. Default: 1.', { min: 0.25, max: 4, step: 0.05 }, () => voice().speed, (value) => {
+				voice().speed = value;
+			}),
+			this.textRow(
+				'Instructions',
+				'Optional guidance on tone, accent or pacing. Only GPT-4o mini TTS uses it.',
+				() => voice().instructions,
+				(value) => {
+					voice().instructions = value;
+				},
+				{ placeholder: 'Speak in a calm, measured voice.', disabled: () => !OPENAI_INSTRUCTION_MODELS.has(voice().model) },
+			),
 		];
 	}
 
