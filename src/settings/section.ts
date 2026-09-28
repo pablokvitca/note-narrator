@@ -3,7 +3,7 @@ import NoteNarratorPlugin from '../main';
 import { NoteNarratorSettings } from './settings';
 import { ProviderEntry } from './profiles';
 import { VoiceCache } from './voices';
-import { getProviderApiKey } from '../tts/registry';
+import { getProviderCredentials } from '../tts/registry';
 
 export type SettingsTabId = 'general' | 'providers' | 'profiles' | 'appearance' | 'performance' | 'files';
 
@@ -176,7 +176,7 @@ export abstract class SettingsSection {
 	}
 
 	protected providerHasCredentials(provider: ProviderEntry): boolean {
-		return getProviderApiKey(this.app, provider) !== null;
+		return getProviderCredentials(this.app, provider) !== null;
 	}
 
 	/** A destructive button row, shown at the bottom of a provider's or profile's page. */

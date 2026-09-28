@@ -3,9 +3,9 @@ import { AudioLinkStatus } from './reader-types';
 import { formatTimestampForFilename, toLocalISOString } from './time-utils';
 import { cleanVaultFolderPath } from './vault-path';
 import { DEFAULT_SETTINGS, NoteNarratorSettings, getGlobalReadingConfig } from '../settings/settings';
-import { ResolvedNarrator, VoiceConfig, getActiveProfile, resolveReadingConfig } from '../settings/profiles';
-import { concatArrayBuffers, sanitizeFilenameComponent } from './audio-utils';
-import { getProviderApiKey, resolveVoiceLabel } from '../tts/registry';
+import { ResolvedNarrator, getActiveProfile, resolveReadingConfig } from '../settings/profiles';
+import { audioFormatForExtension, joinAudioChunks, sanitizeFilenameComponent } from './audio-utils';
+import { fallbackVoiceLabel, getProviderCredentials, providerOutputFormat, resolveVoiceLabel } from '../tts/registry';
 import { hashText, stripFrontmatter } from '../text/text-utils';
 import { parseNoteFrontmatter } from './note-frontmatter';
 
@@ -22,11 +22,8 @@ const V2_HASH_PREFIX = 'v2:';
 /** The frontmatter block as 1.0.0 stripped it: LF line endings only, so a CRLF note's frontmatter stayed in its body. */
 const LEGACY_FRONTMATTER_BLOCK = /^---\n[\s\S]*?\n---(\n|$)/;
 
-/** The extension saved audio is written with. */
-const AUDIO_EXTENSION = 'mp3';
-
 /**
- * A note's saved audio: writing the `.mp3` next to it, linking it in the note's frontmatter, deciding whether
+ * A note's saved audio: writing the audio file next to it, linking it in the note's frontmatter, deciding whether
  * it is up to date or outdated (by hashing the note), and clearing it. Everything here goes through the vault
  * and the note's frontmatter; playback and generation live in {@link Reader}.
  */
@@ -63,9 +60,10 @@ export class SavedAudio {
 		isCancelled: () => boolean = () => false,
 	): Promise<TFile | null> {
 		try {
-			const apiKey = getProviderApiKey(this.app, narrator.provider);
-			const voiceName = apiKey ? await resolveVoiceLabel(narrator.provider, narrator.voice, apiKey) : this.voiceFallbackLabel(narrator.voice);
-			const data = concatArrayBuffers(chunks);
+			const credentials = getProviderCredentials(this.app, narrator.provider);
+			const voiceName = credentials ? await resolveVoiceLabel(narrator.provider, narrator.voice, credentials) : fallbackVoiceLabel(narrator.voice);
+			const format = providerOutputFormat(narrator.provider.type);
+			const { data, byteLengths } = joinAudioChunks(chunks, format);
 
 			let existingAudioFile =
 				this.settings.saveVersioning === 'replace' && this.settings.linkAudioInNote && sourceFile
@@ -79,6 +77,11 @@ export class SavedAudio {
 			let audioFile: TFile;
 			if (existingAudioFile) {
 				if (isCancelled()) return null;
+				// The narrator's provider may have changed to one with another format: rename the file to match first.
+				if (audioFormatForExtension(existingAudioFile.extension) !== format) {
+					const renamed = await this.uniquePath(existingAudioFile.parent?.path ?? '', existingAudioFile.basename, format);
+					await this.app.fileManager.renameFile(existingAudioFile, renamed);
+				}
 				await this.app.vault.modifyBinary(existingAudioFile, data);
 				// The old audio is already overwritten; all that's left to skip is linking the deleted note.
 				if (this.wasDeleted(sourceFile)) return null;
@@ -89,7 +92,7 @@ export class SavedAudio {
 				await this.ensureFolder(folderPath);
 				const noteName = sourceFile?.basename ?? `Reading ${formatTimestampForFilename(new Date())}`;
 				const baseName = sanitizeFilenameComponent(`${noteName} (${voiceName})`);
-				const path = await this.uniquePath(folderPath, baseName, AUDIO_EXTENSION);
+				const path = await this.uniquePath(folderPath, baseName, format);
 				if (isCancelled()) return null;
 				audioFile = await this.app.vault.createBinary(path, data);
 				if (this.wasDeleted(sourceFile)) {
@@ -100,7 +103,7 @@ export class SavedAudio {
 			}
 
 			if (this.settings.linkAudioInNote && sourceFile) {
-				const chunkMeta = chunkDurations.map((duration, i) => ({ duration, byteLength: chunks[i]?.byteLength ?? 0 }));
+				const chunkMeta = chunkDurations.map((duration, i) => ({ duration, byteLength: byteLengths[i] ?? 0 }));
 				await this.linkAudioInNote(audioFile, sourceFile, chunkMeta, narrator, contentHash);
 			}
 			return audioFile;
@@ -125,14 +128,9 @@ export class SavedAudio {
 		}
 	}
 
-	/** Label for a saved filename when the voice's real name can't be looked up (no API key). */
-	private voiceFallbackLabel(voice: VoiceConfig): string {
-		return voice.voiceId;
-	}
-
 	/**
-	 * The note's saved audio file, if its audio-path property points at one. Only an `.mp3` (what saving writes)
-	 * counts: the property is user-editable, and anything else it points at, such as another note, must never be
+	 * The note's saved audio file, if its audio-path property points at one. Only an `.mp3` or `.wav` (what saving
+	 * writes) counts: the property is user-editable, and anything else it points at, such as another note, must never be
 	 * overwritten by a save in Replace mode or trashed by Clear.
 	 */
 	private findExistingAudioFile(sourceFile: TFile): TFile | null {
@@ -141,7 +139,7 @@ export class SavedAudio {
 		// Clean it up (stray slashes, non-breaking spaces, non-NFC Unicode) before the lookup.
 		if (typeof storedPath !== 'string' || !storedPath) return null;
 		const file = this.app.vault.getAbstractFileByPath(normalizePath(storedPath));
-		return file instanceof TFile && file.extension.toLowerCase() === AUDIO_EXTENSION ? file : null;
+		return file instanceof TFile && audioFormatForExtension(file.extension) !== null ? file : null;
 	}
 
 	/**

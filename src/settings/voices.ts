@@ -1,7 +1,7 @@
 import { App, DropdownComponent, Notice } from 'obsidian';
 import { ElevenLabsVoice, listElevenLabsVoices } from '../tts/elevenlabs-provider';
 import { ProviderEntry } from './profiles';
-import { getProviderApiKey } from '../tts/registry';
+import { getProviderCredentials } from '../tts/registry';
 
 /** The voices each provider's account offers, loaded on demand for the narrator profile voice dropdown. */
 export class VoiceCache {
@@ -28,12 +28,14 @@ export class VoiceCache {
 		const existing = this.voiceLoads.get(provider.id);
 		if (existing) return existing;
 
-		const apiKey = getProviderApiKey(this.app, provider);
-		if (!apiKey) return Promise.resolve();
+		const credentials = getProviderCredentials(this.app, provider);
+		// VoiceCache is ElevenLabs-only today (see the class doc); a provider whose credentials aren't the
+		// single-API-key elevenlabs shape has no voice list to fetch here.
+		if (!credentials || credentials.type !== 'elevenlabs') return Promise.resolve();
 
 		const load = (async () => {
 			try {
-				this.voicesByProvider.set(provider.id, await listElevenLabsVoices(apiKey));
+				this.voicesByProvider.set(provider.id, await listElevenLabsVoices(credentials.apiKey));
 			} catch (error) {
 				console.error('Note Narrator: failed to fetch ElevenLabs voices', error);
 				if (notify) new Notice(`Failed to fetch voices: ${error instanceof Error ? error.message : String(error)}`);

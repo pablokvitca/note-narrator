@@ -1,13 +1,14 @@
 import { App, Events, MarkdownView, Notice, TFile } from 'obsidian';
-import { decodeAudioDuration, sliceIntoChunks } from './audio-utils';
+import { audioFormatForExtension, audioMimeType, decodeAudioDuration, splitAudioChunks } from './audio-utils';
 import { AudioLinkStatus, ChunkOutcome, GenerationJob, IDLE_STATE, JobStaleReason, PoolResult, PositionBase, ReaderState, SavedPlaybackTimeline } from './reader-types';
 import { ChunkPosition, RawSpan } from '../text/text-position';
 import { HighlightGranularity, NoteNarratorSettings } from '../settings/settings';
 import { ResolvedNarrator, generationWindow } from '../settings/profiles';
 import { GenerateInBackgroundAction, decideGenerateInBackground, hasPendingGeneration } from './background-job';
 import { BackgroundQueue } from './background-queue';
-import { createTTSProvider, getProviderApiKey, missingApiKeyMessage } from '../tts/registry';
+import { ProviderCredentials, createTTSProvider, getProviderCredentials, missingCredentialsMessage } from '../tts/registry';
 import { NoteText } from './note-text';
+import type { AudioFormat } from '../tts/provider';
 import { SavedAudio } from './saved-audio';
 import { SavedAudioFreshness, savedAudioFreshness } from './saved-audio-freshness';
 
@@ -25,7 +26,7 @@ type ReadKind = 'full' | 'selection';
 /** Everything needed to build a generation job, resolved and validated up front. */
 interface PreparedRead {
 	narrator: ResolvedNarrator;
-	apiKey: string;
+	credentials: ProviderCredentials;
 	chunks: string[];
 	positions: ChunkPosition[];
 }
@@ -569,9 +570,9 @@ export class Reader extends Events {
 			new Notice('Add a provider and a narrator profile in the Note Narrator settings.');
 			return null;
 		}
-		const apiKey = getProviderApiKey(this.app, narrator.provider);
-		if (!apiKey) {
-			new Notice(missingApiKeyMessage(narrator.provider));
+		const credentials = getProviderCredentials(this.app, narrator.provider);
+		if (!credentials) {
+			new Notice(missingCredentialsMessage(narrator.provider));
 			return null;
 		}
 
@@ -580,7 +581,7 @@ export class Reader extends Events {
 			new Notice('Nothing to read.');
 			return null;
 		}
-		return { narrator, apiKey, chunks, positions };
+		return { narrator, credentials, chunks, positions };
 	}
 
 	/**
@@ -589,7 +590,7 @@ export class Reader extends Events {
 	 * built from, hashed now for its saved audio's staleness check.
 	 */
 	private createJob(sourceFile: TFile | null, prepared: PreparedRead, kind: ReadKind, sourceContent?: string): GenerationJob {
-		const { narrator, apiKey, chunks, positions } = prepared;
+		const { narrator, credentials, chunks, positions } = prepared;
 		let job!: GenerationJob;
 		job = {
 			id: this.nextJobId++,
@@ -601,7 +602,7 @@ export class Reader extends Events {
 			chunkInFlight: new Array<boolean>(chunks.length).fill(false),
 			chunkDurations: new Array<number | undefined>(chunks.length).fill(undefined),
 			positions,
-			provider: createTTSProvider(narrator.provider, narrator.voice, apiKey, () => this.handleRateLimited(job)),
+			provider: createTTSProvider(narrator.provider, narrator.voice, credentials, () => this.handleRateLimited(job)),
 			narrator,
 			// Only a full-note read is saved: a selection's audio isn't the note's audio.
 			sourceFileForSave: kind === 'full' ? sourceFile : null,
@@ -776,7 +777,7 @@ export class Reader extends Events {
 			}
 
 			if (session !== this.sessionId) return;
-			const outcome = await this.playChunk(job, audioData, index, job.chunks.length);
+			const outcome = await this.playChunk(job, audioData, job.provider.outputFormat, index, job.chunks.length);
 			if (session !== this.sessionId) return;
 
 			index = outcome === 'previous' ? Math.max(0, index - 1) : index + 1;
@@ -810,7 +811,7 @@ export class Reader extends Events {
 		try {
 			const buffer = await job.provider.synthesize(job.chunks[index] ?? '', () => job.cancelled);
 			job.chunkBuffers[index] = buffer;
-			const duration = await decodeAudioDuration(buffer);
+			const duration = await decodeAudioDuration(buffer, job.provider.outputFormat);
 			job.chunkReady[index] = true;
 			job.chunkDurations[index] = duration;
 			job.chunkInFlight[index] = false;
@@ -924,8 +925,8 @@ export class Reader extends Events {
 
 			const narrator = this.noteText.getActiveNarrator();
 			if (!narrator) return;
-			const apiKey = getProviderApiKey(this.app, narrator.provider);
-			if (!apiKey) return;
+			const credentials = getProviderCredentials(this.app, narrator.provider);
+			if (!credentials) return;
 
 			const rawText = await this.app.vault.cachedRead(file);
 			// A read or background job of the note may have started during the waits above.
@@ -938,14 +939,14 @@ export class Reader extends Events {
 			const { chunks } = this.noteText.buildChunksAndPositions(input.rawText, input.positionBase);
 			if (chunks.length === 0) return;
 
-			const provider = createTTSProvider(narrator.provider, narrator.voice, apiKey);
+			const provider = createTTSProvider(narrator.provider, narrator.voice, credentials);
 			const buffers: ArrayBuffer[] = [];
 			const chunkDurations: number[] = [];
 			for (const chunk of chunks) {
 				if (isCancelled()) return;
 				const buffer = await provider.synthesize(chunk, isCancelled);
 				buffers.push(buffer);
-				chunkDurations.push(await decodeAudioDuration(buffer));
+				chunkDurations.push(await decodeAudioDuration(buffer, provider.outputFormat));
 			}
 			if (isCancelled()) return;
 
@@ -1057,7 +1058,9 @@ export class Reader extends Events {
 			// byte lengths don't actually add up to this file's size (stale/mismatched metadata), fall back
 			// to playing it as one opaque chunk with no timeline -- no Previous/Next part, no highlighting,
 			// rather than slicing at the wrong offsets.
-			const sliced = timeline ? sliceIntoChunks(data, timeline.chunkByteLengths) : null;
+			// Saving only writes .mp3 and .wav files, and only those are linked as a note's audio.
+			const format = audioFormatForExtension(audioFile.extension) ?? 'mp3';
+			const sliced = timeline ? splitAudioChunks(data, timeline.chunkByteLengths, format) : null;
 			this.savedPlaybackTimeline = sliced ? timeline : null;
 			const buffers = sliced ?? [data];
 			const chunkCount = buffers.length;
@@ -1077,7 +1080,7 @@ export class Reader extends Events {
 			});
 
 			if (session !== this.sessionId) return;
-			await this.playSavedChunksFromIndex(session, buffers);
+			await this.playSavedChunksFromIndex(session, buffers, format);
 			if (session !== this.sessionId) return;
 			this.savedPlaybackTimeline = null;
 			this.resetToIdle();
@@ -1092,21 +1095,21 @@ export class Reader extends Events {
 	}
 
 	/** Plays a saved file's already-sliced chunk buffers sequentially, honoring Previous/Next-part jumps exactly like a live read's `playFromIndex()` -- just with no generation step, since every buffer is already fully formed. */
-	private async playSavedChunksFromIndex(session: number, buffers: ArrayBuffer[]): Promise<void> {
+	private async playSavedChunksFromIndex(session: number, buffers: ArrayBuffer[], format: AudioFormat): Promise<void> {
 		let index = 0;
 		while (index >= 0 && index < buffers.length) {
 			if (session !== this.sessionId) return;
 			this.setState({ chunkIndex: index });
-			const outcome = await this.playChunk(null, buffers[index]!, index, buffers.length);
+			const outcome = await this.playChunk(null, buffers[index]!, format, index, buffers.length);
 			if (session !== this.sessionId) return;
 			index = outcome === 'previous' ? Math.max(0, index - 1) : index + 1;
 		}
 	}
 
 	/** `job` is null only for direct saved-file playback, which has no generation job and thus nothing to patch chunkDurations onto. */
-	private playChunk(job: GenerationJob | null, audioData: ArrayBuffer, index: number, count: number): Promise<ChunkOutcome> {
+	private playChunk(job: GenerationJob | null, audioData: ArrayBuffer, format: AudioFormat, index: number, count: number): Promise<ChunkOutcome> {
 		return new Promise((resolve) => {
-			const blob = new Blob([audioData], { type: 'audio/mpeg' });
+			const blob = new Blob([audioData], { type: audioMimeType(format) });
 			const url = URL.createObjectURL(blob);
 			const audio = new Audio(url);
 			audio.playbackRate = this.currentPlaybackRate;

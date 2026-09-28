@@ -29,11 +29,13 @@ const fakes = vi.hoisted(() => ({
 }));
 
 vi.mock('../../src/tts/registry', () => ({
-	getProviderApiKey: () => 'key',
-	missingApiKeyMessage: () => 'No API key.',
+	getProviderCredentials: () => ({ type: 'elevenlabs', apiKey: 'key' }),
+	providerOutputFormat: () => 'mp3',
+	missingCredentialsMessage: () => 'No API key.',
 	resolveVoiceLabel: () =>
 		fakes.holdVoiceLabels ? new Promise<string>((resolve) => fakes.heldVoiceLabels.push(() => resolve('Voice'))) : Promise.resolve('Voice'),
 	createTTSProvider: () => ({
+		outputFormat: 'mp3',
 		synthesize: (text: string) =>
 			new Promise<ArrayBuffer>((resolve) => fakes.synthCalls.push({ text, resolve: () => resolve(new ArrayBuffer(8)) })),
 	}),

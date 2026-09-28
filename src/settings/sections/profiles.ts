@@ -166,8 +166,14 @@ export class ProfilesSection extends SettingsSection {
 		if (!provider || profile.providerId === providerId) return;
 		const previous = getProvider(this.settings, profile.providerId);
 		profile.providerId = providerId;
-		if (previous?.type !== provider.type) profile.voice = defaultVoiceConfig(provider.type);
+		const typeChanged = previous?.type !== provider.type;
+		if (typeChanged) profile.voice = defaultVoiceConfig(provider.type);
 		await this.plugin.saveSettings();
+		// Another provider type has other voice rows.
+		if (typeChanged) {
+			this.update();
+			return;
+		}
 		// The voice list belongs to the provider's account; reload it into the open page's dropdown.
 		this.voiceRefreshers.get(profile.id)?.();
 	}
