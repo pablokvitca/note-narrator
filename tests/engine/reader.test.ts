@@ -465,6 +465,44 @@ describe('Reader moving a read to the background', () => {
 		expect(queued).toMatchObject({ status: 'queued' });
 		expect(queued?.chunkReady).toEqual([true, true, false]);
 	});
+
+	it('marks a queued moved read done as soon as its last in-flight chunks finish, without waiting for its turn', async () => {
+		const reader = makeReader();
+		void reader.generateNoteInBackground(makeView(makeFile('B'), ['B1', 'B2']));
+		const a = makeFile('A');
+		void reader.readNote(makeView(a, ['A1', 'A2']));
+		await settle();
+		// Both of A's chunks are already being generated when it moves behind B.
+		reader.continueGeneratingInBackground();
+		await settle();
+		expect(reader.getState().backgroundJobs.map((job) => job.status)).toEqual(['generating', 'queued']);
+
+		for (const call of callsFor('A')) call.resolve();
+		await settle();
+
+		expect(reader.getState().backgroundJobs.map((job) => [job.file?.basename, job.status])).toEqual([
+			['B', 'generating'],
+			['A', 'done'],
+		]);
+		expect(Notice.messages).toContain('Finished generating "A" in the background.');
+		expect(reader.getGenerateInBackgroundAction(a)).toBe('ready-in-background');
+	});
+
+	it('announces a job finishing only once, even after it was played and moved back to the background', async () => {
+		const reader = makeReader();
+		const view = makeView(makeFile('A'), ['A1', 'A2']);
+		void reader.generateNoteInBackground(view);
+		await settle();
+		void reader.readNote(view);
+		await settle();
+		reader.continueGeneratingInBackground();
+		await settle();
+
+		await finishGenerating('A');
+
+		expect(Notice.messages.filter((message) => message === 'Finished generating "A" in the background.')).toHaveLength(1);
+		expect(reader.getState().backgroundJobs.map((job) => job.status)).toEqual(['done']);
+	});
 });
 
 describe('Reader handing a job over while chunks are still being decoded', () => {
