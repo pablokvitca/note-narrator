@@ -784,7 +784,9 @@ export class Reader extends Events {
 	private maybeSaveOnGenerationComplete(job: GenerationJob): void {
 		if (job.savedForSession) return;
 		if (job.chunkReady.length === 0 || !job.chunkReady.every(Boolean)) return;
-		if (!this.settings.saveAudioFile || !job.sourceFileForSave) return;
+		// A job that may be saved always has a contentHash (both are set only for a full-note read); checked
+		// so the save never falls back to hashing the note as it is now.
+		if (!this.settings.saveAudioFile || !job.sourceFileForSave || job.contentHash === null) return;
 
 		job.savedForSession = true;
 		const buffers = job.chunkBuffers.filter((buffer): buffer is ArrayBuffer => buffer !== undefined);
