@@ -34,3 +34,43 @@ export class TFile {
 	basename = '';
 	extension = 'md';
 }
+
+export function normalizePath(path: string): string {
+	return path.replace(/\/+/g, '/').replace(/^\/|\/$/g, '');
+}
+
+export function moment(): { format: () => string; toISOString: () => string } {
+	return { format: () => '2026-01-01 000000', toISOString: () => '2026-01-01T00:00:00.000Z' };
+}
+
+/**
+ * Just enough YAML for test frontmatter: `key: value` lines (strings, numbers, booleans, quoted strings)
+ * and `- item` lists under a key. Throws on anything else, like the real parser does on invalid YAML.
+ */
+export function parseYaml(yaml: string): unknown {
+	const result: Record<string, unknown> = {};
+	let listKey: string | null = null;
+	for (const line of yaml.split('\n')) {
+		if (line.trim() === '') continue;
+		const item = /^\s+- (.*)$/.exec(line);
+		if (item && listKey) {
+			(result[listKey] as unknown[]).push(parseScalar(item[1] ?? ''));
+			continue;
+		}
+		const pair = /^([^:\s][^:]*):\s*(.*)$/.exec(line);
+		if (!pair) throw new Error(`Unsupported YAML in test stub: ${line}`);
+		const key = pair[1] ?? '';
+		const value = pair[2] ?? '';
+		listKey = value === '' ? key : null;
+		result[key] = value === '' ? [] : parseScalar(value);
+	}
+	return result;
+}
+
+function parseScalar(raw: string): unknown {
+	const value = raw.trim();
+	if (/^(["']).*\1$/.test(value)) return value.slice(1, -1);
+	if (value === 'true' || value === 'false') return value === 'true';
+	if (value !== '' && !Number.isNaN(Number(value))) return Number(value);
+	return value;
+}
