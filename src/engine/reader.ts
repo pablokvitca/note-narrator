@@ -194,7 +194,7 @@ export class Reader extends Events {
 			activePath: state.status === 'idle' ? null : (state.activeFile?.path ?? null),
 			activeKind: state.activeReadKind,
 			activePendingGeneration: hasPendingGeneration(state.chunkReady),
-			backgroundJobPaths: this.backgroundJobs.map((job) => job.file?.path ?? null),
+			backgroundJobs: this.backgroundJobs.map((job) => ({ path: job.file?.path ?? null, status: job.backgroundStatus })),
 		});
 	}
 
@@ -227,6 +227,10 @@ export class Reader extends Events {
 		}
 		if (action === 'already-queued') {
 			new Notice(`"${file.basename}" is already in the background queue.`);
+			return;
+		}
+		if (action === 'ready-in-background') {
+			new Notice(`"${file.basename}" has already finished generating in the background.`);
 			return;
 		}
 
