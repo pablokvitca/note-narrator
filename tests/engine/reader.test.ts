@@ -21,6 +21,8 @@ interface SynthCall {
 
 const fakes = vi.hoisted(() => ({
 	synthCalls: [] as SynthCall[],
+	/** The rate-limit callback Reader handed the most recently created provider (as the real one calls on a 429). */
+	reportRateLimit: null as (() => void) | null,
 	/** What vault.cachedRead() returns for any note. */
 	diskContent: '',
 	/** When true, decodeAudioDuration() stays pending until the test releases it (see releaseDecodes()). */
@@ -38,12 +40,15 @@ const fakes = vi.hoisted(() => ({
 vi.mock('../../src/tts/registry', () => ({
 	getProviderApiKey: () => 'key',
 	missingApiKeyMessage: () => 'No API key.',
-	createTTSProvider: () => ({
+	createTTSProvider: (_provider: unknown, _voice: unknown, _apiKey: unknown, onRateLimited?: () => void) => {
+		fakes.reportRateLimit = onRateLimited ?? null;
+		return {
 		synthesize: (text: string, isCancelled: () => boolean = () => false) =>
 			new Promise<ArrayBuffer>((resolve, reject) => {
 				fakes.synthCalls.push({ text, isCancelled, resolve: () => resolve(new ArrayBuffer(8)), reject });
 			}),
-	}),
+		};
+	},
 }));
 
 vi.mock('../../src/engine/note-text', () => ({
@@ -1056,5 +1061,39 @@ describe('Reader pausing while the chunk to play is still generating', () => {
 		await settle();
 
 		expect(reader.getState().status).toBe('playing');
+	});
+});
+
+describe('Reader with a rate-limited job changing hands', () => {
+	it('keeps generating one chunk at a time after moving to the background and back', async () => {
+		const reader = makeReader();
+		const view = makeView(makeFile('A'), ['A1', 'A2', 'A3', 'A4', 'A5', 'A6']);
+		void reader.readNote(view);
+		await settle();
+		expect(callsFor('A')).toHaveLength(2);
+
+		// A 429: the provider reports it, and the job falls back to one chunk at a time from here on.
+		fakes.reportRateLimit?.();
+		const settled = new Set<SynthCall>();
+		const waiting = () => callsFor('A').filter((call) => !settled.has(call));
+		const resolveWaiting = async () => {
+			for (const call of waiting()) {
+				settled.add(call);
+				call.resolve();
+			}
+			await settle();
+		};
+
+		reader.continueGeneratingInBackground();
+		await resolveWaiting();
+		expect(waiting()).toHaveLength(1);
+
+		// Adopted back at the foreground window (2), but still rate-limited.
+		void reader.readNote(view);
+		await settle();
+		expect(waiting()).toHaveLength(1);
+
+		await resolveWaiting();
+		expect(waiting()).toHaveLength(1);
 	});
 });
