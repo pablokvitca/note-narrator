@@ -98,6 +98,18 @@ describe('SavedAudio.getAudioStatus', () => {
 		expect(await saved.getAudioStatus(note)).toBe('outdated');
 	});
 
+	it('reports a property edit as outdated right away, even before the metadata cache catches up', async () => {
+		const before = '---\nstatus: draft\n---\nBody';
+		const vault: Vault = { content: before };
+		const { saved, note, settings } = makeSavedAudio(vault);
+		// Saved by 1.1 (a versioned hash); the cache still shows the pre-edit property.
+		vault.cachedFrontmatter = { status: 'draft', ...linked(settings, saved.stalenessHash(before, note)) };
+
+		vault.content = '---\nstatus: final\n---\nBody';
+
+		expect(await saved.getAudioStatus(note)).toBe('outdated');
+	});
+
 	it('still accepts a hash stored by an older version (cache frontmatter, no line-ending normalization)', async () => {
 		const content = 'Line one\r\nLine two';
 		const vault: Vault = { content };
