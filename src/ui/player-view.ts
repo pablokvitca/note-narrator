@@ -316,7 +316,8 @@ export class PlayerView extends ItemView {
 			);
 
 			this.createIconButton(controls, state.status === 'paused' ? 'circle-play' : 'circle-pause', state.status === 'paused' ? 'Resume' : 'Pause', !active, () => {
-				if (state.status === 'playing') this.plugin.reader.pause();
+				// Also while the next chunk is still generating: it then starts paused when it arrives.
+				if (state.status === 'playing' || state.status === 'generating') this.plugin.reader.pause();
 				else if (state.status === 'paused') this.plugin.reader.resume();
 			}).addClass('note-narrator-control-primary');
 
