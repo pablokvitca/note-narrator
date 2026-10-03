@@ -61,11 +61,20 @@ export type ActiveReadKind = 'none' | 'full' | 'selection' | 'saved';
  * - 'already-queued': it already has a background job, still queued or generating.
  * - 'ready-in-background': its background job has finished (play it from its card, or discard the card to
  *   generate again).
+ * - 'saved-up-to-date': its saved audio is up to date (same text, same narrator), so, like Read, there's
+ *   nothing worth paying to generate again.
  * - 'generate': starts a new background job.
  * A selection read of the note is never moved (selection reads can't go to the background); the full note
  * is generated alongside it instead.
  */
-export type GenerateInBackgroundAction = 'move-active' | 'already-generated' | 'playing-saved' | 'already-queued' | 'ready-in-background' | 'generate';
+export type GenerateInBackgroundAction =
+	| 'move-active'
+	| 'already-generated'
+	| 'playing-saved'
+	| 'already-queued'
+	| 'ready-in-background'
+	| 'saved-up-to-date'
+	| 'generate';
 
 export interface GenerateInBackgroundInput {
 	notePath: string;
@@ -75,6 +84,8 @@ export interface GenerateInBackgroundInput {
 	/** Whether the current read still has chunks left to generate. */
 	activePendingGeneration: boolean;
 	backgroundJobs: { path: string | null; status: BackgroundJobStatus }[];
+	/** Whether the note's saved audio is up to date with its text and made with the active narrator. */
+	savedAudioUpToDate: boolean;
 }
 
 export function decideGenerateInBackground(input: GenerateInBackgroundInput): GenerateInBackgroundAction {
@@ -85,5 +96,6 @@ export function decideGenerateInBackground(input: GenerateInBackgroundInput): Ge
 	const existing = input.backgroundJobs.find((job) => job.path === input.notePath);
 	if (existing) return existing.status === 'done' ? 'ready-in-background' : 'already-queued';
 	if (isActive && input.activeKind === 'saved') return 'playing-saved';
+	if (input.savedAudioUpToDate) return 'saved-up-to-date';
 	return 'generate';
 }
