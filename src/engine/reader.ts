@@ -285,6 +285,10 @@ export class Reader extends Events {
 		const wasGenerating = job.backgroundStatus === 'generating';
 		this.publishBackgroundJobs();
 
+		// Same as starting any other note: with "Keep generating when starting another note" on, a read of a
+		// different note that's still generating moves to the background instead of being thrown away. Done
+		// after this job left the list, so the moved read can take the generating slot it frees.
+		this.backgroundActiveJobForOtherNote(job.file);
 		this.stop();
 		this.activeJob = job;
 		const session = this.sessionId;
