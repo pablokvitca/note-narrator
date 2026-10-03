@@ -10,6 +10,14 @@ import { createTTSProvider, getProviderApiKey, missingApiKeyMessage } from '../t
 import { NoteText } from './note-text';
 import { SavedAudio } from './saved-audio';
 
+/** What the "Generate note audio in background" command says when there's nothing for it to do. */
+const GENERATE_IN_BACKGROUND_NOTICES: Record<Exclude<GenerateInBackgroundAction, 'move-active' | 'generate' | 'regenerate'>, (note: string) => string> = {
+	'already-generated': (note) => `"${note}" has already finished generating.`,
+	'playing-saved': (note) => `"${note}" is playing from its saved audio.`,
+	'already-queued': (note) => `"${note}" is already in the background queue.`,
+	'ready-in-background': (note) => `"${note}" has already finished generating in the background.`,
+};
+
 /** How a worker pool's run ended; see `Reader.runGenerationWorkerPool()`. */
 type PoolResult = 'done' | 'superseded' | 'failed';
 
@@ -151,6 +159,12 @@ export class Reader extends Events {
 			this.activeJob.cancelled = true;
 			this.activeJob = null;
 		}
+		this.releaseCurrentAudio();
+		this.resetToIdle();
+	}
+
+	/** Stops and releases the chunk audio that's loaded right now (if any), and ends the playback loop's wait on it. */
+	private releaseCurrentAudio(): void {
 		if (this.audio) {
 			this.audio.pause();
 			URL.revokeObjectURL(this.audio.src);
@@ -161,7 +175,6 @@ export class Reader extends Events {
 			this.resolveCurrentChunk = null;
 			resolve('ended');
 		}
-		this.resetToIdle();
 	}
 
 	/**
@@ -182,17 +195,7 @@ export class Reader extends Events {
 		// the foreground worker pool (see GenerationJob.poolToken), and the queue starts a background one
 		// when it's the job's turn. Chunks already in flight still finish and are kept.
 		this.sessionId++;
-
-		if (this.audio) {
-			this.audio.pause();
-			URL.revokeObjectURL(this.audio.src);
-			this.audio = null;
-		}
-		if (this.resolveCurrentChunk) {
-			const resolve = this.resolveCurrentChunk;
-			this.resolveCurrentChunk = null;
-			resolve('ended');
-		}
+		this.releaseCurrentAudio();
 
 		this.resetToIdle();
 		this.enqueueBackgroundJob(job);
@@ -271,20 +274,8 @@ export class Reader extends Events {
 			this.continueGeneratingInBackground();
 			return;
 		}
-		if (action === 'already-generated') {
-			new Notice(`"${file.basename}" has already finished generating.`);
-			return;
-		}
-		if (action === 'playing-saved') {
-			new Notice(`"${file.basename}" is playing from its saved audio.`);
-			return;
-		}
-		if (action === 'already-queued') {
-			new Notice(`"${file.basename}" is already in the background queue.`);
-			return;
-		}
-		if (action === 'ready-in-background') {
-			new Notice(`"${file.basename}" has already finished generating in the background.`);
+		if (action !== 'generate' && action !== 'regenerate') {
+			new Notice(GENERATE_IN_BACKGROUND_NOTICES[action](file.basename));
 			return;
 		}
 
@@ -695,8 +686,9 @@ export class Reader extends Events {
 	/**
 	 * Drives a job's remaining chunks to completion with up to `windowSize` concurrent generations.
 	 * Safe to call on a job that's partially generated already (`ensureChunkBuffer` no-ops on chunks
-	 * that are already ready or in flight) -- used both to generate a whole read upfront (when "start
-	 * playback immediately" is off) and to drive a background job. Resolves to:
+	 * that are already ready or in flight). Used for a read (alongside playback, or upfront when "start
+	 * playback immediately" is off), for a background job, and when a background job is adopted back into
+	 * playback. Resolves to:
 	 * - 'done': every chunk is generated.
 	 * - 'superseded': a newer pool took the job over (see `GenerationJob.poolToken`); chunks may be left,
 	 *   and the job's new owner is responsible for it.
