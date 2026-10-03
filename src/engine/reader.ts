@@ -613,6 +613,7 @@ export class Reader extends Events {
 			contentHash: kind === 'full' && sourceFile && sourceContent !== undefined ? this.savedAudio.stalenessHash(sourceContent, sourceFile) : null,
 			isSelection: kind === 'selection',
 			savedForSession: false,
+			savedAudioPath: null,
 			rateLimited: false,
 			poolToken: 0,
 			cancelled: false,
@@ -847,13 +848,40 @@ export class Reader extends Events {
 		if (job.savedForSession) return;
 		if (job.chunkReady.length === 0 || !job.chunkReady.every(Boolean)) return;
 		// A job that may be saved always has a contentHash (both are set only for a full-note read); checked
-		// so the save never falls back to hashing the note as it is now.
-		if (!this.settings.saveAudioFile || !job.sourceFileForSave || job.contentHash === null) return;
+		// because saveAudioFile() requires it.
+		const { sourceFileForSave, contentHash } = job;
+		if (!this.settings.saveAudioFile || !sourceFileForSave || contentHash === null) return;
 
 		job.savedForSession = true;
 		const buffers = job.chunkBuffers.filter((buffer): buffer is ArrayBuffer => buffer !== undefined);
 		const chunkDurations = job.chunkDurations.map((duration) => duration ?? 0);
-		void this.savedAudio.saveAudioFile(buffers, job.sourceFileForSave, chunkDurations, job.narrator, job.contentHash);
+		void (async () => {
+			const audioFile = await this.savedAudio.saveAudioFile(buffers, sourceFileForSave, chunkDurations, job.narrator, contentHash);
+			job.savedAudioPath = audioFile?.path ?? null;
+		})();
+	}
+
+	/**
+	 * Drops background jobs for a file that was just deleted: either the job's note, or the audio file it
+	 * saved. A finished job's card would otherwise keep showing "Ready in background" (blocking generating
+	 * the note again) for audio that's gone from the vault, or for a note that no longer exists.
+	 */
+	handleFileDeleted(path: string): void {
+		for (const job of this.backgroundJobs.filter((j) => j.file?.path === path || j.savedAudioPath === path)) {
+			this.discardBackgroundJob(job.id);
+		}
+	}
+
+	/**
+	 * Keeps a job's saved-audio path in step with the file being moved or renamed, so deleting it from its
+	 * new place still drops the job. (Trashing a file, to the system trash or Obsidian's `.trash` folder,
+	 * fires a delete event, not a rename -- see {@link handleFileDeleted}. A renamed note needs nothing here:
+	 * the job holds the same TFile, whose path Obsidian updates.)
+	 */
+	handleFileRenamed(newPath: string, oldPath: string): void {
+		for (const job of this.backgroundJobs) {
+			if (job.savedAudioPath === oldPath) job.savedAudioPath = newPath;
+		}
 	}
 
 	/**
@@ -929,8 +957,14 @@ export class Reader extends Events {
 	}
 
 	/** Deletes a note's linked audio file (if any) and removes the Note Narrator audio properties from its frontmatter. */
-	clearReaderFiles(sourceFile: TFile): Promise<void> {
-		return this.savedAudio.clearReaderFiles(sourceFile);
+	async clearReaderFiles(sourceFile: TFile): Promise<void> {
+		// A finished job's card stands for the note's audio, which is being cleared (its file may not even be
+		// the one deleted, e.g. with saving off or "Keep old versions"). A queued or generating job is left
+		// alone: clearing old audio shouldn't throw away a (paid) generation in progress, whose new audio is
+		// saved and linked when it finishes.
+		const finished = this.backgroundJobs.find((j) => j.file?.path === sourceFile.path && j.backgroundStatus === 'done');
+		if (finished) this.discardBackgroundJob(finished.id);
+		await this.savedAudio.clearReaderFiles(sourceFile);
 	}
 
 	/** Plays a previously saved audio file directly, without generating anything. */
