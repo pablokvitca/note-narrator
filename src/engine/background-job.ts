@@ -54,8 +54,10 @@ export type ActiveReadKind = 'none' | 'full' | 'selection' | 'saved';
 /**
  * What "Generate in background" does for a note:
  * - 'move-active': moves its current full-note read to the background.
- * - 'already-generated' / 'playing-saved': that read has nothing left to generate, so (like the panel's
- *   disabled "Move to background") nothing happens.
+ * - 'already-generated': its full-note read has nothing left to generate, so (like the panel's disabled
+ *   "Move to background") nothing happens.
+ * - 'playing-saved': it's playing from its saved audio (and has no background job), so nothing happens
+ *   rather than paying to regenerate audio that's playing right now.
  * - 'already-queued': it already has a background job, still queued or generating.
  * - 'ready-in-background': its background job has finished (play it from its card, or discard the card to
  *   generate again).
@@ -76,11 +78,12 @@ export interface GenerateInBackgroundInput {
 }
 
 export function decideGenerateInBackground(input: GenerateInBackgroundInput): GenerateInBackgroundAction {
-	if (input.activePath === input.notePath) {
-		if (input.activeKind === 'full') return input.activePendingGeneration ? 'move-active' : 'already-generated';
-		if (input.activeKind === 'saved') return 'playing-saved';
-	}
+	const isActive = input.activePath === input.notePath;
+	if (isActive && input.activeKind === 'full') return input.activePendingGeneration ? 'move-active' : 'already-generated';
+	// Checked before "playing saved" so a background job for the note still shows (queued, or ready to play)
+	// while its saved audio plays.
 	const existing = input.backgroundJobs.find((job) => job.path === input.notePath);
 	if (existing) return existing.status === 'done' ? 'ready-in-background' : 'already-queued';
+	if (isActive && input.activeKind === 'saved') return 'playing-saved';
 	return 'generate';
 }
