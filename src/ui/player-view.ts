@@ -663,10 +663,16 @@ export class PlayerView extends ItemView {
 	}
 
 	private confirmClearReaderFiles(activeFile: TFile): void {
+		// Clearing also drops the note's finished background generation (see Reader.clearReaderFiles()), which
+		// can be the only copy of that audio (e.g. with saving off), so say so when there is one.
+		const hasFinishedBackgroundJob = this.plugin.reader
+			.getState()
+			.backgroundJobs.some((job) => job.file?.path === activeFile.path && job.status === 'done');
+		const backgroundNote = hasFinishedBackgroundJob ? ' It also clears its finished background audio from the list.' : '';
 		new ConfirmModal(
 			this.app,
 			'Clear Note Narrator files?',
-			`This deletes ${activeFile.basename}'s linked audio file and removes the Note Narrator audio properties from its frontmatter. This can't be undone from within Note Narrator.`,
+			`This deletes ${activeFile.basename}'s linked audio file and removes the Note Narrator audio properties from its frontmatter.${backgroundNote} This can't be undone from within Note Narrator.`,
 			'Delete',
 			() => void this.plugin.reader.clearReaderFiles(activeFile),
 		).open();
