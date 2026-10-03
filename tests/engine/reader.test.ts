@@ -666,6 +666,29 @@ describe('Reader playing a background job while another note is being read', () 
 		expect(reader.getState().backgroundJobs.map((job) => job.file?.basename)).toEqual(['A']);
 	});
 
+	it('keeps queue order: the next queued job starts before the read that was moved aside', async () => {
+		const reader = makeReader({ autoBackgroundOnSwitch: true });
+		void reader.generateNoteInBackground(makeView(makeFile('G'), ['G1', 'G2']));
+		void reader.generateNoteInBackground(makeView(makeFile('K'), ['K1', 'K2']));
+		await settle();
+		void reader.readNote(makeView(makeFile('A'), ['A1', 'A2', 'A3']));
+		await settle();
+		expect(reader.getState().backgroundJobs.map((job) => [job.file?.basename, job.status])).toEqual([
+			['G', 'generating'],
+			['K', 'queued'],
+		]);
+
+		// Play the generating job: it leaves the queue, freeing the generating slot.
+		reader.playBackgroundJob(reader.getState().backgroundJobs[0]?.id ?? -1);
+		await settle();
+
+		expect(reader.getState().activeFile?.basename).toBe('G');
+		expect(reader.getState().backgroundJobs.map((job) => [job.file?.basename, job.status])).toEqual([
+			['K', 'generating'],
+			['A', 'queued'],
+		]);
+	});
+
 	it('still discards the current read when "Keep generating when starting another note" is off', async () => {
 		const reader = makeReader({ autoBackgroundOnSwitch: false });
 		reader.generateNoteInBackground(makeView(makeFile('B'), ['B1']));
