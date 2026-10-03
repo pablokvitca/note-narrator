@@ -12,6 +12,12 @@ import { extractFrontmatterYaml, hashText, stripFrontmatter } from '../text/text
  * it is up to date or outdated (by hashing the note), and clearing it. Everything here goes through the vault
  * and the note's frontmatter; playback and generation live in {@link Reader}.
  */
+/**
+ * Marks staleness hashes computed by {@link SavedAudio.stalenessHash} (1.1+). Hashes stored by 1.0.0 have no
+ * prefix and are checked with the 1.0.0 algorithm instead, so existing saved audio stays up to date.
+ */
+const HASH_VERSION_PREFIX = 'v2:';
+
 export class SavedAudio {
 	constructor(
 		private app: App,
@@ -95,13 +101,13 @@ export class SavedAudio {
 	 */
 	stalenessHash(rawContent: string, file: TFile): string {
 		const content = rawContent.replace(/\r\n/g, '\n');
-		return this.hashNote(this.parseFrontmatter(content, file), stripFrontmatter(content));
+		return `${HASH_VERSION_PREFIX}${this.hashNote(this.parseFrontmatter(content, file), stripFrontmatter(content))}`;
 	}
 
 	/**
-	 * The hash before 1.1: frontmatter from the metadata cache, no line-ending normalization. Only ever
-	 * compared against, never stored, so audio saved by an older version doesn't all turn "outdated" on
-	 * update just because the hash is now computed differently.
+	 * The hash before 1.1: frontmatter from the metadata cache, no line-ending normalization, no version
+	 * prefix. Only used to check hashes stored by 1.0.0 (unprefixed), never stored, so audio saved by an
+	 * older version doesn't all turn "outdated" on update just because the hash is now computed differently.
 	 */
 	private legacyStalenessHash(rawContent: string, file: TFile): string {
 		return this.hashNote(this.app.metadataCache.getFileCache(file)?.frontmatter ?? {}, stripFrontmatter(rawContent));
@@ -234,8 +240,11 @@ export class SavedAudio {
 		}
 
 		const content = await this.app.vault.cachedRead(file);
-		const matches = storedHash === this.stalenessHash(content, file) || storedHash === this.legacyStalenessHash(content, file);
-		return matches ? 'up-to-date' : 'outdated';
+		// A hash saved since 1.1 is versioned and only ever compared with the current algorithm. Falling back
+		// to the 1.0.0 one for it too would briefly undo reading frontmatter from the text: right after a
+		// property edit, the cache-based 1.0.0 hash still matches until Obsidian re-indexes the note.
+		const currentHash = storedHash.startsWith(HASH_VERSION_PREFIX) ? this.stalenessHash(content, file) : this.legacyStalenessHash(content, file);
+		return storedHash === currentHash ? 'up-to-date' : 'outdated';
 	}
 
 	/** Info about a note's linked saved audio, for the player view's "Play saved"/"Regenerate" buttons. Null if none exists. */
