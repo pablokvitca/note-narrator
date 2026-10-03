@@ -46,6 +46,9 @@ export class Reader extends Events {
 	/** Set by dispose(), for async work that resumes after the plugin has unloaded. */
 	private disposed = false;
 
+	/** Pause was pressed while the chunk to play was still generating; it starts paused when it arrives. */
+	private pauseWhenChunkArrives = false;
+
 	/** The job currently bound to playback and driving `state`. Null when nothing is generating/playing (or a saved file is playing directly, with no generation job involved). */
 	private activeJob: GenerationJob | null = null;
 
@@ -143,6 +146,7 @@ export class Reader extends Events {
 	/** Fully stops playback and cancels the active job's generation. Use `continueGeneratingInBackground()` instead to keep generating without playing. */
 	stop(): void {
 		this.sessionId++;
+		this.pauseWhenChunkArrives = false;
 		this.savedPlaybackTimeline = null;
 		if (this.activeJob) {
 			this.activeJob.cancelled = true;
@@ -174,6 +178,7 @@ export class Reader extends Events {
 		if (!hasPendingGeneration(job.chunkReady)) return;
 
 		this.activeJob = null;
+		this.pauseWhenChunkArrives = false;
 		// Bumping the session stops the playback loop (playFromIndex) at its next check without touching
 		// `job` itself. Its generation is handed to the background queue below: enqueueBackgroundJob() retires
 		// the foreground worker pool (see GenerationJob.poolToken), and the queue starts a background one
@@ -411,10 +416,21 @@ export class Reader extends Events {
 		if (this.audio && !this.audio.paused) {
 			this.audio.pause();
 			this.setState({ status: 'paused' });
+		} else if (this.state.status === 'generating' && this.activeJob) {
+			// Nothing is playing yet: the chunk to play next is still generating. Remember the pause so that
+			// chunk starts paused when it arrives (see playChunk()), instead of playing as if never paused.
+			this.pauseWhenChunkArrives = true;
+			this.setState({ status: 'paused' });
 		}
 	}
 
 	resume(): void {
+		if (this.pauseWhenChunkArrives) {
+			// Resumed before the chunk arrived: just let it play when it does.
+			this.pauseWhenChunkArrives = false;
+			if (!this.audio) this.setState({ status: 'generating' });
+			return;
+		}
 		if (this.audio && this.audio.paused && this.state.status === 'paused') {
 			void this.audio.play();
 			this.setState({ status: 'playing' });
@@ -765,7 +781,7 @@ export class Reader extends Events {
 
 		while (index >= 0 && index < job.chunks.length) {
 			if (session !== this.sessionId) return;
-			this.setState({ status: 'generating', chunkIndex: index });
+			this.setState({ status: this.pauseWhenChunkArrives ? 'paused' : 'generating', chunkIndex: index });
 
 			let audioData: ArrayBuffer;
 			try {
@@ -1081,6 +1097,12 @@ export class Reader extends Events {
 			audio.addEventListener('ended', () => finish('ended'));
 			audio.addEventListener('error', () => finish('ended'));
 
+			if (this.pauseWhenChunkArrives) {
+				// Paused while this chunk was generating: load it but leave it paused until Resume.
+				this.pauseWhenChunkArrives = false;
+				this.setState({ status: 'paused', chunkIndex: index, chunkCount: count, currentTime: 0, duration: audio.duration || 0 });
+				return;
+			}
 			this.setState({ status: 'playing', chunkIndex: index, chunkCount: count, currentTime: 0, duration: audio.duration || 0 });
 			void audio.play();
 		});
