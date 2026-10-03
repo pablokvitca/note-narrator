@@ -8,14 +8,15 @@ const ALL_ACTIONS: GenerateInBackgroundAction[] = [
 	'playing-saved',
 	'already-queued',
 	'ready-in-background',
-	'saved-up-to-date',
+	'regenerate',
 	'generate',
 ];
 
 describe('backgroundButtonSpec', () => {
-	it('is only clickable when it can act: moving a generating read, or generating a note', () => {
+	it('is only clickable when it can act: moving a generating read, or (re)generating a note', () => {
 		const clickable = ALL_ACTIONS.filter((action) => backgroundButtonSpec(action).onClick !== null);
-		expect(clickable).toEqual(['move-active', 'generate']);
+		expect(clickable).toEqual(['move-active', 'regenerate', 'generate']);
+		expect(backgroundButtonSpec('regenerate').onClick).toBe('generate');
 		expect(backgroundButtonSpec('move-active').onClick).toBe('move');
 		expect(backgroundButtonSpec('generate').onClick).toBe('generate');
 	});
@@ -29,8 +30,12 @@ describe('backgroundButtonSpec', () => {
 		expect(backgroundButtonSpec('ready-in-background')).toMatchObject({ label: 'Ready in background', icon: 'check' });
 	});
 
+	it('says "Regenerate in background" when the note\'s saved audio is up to date, like Read', () => {
+		expect(backgroundButtonSpec('regenerate').label).toBe('Regenerate in background');
+	});
+
 	it('says "Generate in background" otherwise', () => {
-		for (const action of ['playing-saved', 'already-queued', 'saved-up-to-date', 'generate'] as const) {
+		for (const action of ['playing-saved', 'already-queued', 'generate'] as const) {
 			expect(backgroundButtonSpec(action).label).toBe('Generate in background');
 		}
 	});

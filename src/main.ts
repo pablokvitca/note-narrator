@@ -75,7 +75,7 @@ export default class NoteNarratorPlugin extends Plugin {
 			checkCallback: (checking) => {
 				const view = this.app.workspace.getActiveViewOfType(MarkdownView);
 				if (!view) return false;
-				if (!checking) void this.reader.generateNoteInBackground(view);
+				if (!checking) this.reader.generateNoteInBackground(view);
 				return true;
 			},
 		});

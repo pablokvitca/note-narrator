@@ -763,12 +763,18 @@ export class PlayerView extends ItemView {
 		const currentContent = view && activeFile && view.file?.path === activeFile.path ? view.editor.getValue() : undefined;
 		const action = activeFile ? this.plugin.reader.getGenerateInBackgroundAction(activeFile, currentContent) : null;
 		const spec: BackgroundButtonSpec = backgroundButtonSpec(action);
-		const { button: backgroundButton } = this.createLabeledButton(actionsRow, 'note-narrator-background-button', spec.icon, spec.label, spec.tooltip);
+		const { button: backgroundButton, labelEl: backgroundLabelEl } = this.createLabeledButton(
+			actionsRow,
+			'note-narrator-background-button',
+			spec.icon,
+			spec.label,
+			spec.tooltip,
+		);
 		backgroundButton.disabled = spec.onClick === null;
 		if (spec.onClick === 'move') {
 			backgroundButton.onclick = () => this.plugin.reader.continueGeneratingInBackground();
 		} else if (spec.onClick === 'generate') {
-			backgroundButton.onclick = () => void this.plugin.reader.generateNoteInBackground(this.getActiveMarkdownView() ?? undefined);
+			backgroundButton.onclick = () => this.plugin.reader.generateNoteInBackground(this.getActiveMarkdownView() ?? undefined);
 		}
 
 		if (!activeFile || !this.plugin.settings.linkAudioInNote) return;
@@ -793,12 +799,12 @@ export class PlayerView extends ItemView {
 						}
 					}
 
-					// Up to date with this narrator: nothing worth paying to generate again (the command
-					// refuses too -- same conditions as Reader.hasUpToDateSavedAudio()).
+					// Up to date with this narrator: generating again regenerates it, so say so -- the same way Read
+					// is the button that regenerates. Still clickable; the click handler is unchanged.
 					if (action === 'generate' && info.status === 'up-to-date' && !voiceMismatch) {
-						backgroundButton.disabled = true;
-						backgroundButton.onclick = null;
-						attachTooltip(backgroundButton, backgroundButtonSpec('saved-up-to-date').tooltip);
+						const regenerate = backgroundButtonSpec('regenerate');
+						backgroundLabelEl.setText(regenerate.label);
+						attachTooltip(backgroundButton, regenerate.tooltip);
 					}
 
 					playSavedButton.disabled = false;
