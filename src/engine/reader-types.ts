@@ -1,5 +1,5 @@
 import { TFile } from 'obsidian';
-import { ActiveReadKind, BackgroundJobInfo } from './background-job';
+import { ActiveReadKind, BackgroundJobInfo, BackgroundJobStatus } from './background-job';
 import { ChunkPosition } from '../text/text-position';
 import { ResolvedNarrator } from '../settings/profiles';
 import { TTSProvider } from '../tts/provider';
@@ -118,5 +118,5 @@ export interface GenerationJob {
 	/** Set once this job is discarded (stopped, discarded from the background, failed, or the plugin unloaded) so any still-settling promises know not to touch playback/background state on completion. Handing a job between owners (playback and the background queue) doesn't cancel it -- see `poolToken`. */
 	cancelled: boolean;
 	/** Only meaningful while the job is in `Reader.backgroundJobs` -- see {@link BackgroundJobStatus}. */
-	backgroundStatus: 'queued' | 'generating' | 'done';
+	backgroundStatus: BackgroundJobStatus;
 }
