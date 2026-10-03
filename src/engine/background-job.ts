@@ -57,12 +57,16 @@ export function findBackgroundJobForNote<T extends { file: { path: string } | nu
 export type ActiveReadKind = 'none' | 'full' | 'selection' | 'saved';
 
 /**
- * What "Generate in background" does for a note. 'move-active' moves its current full-note read to the
- * background; 'already-generated' and 'playing-saved' mean that read has nothing left to generate (so,
- * like the panel's disabled "Move to background", nothing happens); 'already-queued' means it already has
- * a background job still queued or generating, and 'ready-in-background' one that has finished (play it
- * from its card, or discard the card to generate again); 'generate' starts a new one. A selection read of the note is never moved (selection
- * reads can't go to the background) -- the full note is generated alongside it instead.
+ * What "Generate in background" does for a note:
+ * - 'move-active': moves its current full-note read to the background.
+ * - 'already-generated' / 'playing-saved': that read has nothing left to generate, so (like the panel's
+ *   disabled "Move to background") nothing happens.
+ * - 'already-queued': it already has a background job, still queued or generating.
+ * - 'ready-in-background': its background job has finished (play it from its card, or discard the card to
+ *   generate again).
+ * - 'generate': starts a new background job.
+ * A selection read of the note is never moved (selection reads can't go to the background); the full note
+ * is generated alongside it instead.
  */
 export type GenerateInBackgroundAction = 'move-active' | 'already-generated' | 'playing-saved' | 'already-queued' | 'ready-in-background' | 'generate';
 

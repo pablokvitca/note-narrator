@@ -2,7 +2,7 @@ import { debounce, ItemView, MarkdownView, Menu, setIcon, Setting, TFile, Worksp
 import { ConfirmModal } from './confirm-modal';
 import NoteNarratorPlugin from '../main';
 import { getActiveProfile, getDropdownProfiles, savedVoiceMatches } from '../settings/profiles';
-import { hasPendingGeneration } from '../engine/background-job';
+import { GenerateInBackgroundAction, hasPendingGeneration } from '../engine/background-job';
 import { PLAY_SAVED_ICON_ID, skipIconId } from './icons';
 import { AudioLinkStatus, ReaderState } from '../engine/reader-types';
 import { computeFullReadTimes, formatTimeDisplay } from '../engine/time-utils';
@@ -21,6 +21,40 @@ const STATUS_LABELS: Record<ReaderState['status'], string> = {
 	generating: 'Generating speech…',
 	playing: 'Reading…',
 	paused: 'Paused',
+};
+
+/** The panel's background button for each "Generate in background" decision; `onClick` null means disabled. */
+interface BackgroundButtonSpec {
+	label: string;
+	icon: string;
+	tooltip: string;
+	onClick: 'move' | 'generate' | null;
+}
+
+const MOVE_TO_BACKGROUND: Omit<BackgroundButtonSpec, 'onClick'> = {
+	label: 'Move to background',
+	icon: 'layers',
+	tooltip: 'Stop playback but keep generating the rest of this note in the background, so you can jump back into it later.',
+};
+
+const GENERATE_IN_BACKGROUND: Omit<BackgroundButtonSpec, 'onClick'> = {
+	label: 'Generate in background',
+	icon: 'layers',
+	tooltip: 'Generate this note in the background without playing it, so you can listen to it later.',
+};
+
+const BACKGROUND_BUTTONS: Record<GenerateInBackgroundAction, BackgroundButtonSpec> = {
+	'move-active': { ...MOVE_TO_BACKGROUND, onClick: 'move' },
+	'already-generated': { ...MOVE_TO_BACKGROUND, onClick: null },
+	'playing-saved': { ...MOVE_TO_BACKGROUND, onClick: null },
+	'already-queued': { ...GENERATE_IN_BACKGROUND, tooltip: 'This note is already in the background queue.', onClick: null },
+	'ready-in-background': {
+		label: 'Ready in background',
+		icon: 'check',
+		tooltip: 'This note finished generating in the background. Play it from its card below, or discard the card to generate it again.',
+		onClick: null,
+	},
+	generate: { ...GENERATE_IN_BACKGROUND, onClick: 'generate' },
 };
 
 const AUDIO_STATUS_LABELS: Record<AudioLinkStatus, string> = {
@@ -751,31 +785,13 @@ export class PlayerView extends ItemView {
 		// the whole note in the background without playing it. Same decision as the command's.
 		const activeFile = this.getActiveFile();
 		const action = activeFile ? this.plugin.reader.getGenerateInBackgroundAction(activeFile) : null;
-		if (action === 'move-active' || action === 'already-generated' || action === 'playing-saved') {
-			const { button: moveButton } = this.createLabeledButton(
-				actionsRow,
-				'note-narrator-background-button',
-				'layers',
-				'Move to background',
-				'Stop playback but keep generating the rest of this note in the background, so you can jump back into it later.',
-			);
-			moveButton.disabled = action !== 'move-active';
-			moveButton.onclick = () => this.plugin.reader.continueGeneratingInBackground();
-		} else {
-			const ready = action === 'ready-in-background';
-			const { button: generateButton } = this.createLabeledButton(
-				actionsRow,
-				'note-narrator-background-button',
-				ready ? 'check' : 'layers',
-				ready ? 'Ready in background' : 'Generate in background',
-				ready
-					? 'This note finished generating in the background. Play it from its card below, or discard the card to generate it again.'
-					: action === 'already-queued'
-						? 'This note is already in the background queue.'
-						: 'Generate this note in the background without playing it, so you can listen to it later.',
-			);
-			generateButton.disabled = action !== 'generate';
-			generateButton.onclick = () => this.plugin.reader.generateNoteInBackground(this.getActiveMarkdownView() ?? undefined);
+		const spec: BackgroundButtonSpec = action ? BACKGROUND_BUTTONS[action] : { ...GENERATE_IN_BACKGROUND, onClick: null };
+		const { button: backgroundButton } = this.createLabeledButton(actionsRow, 'note-narrator-background-button', spec.icon, spec.label, spec.tooltip);
+		backgroundButton.disabled = spec.onClick === null;
+		if (spec.onClick === 'move') {
+			backgroundButton.onclick = () => this.plugin.reader.continueGeneratingInBackground();
+		} else if (spec.onClick === 'generate') {
+			backgroundButton.onclick = () => this.plugin.reader.generateNoteInBackground(this.getActiveMarkdownView() ?? undefined);
 		}
 
 		if (!activeFile || !this.plugin.settings.linkAudioInNote) return;
