@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chunkNote, findHeadingPatternIssues, isHeadingSkipped, parseHeadingSkipPatterns, sectionHeadingText } from '../../src/text/text-utils';
+import { chunkNote, extractFrontmatterYaml, findHeadingPatternIssues, isHeadingSkipped, parseHeadingSkipPatterns, sectionHeadingText } from '../../src/text/text-utils';
 
 describe('parseHeadingSkipPatterns', () => {
 	it('parses one case-insensitive regex per line, skipping blanks', () => {
@@ -80,5 +80,20 @@ describe('findHeadingPatternIssues', () => {
 
 	it('does not treat named groups as lookbehind', () => {
 		expect(findHeadingPatternIssues('(?<name>abc)')).toEqual([]);
+	});
+});
+
+describe('extractFrontmatterYaml', () => {
+	it('returns the YAML between the leading fences', () => {
+		expect(extractFrontmatterYaml('---\ntitle: Hi\ntags: a\n---\nBody')).toBe('title: Hi\ntags: a');
+	});
+
+	it('is null for a note without frontmatter, or with fences that are not at the very start', () => {
+		expect(extractFrontmatterYaml('Body only')).toBeNull();
+		expect(extractFrontmatterYaml('Intro\n---\ntitle: Hi\n---\n')).toBeNull();
+	});
+
+	it('handles a note that is only frontmatter', () => {
+		expect(extractFrontmatterYaml('---\ntitle: Hi\n---')).toBe('title: Hi');
 	});
 });
