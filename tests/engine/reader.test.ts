@@ -19,6 +19,9 @@ interface SynthCall {
 
 const fakes = vi.hoisted(() => ({
 	synthCalls: [] as SynthCall[],
+	/** When true, decodeAudioDuration() stays pending until the test releases it (see releaseDecodes()). */
+	holdDecodes: false,
+	heldDecodes: [] as (() => void)[],
 	saveAudioFile: [] as unknown[][],
 	narrator: {
 		profile: { id: 'p' },
@@ -67,7 +70,8 @@ vi.mock('../../src/engine/saved-audio', () => ({
 }));
 
 vi.mock('../../src/engine/audio-utils', () => ({
-	decodeAudioDuration: () => Promise.resolve(1),
+	decodeAudioDuration: () =>
+		fakes.holdDecodes ? new Promise<number>((resolve) => fakes.heldDecodes.push(() => resolve(1))) : Promise.resolve(1),
 	sliceIntoChunks: () => null,
 }));
 
@@ -138,6 +142,13 @@ async function settle(): Promise<void> {
 	for (let i = 0; i < 50; i++) await Promise.resolve();
 }
 
+/** Lets every held decodeAudioDuration() call finish, and stops holding new ones. */
+async function releaseDecodes(): Promise<void> {
+	fakes.holdDecodes = false;
+	for (const release of fakes.heldDecodes.splice(0)) release();
+	await settle();
+}
+
 function callsFor(prefix: string): SynthCall[] {
 	return fakes.synthCalls.filter((call) => call.text.startsWith(prefix));
 }
@@ -163,6 +174,8 @@ beforeEach(() => {
 	});
 	vi.stubGlobal('Audio', FakeAudio);
 	fakes.synthCalls.length = 0;
+	fakes.holdDecodes = false;
+	fakes.heldDecodes.length = 0;
 	fakes.saveAudioFile.length = 0;
 	FakeAudio.instances = [];
 	Notice.messages = [];
@@ -401,5 +414,142 @@ describe('Reader adopting a background job that has chunks left', () => {
 		await settle();
 
 		expect(callsFor('A').map((call) => call.text)).toEqual(['A1', 'A2']);
+	});
+});
+
+describe('Reader moving a read to the background', () => {
+	it('stops generating a moved read while it waits in the queue', async () => {
+		const reader = makeReader();
+		reader.generateNoteInBackground(makeView(makeFile('B'), ['B1', 'B2']));
+		void reader.readNote(makeView(makeFile('A'), ['A1', 'A2', 'A3', 'A4']));
+		await settle();
+		expect(callsFor('A').map((call) => call.text)).toEqual(['A1', 'A2']);
+
+		reader.continueGeneratingInBackground();
+		for (const call of callsFor('A')) call.resolve();
+		await settle();
+
+		// Queued behind B: the read's own foreground generation must not keep claiming chunks.
+		expect(reader.getState().backgroundJobs.map((job) => job.status)).toEqual(['generating', 'queued']);
+		expect(callsFor('A')).toHaveLength(2);
+
+		await finishGenerating('B');
+
+		// Its turn now, at the background window (1).
+		expect(reader.getState().backgroundJobs.map((job) => job.status)).toEqual(['done', 'generating']);
+		expect(callsFor('A').map((call) => call.text)).toEqual(['A1', 'A2', 'A3']);
+	});
+
+	it('generates a moved read at the background window only', async () => {
+		const reader = makeReader();
+		void reader.readNote(makeView(makeFile('A'), ['A1', 'A2', 'A3', 'A4', 'A5']));
+		await settle();
+		expect(callsFor('A')).toHaveLength(2);
+
+		reader.continueGeneratingInBackground();
+		for (const call of callsFor('A')) call.resolve();
+		await settle();
+
+		expect(callsFor('A').map((call) => call.text)).toEqual(['A1', 'A2', 'A3']);
+	});
+
+	it('does not finish generating a moved read before its turn in the queue', async () => {
+		const reader = makeReader();
+		reader.generateNoteInBackground(makeView(makeFile('B'), ['B1']));
+		void reader.readNote(makeView(makeFile('A'), ['A1', 'A2', 'A3']));
+		await settle();
+		reader.continueGeneratingInBackground();
+		await finishGenerating('A');
+
+		const queued = reader.getState().backgroundJobs[1];
+		expect(queued).toMatchObject({ status: 'queued' });
+		expect(queued?.chunkReady).toEqual([true, true, false]);
+	});
+
+	it('marks a queued moved read done as soon as its last in-flight chunks finish, without waiting for its turn', async () => {
+		const reader = makeReader();
+		void reader.generateNoteInBackground(makeView(makeFile('B'), ['B1', 'B2']));
+		const a = makeFile('A');
+		void reader.readNote(makeView(a, ['A1', 'A2']));
+		await settle();
+		// Both of A's chunks are already being generated when it moves behind B.
+		reader.continueGeneratingInBackground();
+		await settle();
+		expect(reader.getState().backgroundJobs.map((job) => job.status)).toEqual(['generating', 'queued']);
+
+		for (const call of callsFor('A')) call.resolve();
+		await settle();
+
+		expect(reader.getState().backgroundJobs.map((job) => [job.file?.basename, job.status])).toEqual([
+			['B', 'generating'],
+			['A', 'done'],
+		]);
+		expect(Notice.messages).toContain('Finished generating "A" in the background.');
+		expect(reader.getGenerateInBackgroundAction(a)).toBe('ready-in-background');
+	});
+
+	it('announces a job finishing only once, even after it was played and moved back to the background', async () => {
+		const reader = makeReader();
+		const view = makeView(makeFile('A'), ['A1', 'A2']);
+		void reader.generateNoteInBackground(view);
+		await settle();
+		void reader.readNote(view);
+		await settle();
+		reader.continueGeneratingInBackground();
+		await settle();
+
+		await finishGenerating('A');
+
+		expect(Notice.messages.filter((message) => message === 'Finished generating "A" in the background.')).toHaveLength(1);
+		expect(reader.getState().backgroundJobs.map((job) => job.status)).toEqual(['done']);
+	});
+
+	it('reports a job discarded mid-generation as failed, not done', async () => {
+		const results: Promise<string>[] = [];
+		const prototype = Reader.prototype as unknown as { runGenerationWorkerPool: (...args: unknown[]) => Promise<string> };
+		const original = prototype.runGenerationWorkerPool;
+		const spy = vi.spyOn(prototype, 'runGenerationWorkerPool').mockImplementation(function (this: unknown, ...args: unknown[]) {
+			const result = original.apply(this, args);
+			results.push(result);
+			return result;
+		});
+		try {
+			const reader = makeReader();
+			void reader.generateNoteInBackground(makeView(makeFile('A'), ['A1', 'A2']));
+			await settle();
+
+			reader.discardBackgroundJob(reader.getState().backgroundJobs[0]?.id ?? -1);
+			callsFor('A')[0]?.resolve();
+			await settle();
+
+			expect(await Promise.all(results)).toEqual(['failed']);
+		} finally {
+			spy.mockRestore();
+		}
+	});
+});
+
+describe('Reader handing a job over while chunks are still being decoded', () => {
+	it('still marks a moved read done, and starts the next job, once its last chunks finish decoding', async () => {
+		const reader = makeReader();
+		void reader.readNote(makeView(makeFile('A'), ['A1', 'A2']));
+		await settle();
+
+		// Both chunks are synthesized, but neither has finished decoding when the read moves to the background.
+		fakes.holdDecodes = true;
+		for (const call of callsFor('A')) call.resolve();
+		await settle();
+		reader.continueGeneratingInBackground();
+		await settle();
+		reader.generateNoteInBackground(makeView(makeFile('C'), ['C1']));
+		await settle();
+
+		await releaseDecodes();
+
+		expect(reader.getState().backgroundJobs.map((job) => [job.file?.basename, job.status])).toEqual([
+			['A', 'done'],
+			['C', 'generating'],
+		]);
+		expect(callsFor('C')).toHaveLength(1);
 	});
 });

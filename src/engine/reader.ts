@@ -10,6 +10,9 @@ import { createTTSProvider, getProviderApiKey, missingApiKeyMessage } from '../t
 import { NoteText } from './note-text';
 import { SavedAudio } from './saved-audio';
 
+/** How a worker pool's run ended; see `Reader.runGenerationWorkerPool()`. */
+type PoolResult = 'done' | 'superseded' | 'failed';
+
 /** Everything needed to build a generation job, resolved and validated up front. */
 interface PreparedRead {
 	narrator: ResolvedNarrator;
@@ -96,15 +99,21 @@ export class Reader extends Events {
 	/** Drives one background job's generation to completion, then advances the queue. A no-op past its own removal (promoted or discarded) -- the action that removed it is responsible for advancing the queue itself. */
 	private async runBackgroundJob(job: GenerationJob): Promise<void> {
 		const windowSize = generationWindow(job.narrator.provider, true);
-		const ok = await this.runGenerationWorkerPool(job, windowSize);
-		if (job.cancelled || !this.backgroundJobs.includes(job)) return;
+		const result = await this.runGenerationWorkerPool(job, windowSize);
+		// Superseded: a newer pool owns the job now (it was adopted into playback, maybe moved back here
+		// since), and whichever run owns it finishes it -- acting here too would finish it twice.
+		if (result === 'superseded' || job.cancelled || !this.backgroundJobs.includes(job)) return;
 
-		if (ok) {
-			job.backgroundStatus = 'done';
-			this.publishBackgroundJobs();
-			new Notice(`Finished generating "${job.file?.basename ?? 'note'}" in the background.`);
-		}
+		if (result === 'done') this.finishBackgroundJob(job);
 		this.advanceBackgroundQueue();
+	}
+
+	/** Marks a background job done and announces it, once: a no-op if it's already done or still has chunks left. */
+	private finishBackgroundJob(job: GenerationJob): void {
+		if (job.backgroundStatus === 'done' || hasPendingGeneration(job.chunkReady)) return;
+		job.backgroundStatus = 'done';
+		this.publishBackgroundJobs();
+		new Notice(`Finished generating "${job.file?.basename ?? 'note'}" in the background.`);
 	}
 
 	isPlaying(): boolean {
@@ -159,7 +168,9 @@ export class Reader extends Events {
 
 		this.activeJob = null;
 		// Bumping the session stops the playback loop (playFromIndex) at its next check without touching
-		// `job` -- generation for it continues below, gated only by `job.cancelled`, not `this.sessionId`.
+		// `job` itself. Its generation is handed to the background queue below: enqueueBackgroundJob() retires
+		// the foreground worker pool (see GenerationJob.poolToken), and the queue starts a background one
+		// when it's the job's turn. Chunks already in flight still finish and are kept.
 		this.sessionId++;
 
 		if (this.audio) {
@@ -179,6 +190,9 @@ export class Reader extends Events {
 
 	/** Adds a job to the background list, starting it right away if nothing else is generating there, otherwise queueing it behind the one that is. */
 	private enqueueBackgroundJob(job: GenerationJob): void {
+		// Retires whatever pool was driving it (its foreground one, after "Move to background"), so the
+		// background queue alone decides when it generates and how many chunks at once.
+		job.poolToken++;
 		job.backgroundStatus = this.backgroundJobs.some((j) => j.backgroundStatus === 'generating') ? 'queued' : 'generating';
 		this.backgroundJobs.push(job);
 		this.publishBackgroundJobs();
@@ -289,11 +303,9 @@ export class Reader extends Events {
 		// that was only 'queued' or already 'done' wasn't occupying that slot, so nothing to advance.
 		if (wasGenerating) this.advanceBackgroundQueue();
 
-		// A job that never generated in the foreground (started by "Generate in background", or queued and
-		// never started) has no foreground worker pool -- without one, only playFromIndex() would generate,
-		// one chunk at a time as each is needed, with a silent gap before every chunk. Starting one at the
-		// foreground window is safe even if another pool is still running: ensureChunkBuffer() never
-		// generates the same chunk twice.
+		// Without a foreground worker pool only playFromIndex() would generate, one chunk at a time as each
+		// is needed, with a silent gap before every chunk. Starting one also retires the background pool
+		// (see GenerationJob.poolToken), so the job now generates at the foreground window only.
 		if (hasPendingGeneration(job.chunkReady)) {
 			void this.runGenerationWorkerPool(job, generationWindow(job.narrator.provider, false));
 		}
@@ -537,6 +549,7 @@ export class Reader extends Events {
 			isSelection: !allowSave,
 			savedForSession: false,
 			rateLimited: false,
+			poolToken: 0,
 			cancelled: false,
 			backgroundStatus: 'queued',
 		};
@@ -593,8 +606,8 @@ export class Reader extends Events {
 		const generation = this.runGenerationWorkerPool(job, windowSize);
 
 		if (!this.settings.startPlaybackImmediately) {
-			const ok = await generation;
-			if (!ok || job.cancelled || session !== this.sessionId) return;
+			const result = await generation;
+			if (result !== 'done' || job.cancelled || session !== this.sessionId) return;
 		} else {
 			void generation;
 		}
@@ -613,10 +626,15 @@ export class Reader extends Events {
 	 * Drives a job's remaining chunks to completion with up to `windowSize` concurrent generations.
 	 * Safe to call on a job that's partially generated already (`ensureChunkBuffer` no-ops on chunks
 	 * that are already ready or in flight) -- used both to generate a whole read upfront (when "start
-	 * playback immediately" is off) and to drive a background job. Returns false on failure, having
-	 * already reset/removed the job from its owning role (active/background).
+	 * playback immediately" is off) and to drive a background job. Resolves to:
+	 * - 'done': every chunk is generated.
+	 * - 'superseded': a newer pool took the job over (see `GenerationJob.poolToken`); chunks may be left,
+	 *   and the job's new owner is responsible for it.
+	 * - 'failed': generation failed (or the job was cancelled), and the job has already been reset/removed
+	 *   from its owning role (active/background).
 	 */
-	private async runGenerationWorkerPool(job: GenerationJob, windowSize: number): Promise<boolean> {
+	private async runGenerationWorkerPool(job: GenerationJob, windowSize: number): Promise<PoolResult> {
+		const token = ++job.poolToken;
 		let nextIndex = 0;
 
 		const worker = async (workerId: number) => {
@@ -627,6 +645,8 @@ export class Reader extends Events {
 
 			while (nextIndex < job.chunks.length) {
 				if (job.cancelled) return;
+				// A newer pool has taken over this job (see GenerationJob.poolToken).
+				if (job.poolToken !== token) return;
 				// Once rate-limited, only the primary worker keeps going; the rest stop claiming new work.
 				if (job.rateLimited && workerId > 0) return;
 				const index = nextIndex++;
@@ -637,9 +657,11 @@ export class Reader extends Events {
 
 		try {
 			await Promise.all(Array.from({ length: windowSize }, (_, workerId) => worker(workerId)));
-			return true;
+			// Workers also stop early once the job is cancelled, which isn't "every chunk generated".
+			if (job.cancelled) return 'failed';
+			return job.poolToken === token ? 'done' : 'superseded';
 		} catch (error) {
-			if (job.cancelled) return false;
+			if (job.cancelled) return 'failed';
 			// Set before notifying (not just checked) so playFromIndex(), which can independently catch this
 			// same rejection concurrently, knows this failure was already handled and skips its own notice.
 			job.cancelled = true;
@@ -655,7 +677,7 @@ export class Reader extends Events {
 				this.publishBackgroundJobs();
 				this.advanceBackgroundQueue();
 			}
-			return false;
+			return 'failed';
 		}
 	}
 
@@ -696,11 +718,12 @@ export class Reader extends Events {
 	}
 
 	private ensureChunkBuffer(job: GenerationJob, index: number): Promise<ArrayBuffer> {
-		const cached = job.chunkBuffers[index];
-		if (cached) return Promise.resolve(cached);
-
-		const inFlight = job.chunkPromises[index];
-		if (inFlight) return inFlight;
+		// A chunk's promise, not its buffer, is what says it's finished: generateChunk() stores the buffer
+		// before decoding its duration and only marks the chunk ready after, so returning the buffer as soon
+		// as it exists would let a worker pool finish while that chunk isn't ready yet -- and a background job
+		// whose pool finishes with chunks not ready is never marked done, stalling the queue behind it.
+		const existing = job.chunkPromises[index];
+		if (existing) return existing;
 
 		if (job.cancelled) return Promise.reject(new Error('Generation job was cancelled.'));
 
@@ -741,6 +764,9 @@ export class Reader extends Events {
 			});
 		} else if (this.backgroundJobs.includes(job)) {
 			this.publishBackgroundJobs();
+			// A queued job can still finish before its turn, when every chunk it had left was already in
+			// flight as it moved to the background: finish it now instead of showing it as queued.
+			if (job.backgroundStatus === 'queued') this.finishBackgroundJob(job);
 		}
 	}
 
