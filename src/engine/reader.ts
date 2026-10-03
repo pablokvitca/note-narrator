@@ -99,7 +99,7 @@ export class Reader extends Events {
 		const ok = await this.runGenerationWorkerPool(job, windowSize);
 		if (job.cancelled || !this.backgroundJobs.includes(job)) return;
 
-		if (ok) {
+		if (ok && !hasPendingGeneration(job.chunkReady)) {
 			job.backgroundStatus = 'done';
 			this.publishBackgroundJobs();
 			new Notice(`Finished generating "${job.file?.basename ?? 'note'}" in the background.`);
@@ -179,6 +179,9 @@ export class Reader extends Events {
 
 	/** Adds a job to the background list, starting it right away if nothing else is generating there, otherwise queueing it behind the one that is. */
 	private enqueueBackgroundJob(job: GenerationJob): void {
+		// Retires whatever pool was driving it (its foreground one, after "Move to background"), so the
+		// background queue alone decides when it generates and how many chunks at once.
+		job.poolToken++;
 		job.backgroundStatus = this.backgroundJobs.some((j) => j.backgroundStatus === 'generating') ? 'queued' : 'generating';
 		this.backgroundJobs.push(job);
 		this.publishBackgroundJobs();
@@ -289,11 +292,9 @@ export class Reader extends Events {
 		// that was only 'queued' or already 'done' wasn't occupying that slot, so nothing to advance.
 		if (wasGenerating) this.advanceBackgroundQueue();
 
-		// A job that never generated in the foreground (started by "Generate in background", or queued and
-		// never started) has no foreground worker pool -- without one, only playFromIndex() would generate,
-		// one chunk at a time as each is needed, with a silent gap before every chunk. Starting one at the
-		// foreground window is safe even if another pool is still running: ensureChunkBuffer() never
-		// generates the same chunk twice.
+		// Without a foreground worker pool only playFromIndex() would generate, one chunk at a time as each
+		// is needed, with a silent gap before every chunk. Starting one also retires the background pool
+		// (see GenerationJob.poolToken), so the job now generates at the foreground window only.
 		if (hasPendingGeneration(job.chunkReady)) {
 			void this.runGenerationWorkerPool(job, generationWindow(job.narrator.provider, false));
 		}
@@ -537,6 +538,7 @@ export class Reader extends Events {
 			isSelection: !allowSave,
 			savedForSession: false,
 			rateLimited: false,
+			poolToken: 0,
 			cancelled: false,
 			backgroundStatus: 'queued',
 		};
@@ -614,9 +616,12 @@ export class Reader extends Events {
 	 * Safe to call on a job that's partially generated already (`ensureChunkBuffer` no-ops on chunks
 	 * that are already ready or in flight) -- used both to generate a whole read upfront (when "start
 	 * playback immediately" is off) and to drive a background job. Returns false on failure, having
-	 * already reset/removed the job from its owning role (active/background).
+	 * already reset/removed the job from its owning role (active/background). Returns true once its
+	 * workers stop otherwise: either every chunk is generated, or a newer pool took the job over (see
+	 * `GenerationJob.poolToken`), in which case chunks may still be left.
 	 */
 	private async runGenerationWorkerPool(job: GenerationJob, windowSize: number): Promise<boolean> {
+		const token = ++job.poolToken;
 		let nextIndex = 0;
 
 		const worker = async (workerId: number) => {
@@ -627,6 +632,8 @@ export class Reader extends Events {
 
 			while (nextIndex < job.chunks.length) {
 				if (job.cancelled) return;
+				// A newer pool has taken over this job (see GenerationJob.poolToken).
+				if (job.poolToken !== token) return;
 				// Once rate-limited, only the primary worker keeps going; the rest stop claiming new work.
 				if (job.rateLimited && workerId > 0) return;
 				const index = nextIndex++;

@@ -403,3 +403,53 @@ describe('Reader adopting a background job that has chunks left', () => {
 		expect(callsFor('A').map((call) => call.text)).toEqual(['A1', 'A2']);
 	});
 });
+
+describe('Reader moving a read to the background', () => {
+	it('stops generating a moved read while it waits in the queue', async () => {
+		const reader = makeReader();
+		reader.generateNoteInBackground(makeView(makeFile('B'), ['B1', 'B2']));
+		void reader.readNote(makeView(makeFile('A'), ['A1', 'A2', 'A3', 'A4']));
+		await settle();
+		expect(callsFor('A').map((call) => call.text)).toEqual(['A1', 'A2']);
+
+		reader.continueGeneratingInBackground();
+		for (const call of callsFor('A')) call.resolve();
+		await settle();
+
+		// Queued behind B: the read's own foreground generation must not keep claiming chunks.
+		expect(reader.getState().backgroundJobs.map((job) => job.status)).toEqual(['generating', 'queued']);
+		expect(callsFor('A')).toHaveLength(2);
+
+		await finishGenerating('B');
+
+		// Its turn now, at the background window (1).
+		expect(reader.getState().backgroundJobs.map((job) => job.status)).toEqual(['done', 'generating']);
+		expect(callsFor('A').map((call) => call.text)).toEqual(['A1', 'A2', 'A3']);
+	});
+
+	it('generates a moved read at the background window only', async () => {
+		const reader = makeReader();
+		void reader.readNote(makeView(makeFile('A'), ['A1', 'A2', 'A3', 'A4', 'A5']));
+		await settle();
+		expect(callsFor('A')).toHaveLength(2);
+
+		reader.continueGeneratingInBackground();
+		for (const call of callsFor('A')) call.resolve();
+		await settle();
+
+		expect(callsFor('A').map((call) => call.text)).toEqual(['A1', 'A2', 'A3']);
+	});
+
+	it('does not finish generating a moved read before its turn in the queue', async () => {
+		const reader = makeReader();
+		reader.generateNoteInBackground(makeView(makeFile('B'), ['B1']));
+		void reader.readNote(makeView(makeFile('A'), ['A1', 'A2', 'A3']));
+		await settle();
+		reader.continueGeneratingInBackground();
+		await finishGenerating('A');
+
+		const queued = reader.getState().backgroundJobs[1];
+		expect(queued).toMatchObject({ status: 'queued' });
+		expect(queued?.chunkReady).toEqual([true, true, false]);
+	});
+});
