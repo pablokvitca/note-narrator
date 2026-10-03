@@ -72,7 +72,7 @@ export class ProvidersSection extends SettingsSection {
 						),
 						this.numberRow(
 							'Max parallel background chunk generation',
-							'How many chunks may generate at once for a note continuing in the background (via the panel\'s "Background" button), independent of the setting above. Kept low by default so it doesn\'t compete with an actively-playing read. Recommended: 1-3. Default: 1.',
+							'How many chunks may generate at once for a note generating in the background (via the panel\'s "Move to background" or "Generate in background" button), independent of the setting above. Kept low by default so it doesn\'t compete with an actively playing read. Recommended: 1-3. Default: 1.',
 							{
 								get: () => provider.maxBackgroundParallelGeneration,
 								set: (value) => {
