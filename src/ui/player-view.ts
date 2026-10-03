@@ -2,7 +2,7 @@ import { debounce, ItemView, MarkdownView, Menu, setIcon, Setting, TFile, Worksp
 import { ConfirmModal } from './confirm-modal';
 import NoteNarratorPlugin from '../main';
 import { getActiveProfile, getDropdownProfiles, savedVoiceMatches } from '../settings/profiles';
-import { hasPendingGeneration } from '../engine/background-job';
+import { findBackgroundJobForNote, hasPendingGeneration } from '../engine/background-job';
 import { PLAY_SAVED_ICON_ID, skipIconId } from './icons';
 import { AudioLinkStatus, ReaderState } from '../engine/reader-types';
 import { computeFullReadTimes, formatTimeDisplay } from '../engine/time-utils';
@@ -760,7 +760,7 @@ export class PlayerView extends ItemView {
 			moveButton.disabled = !pendingGeneration;
 			moveButton.onclick = () => this.plugin.reader.continueGeneratingInBackground();
 		} else {
-			const alreadyQueued = !!activeFile && this.plugin.reader.getState().backgroundJobs.some((job) => job.file?.path === activeFile.path);
+			const alreadyQueued = !!activeFile && !!findBackgroundJobForNote(this.plugin.reader.getState().backgroundJobs, activeFile.path);
 			const { button: generateButton } = this.createLabeledButton(
 				actionsRow,
 				'note-narrator-background-button',

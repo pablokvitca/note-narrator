@@ -4,7 +4,7 @@ import { AudioLinkStatus, ChunkOutcome, GenerationJob, IDLE_STATE, PositionBase,
 import { ChunkPosition, RawSpan } from '../text/text-position';
 import { HighlightGranularity, NoteNarratorSettings } from '../settings/settings';
 import { ResolvedNarrator, generationWindow } from '../settings/profiles';
-import { buildBackgroundJobInfo, hasPendingGeneration } from './background-job';
+import { buildBackgroundJobInfo, decideGenerateInBackground, findBackgroundJobForNote, hasPendingGeneration } from './background-job';
 import { chunkNote, stripFrontmatter } from '../text/text-utils';
 import { createTTSProvider, getProviderApiKey, missingApiKeyMessage } from '../tts/registry';
 import { NoteText } from './note-text';
@@ -199,11 +199,16 @@ export class Reader extends Events {
 			return;
 		}
 
-		if (this.activeJob?.file?.path === file.path) {
+		const action = decideGenerateInBackground(
+			file.path,
+			this.activeJob?.file?.path ?? null,
+			this.backgroundJobs.map((job) => job.file?.path ?? null),
+		);
+		if (action === 'move-active') {
 			this.continueGeneratingInBackground();
 			return;
 		}
-		if (this.backgroundJobs.some((job) => job.file?.path === file.path)) {
+		if (action === 'already-queued') {
 			new Notice(`"${file.basename}" is already in the background queue.`);
 			return;
 		}
@@ -515,7 +520,7 @@ export class Reader extends Events {
 		// triggered from Read instead. Only for a full-note read: a selection read's text won't match the
 		// background job's chunks, so that case still falls through to discarding below.
 		if (sourceFile && options.allowSave) {
-			const existing = this.backgroundJobs.find((job) => job.file?.path === sourceFile.path);
+			const existing = findBackgroundJobForNote(this.backgroundJobs, sourceFile.path);
 			if (existing) {
 				this.adoptBackgroundJob(existing);
 				return;
