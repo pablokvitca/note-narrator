@@ -19,6 +19,8 @@ interface SynthCall {
 
 const fakes = vi.hoisted(() => ({
 	synthCalls: [] as SynthCall[],
+	/** What SavedAudio.getAudioInfo() reports for any note: its linked audio's status and the voice it was made with. */
+	audioInfo: null as { status: 'up-to-date' | 'outdated'; savedVoice: string | undefined } | null,
 	/** What vault.cachedRead() returns for any note. */
 	diskContent: '',
 	/** When true, decodeAudioDuration() stays pending until the test releases it (see releaseDecodes()). */
@@ -85,6 +87,9 @@ vi.mock('../../src/engine/saved-audio', () => ({
 		}
 		getAudioStatus() {
 			return Promise.resolve('none');
+		}
+		getAudioInfo() {
+			return Promise.resolve(fakes.audioInfo);
 		}
 		stalenessHash(rawContent: string) {
 			return `hash of ${rawContent}`;
@@ -197,6 +202,7 @@ beforeEach(() => {
 	});
 	vi.stubGlobal('Audio', FakeAudio);
 	fakes.synthCalls.length = 0;
+	fakes.audioInfo = null;
 	fakes.narrator = { ...fakes.narrator, fingerprint: 'f' };
 	fakes.diskContent = '';
 	fakes.holdDecodes = false;
@@ -214,7 +220,7 @@ describe('Reader.generateNoteInBackground', () => {
 	it('starts a background job for the note without playing anything', async () => {
 		const reader = makeReader();
 		const a = makeFile('A');
-		reader.generateNoteInBackground(makeView(a, ['A1', 'A2', 'A3']));
+		void reader.generateNoteInBackground(makeView(a, ['A1', 'A2', 'A3']));
 		await settle();
 
 		const state = reader.getState();
@@ -228,8 +234,8 @@ describe('Reader.generateNoteInBackground', () => {
 
 	it('queues a second note behind the one already generating, then starts it once that finishes', async () => {
 		const reader = makeReader();
-		reader.generateNoteInBackground(makeView(makeFile('A'), ['A1', 'A2']));
-		reader.generateNoteInBackground(makeView(makeFile('B'), ['B1', 'B2']));
+		void reader.generateNoteInBackground(makeView(makeFile('A'), ['A1', 'A2']));
+		void reader.generateNoteInBackground(makeView(makeFile('B'), ['B1', 'B2']));
 		await settle();
 
 		expect(reader.getState().backgroundJobs.map((job) => job.status)).toEqual(['generating', 'queued']);
@@ -245,8 +251,8 @@ describe('Reader.generateNoteInBackground', () => {
 	it('does not start a second job for a note that is already in the background', async () => {
 		const reader = makeReader();
 		const a = makeFile('A');
-		reader.generateNoteInBackground(makeView(a, ['A1']));
-		reader.generateNoteInBackground(makeView(a, ['A1']));
+		void reader.generateNoteInBackground(makeView(a, ['A1']));
+		void reader.generateNoteInBackground(makeView(a, ['A1']));
 		await settle();
 
 		expect(reader.getState().backgroundJobs).toHaveLength(1);
@@ -261,7 +267,7 @@ describe('Reader.generateNoteInBackground', () => {
 		await settle();
 		expect(reader.getState().status).toBe('generating');
 
-		reader.generateNoteInBackground(view);
+		void reader.generateNoteInBackground(view);
 		await settle();
 
 		const state = reader.getState();
@@ -276,7 +282,7 @@ describe('Reader.generateNoteInBackground', () => {
 		void reader.readNote(makeView(a, ['A1', 'A2']));
 		await settle();
 
-		reader.generateNoteInBackground(makeView(makeFile('B'), ['B1', 'B2']));
+		void reader.generateNoteInBackground(makeView(makeFile('B'), ['B1', 'B2']));
 		await settle();
 
 		const state = reader.getState();
@@ -291,7 +297,7 @@ describe('Reader.readNote with a background job for the same note', () => {
 		const reader = makeReader();
 		const a = makeFile('A');
 		const view = makeView(a, ['A1', 'A2']);
-		reader.generateNoteInBackground(view);
+		void reader.generateNoteInBackground(view);
 		await settle();
 		await finishGenerating('A');
 		const generatedBefore = callsFor('A').length;
@@ -310,8 +316,8 @@ describe('Reader.readNote with a background job for the same note', () => {
 describe('Reader.dispose', () => {
 	it('cancels and clears every background job', async () => {
 		const reader = makeReader();
-		reader.generateNoteInBackground(makeView(makeFile('A'), ['A1']));
-		reader.generateNoteInBackground(makeView(makeFile('B'), ['B1']));
+		void reader.generateNoteInBackground(makeView(makeFile('A'), ['A1']));
+		void reader.generateNoteInBackground(makeView(makeFile('B'), ['B1']));
 		await settle();
 
 		reader.dispose();
@@ -350,7 +356,7 @@ describe('Reader selection reads and the background queue', () => {
 	it('keeps the note\'s background job when a selection of the same note is read', async () => {
 		const reader = makeReader();
 		const a = makeFile('A');
-		reader.generateNoteInBackground(makeView(a, ['A1', 'A2']));
+		void reader.generateNoteInBackground(makeView(a, ['A1', 'A2']));
 		await settle();
 
 		void reader.readNote(makeView(a, ['A1', 'A2'], 'selected'));
@@ -367,7 +373,7 @@ describe('Reader selection reads and the background queue', () => {
 		void reader.readNote(makeView(a, ['A1', 'A2'], 'selected'));
 		await settle();
 
-		reader.generateNoteInBackground(makeView(a, ['A1', 'A2'], 'selected'));
+		void reader.generateNoteInBackground(makeView(a, ['A1', 'A2'], 'selected'));
 		await settle();
 
 		const state = reader.getState();
@@ -384,7 +390,7 @@ describe('Reader selection reads and the background queue', () => {
 		await settle();
 		await finishGenerating('A');
 
-		reader.generateNoteInBackground(view);
+		void reader.generateNoteInBackground(view);
 		await settle();
 
 		expect(reader.getState().backgroundJobs).toHaveLength(0);
@@ -398,11 +404,11 @@ describe('Reader with a finished background job', () => {
 		const reader = makeReader();
 		const a = makeFile('A');
 		const view = makeView(a, ['A1', 'A2']);
-		reader.generateNoteInBackground(view);
+		void reader.generateNoteInBackground(view);
 		await settle();
 		await finishGenerating('A');
 
-		reader.generateNoteInBackground(view);
+		void reader.generateNoteInBackground(view);
 		await settle();
 
 		expect(reader.getState().backgroundJobs).toHaveLength(1);
@@ -414,9 +420,9 @@ describe('Reader with a finished background job', () => {
 describe('Reader adopting a background job that has chunks left', () => {
 	it('generates ahead at the foreground window when a queued job is adopted', async () => {
 		const reader = makeReader();
-		reader.generateNoteInBackground(makeView(makeFile('B'), ['B1', 'B2']));
+		void reader.generateNoteInBackground(makeView(makeFile('B'), ['B1', 'B2']));
 		const viewA = makeView(makeFile('A'), ['A1', 'A2', 'A3', 'A4']);
-		reader.generateNoteInBackground(viewA);
+		void reader.generateNoteInBackground(viewA);
 		await settle();
 		expect(reader.getState().backgroundJobs.map((job) => job.status)).toEqual(['generating', 'queued']);
 		expect(callsFor('A')).toHaveLength(0);
@@ -431,7 +437,7 @@ describe('Reader adopting a background job that has chunks left', () => {
 	it('generates ahead at the foreground window when the generating job is adopted', async () => {
 		const reader = makeReader();
 		const viewA = makeView(makeFile('A'), ['A1', 'A2', 'A3', 'A4']);
-		reader.generateNoteInBackground(viewA);
+		void reader.generateNoteInBackground(viewA);
 		await settle();
 		expect(callsFor('A')).toHaveLength(1);
 
@@ -445,7 +451,7 @@ describe('Reader adopting a background job that has chunks left', () => {
 describe('Reader moving a read to the background', () => {
 	it('stops generating a moved read while it waits in the queue', async () => {
 		const reader = makeReader();
-		reader.generateNoteInBackground(makeView(makeFile('B'), ['B1', 'B2']));
+		void reader.generateNoteInBackground(makeView(makeFile('B'), ['B1', 'B2']));
 		void reader.readNote(makeView(makeFile('A'), ['A1', 'A2', 'A3', 'A4']));
 		await settle();
 		expect(callsFor('A').map((call) => call.text)).toEqual(['A1', 'A2']);
@@ -480,7 +486,7 @@ describe('Reader moving a read to the background', () => {
 
 	it('does not finish generating a moved read before its turn in the queue', async () => {
 		const reader = makeReader();
-		reader.generateNoteInBackground(makeView(makeFile('B'), ['B1']));
+		void reader.generateNoteInBackground(makeView(makeFile('B'), ['B1']));
 		void reader.readNote(makeView(makeFile('A'), ['A1', 'A2', 'A3']));
 		await settle();
 		reader.continueGeneratingInBackground();
@@ -566,7 +572,7 @@ describe('Reader handing a job over while chunks are still being decoded', () =>
 		await settle();
 		reader.continueGeneratingInBackground();
 		await settle();
-		reader.generateNoteInBackground(makeView(makeFile('C'), ['C1']));
+		void reader.generateNoteInBackground(makeView(makeFile('C'), ['C1']));
 		await settle();
 
 		await releaseDecodes();
@@ -584,7 +590,7 @@ describe('Reader saving generated audio', () => {
 		const reader = makeReader({ saveAudioFile: true });
 		const lines = ['A1', 'A2'];
 		const view = fake<MarkdownView>({ file: makeFile('A'), editor: { getValue: () => lines.join('\n'), getSelection: () => '' } });
-		reader.generateNoteInBackground(view);
+		void reader.generateNoteInBackground(view);
 		await settle();
 
 		lines.push('A3 added while generating');
@@ -637,7 +643,7 @@ describe('Reader playing a background job while another note is being read', () 
 	it('moves the current read to the background when a background job\'s card is played', async () => {
 		const reader = makeReader({ autoBackgroundOnSwitch: true });
 		const b = makeFile('B');
-		reader.generateNoteInBackground(makeView(b, ['B1', 'B2']));
+		void reader.generateNoteInBackground(makeView(b, ['B1', 'B2']));
 		await settle();
 		void reader.readNote(makeView(makeFile('A'), ['A1', 'A2', 'A3']));
 		await settle();
@@ -655,7 +661,7 @@ describe('Reader playing a background job while another note is being read', () 
 		const reader = makeReader({ autoBackgroundOnSwitch: true });
 		const b = makeFile('B');
 		const viewB = makeView(b, ['B1', 'B2']);
-		reader.generateNoteInBackground(viewB);
+		void reader.generateNoteInBackground(viewB);
 		await settle();
 		void reader.readNote(makeView(makeFile('A'), ['A1', 'A2', 'A3']));
 		await settle();
@@ -692,7 +698,7 @@ describe('Reader playing a background job while another note is being read', () 
 
 	it('still discards the current read when "Keep generating when starting another note" is off', async () => {
 		const reader = makeReader({ autoBackgroundOnSwitch: false });
-		reader.generateNoteInBackground(makeView(makeFile('B'), ['B1']));
+		void reader.generateNoteInBackground(makeView(makeFile('B'), ['B1']));
 		await settle();
 		void reader.readNote(makeView(makeFile('A'), ['A1', 'A2']));
 		await settle();
@@ -713,7 +719,7 @@ describe('Reader with a background job that no longer matches the note', () => {
 	it('Read generates the edited note afresh instead of playing the old background job', async () => {
 		const reader = makeReader();
 		const a = editableView('A', ['A1', 'A2']);
-		reader.generateNoteInBackground(a.view);
+		void reader.generateNoteInBackground(a.view);
 		await settle();
 		await finishGenerating('A');
 
@@ -731,7 +737,7 @@ describe('Reader with a background job that no longer matches the note', () => {
 	it('Read generates afresh after the narrator changed', async () => {
 		const reader = makeReader();
 		const a = editableView('A', ['A1', 'A2']);
-		reader.generateNoteInBackground(a.view);
+		void reader.generateNoteInBackground(a.view);
 		await settle();
 		await finishGenerating('A');
 
@@ -747,7 +753,7 @@ describe('Reader with a background job that no longer matches the note', () => {
 	it('Read still plays the background job when the note is unchanged', async () => {
 		const reader = makeReader();
 		const a = editableView('A', ['A1', 'A2']);
-		reader.generateNoteInBackground(a.view);
+		void reader.generateNoteInBackground(a.view);
 		await settle();
 		await finishGenerating('A');
 
@@ -761,7 +767,7 @@ describe('Reader with a background job that no longer matches the note', () => {
 	it('offers Generate in background again, and replaces the old job, once the note is edited', async () => {
 		const reader = makeReader();
 		const a = editableView('A', ['A1', 'A2']);
-		reader.generateNoteInBackground(a.view);
+		void reader.generateNoteInBackground(a.view);
 		await settle();
 		await finishGenerating('A');
 		expect(reader.getGenerateInBackgroundAction(a.file, a.lines.join('\n'))).toBe('ready-in-background');
@@ -769,11 +775,47 @@ describe('Reader with a background job that no longer matches the note', () => {
 		a.lines.push('A3');
 		expect(reader.getGenerateInBackgroundAction(a.file, a.lines.join('\n'))).toBe('generate');
 
-		reader.generateNoteInBackground(a.view);
+		void reader.generateNoteInBackground(a.view);
 		await settle();
 
 		const jobs = reader.getState().backgroundJobs;
 		expect(jobs).toHaveLength(1);
 		expect(jobs[0]).toMatchObject({ status: 'generating', chunkCount: 3 });
+	});
+});
+
+describe('Reader.generateNoteInBackground with saved audio', () => {
+	it('does not regenerate a note whose saved audio is up to date', async () => {
+		const reader = makeReader({ linkAudioInNote: true });
+		fakes.audioInfo = { status: 'up-to-date', savedVoice: undefined };
+		await reader.generateNoteInBackground(makeView(makeFile('A'), ['A1']));
+
+		expect(reader.getState().backgroundJobs).toHaveLength(0);
+		expect(callsFor('A')).toHaveLength(0);
+		expect(Notice.messages).toContain('"A" already has up-to-date saved audio.');
+	});
+
+	it('generates when the saved audio is outdated', async () => {
+		const reader = makeReader({ linkAudioInNote: true });
+		fakes.audioInfo = { status: 'outdated', savedVoice: undefined };
+		await reader.generateNoteInBackground(makeView(makeFile('A'), ['A1']));
+
+		expect(reader.getState().backgroundJobs).toHaveLength(1);
+	});
+
+	it('generates when the up-to-date saved audio was made with a different narrator', async () => {
+		const reader = makeReader({ linkAudioInNote: true });
+		fakes.audioInfo = { status: 'up-to-date', savedVoice: 'some other voice' };
+		await reader.generateNoteInBackground(makeView(makeFile('A'), ['A1']));
+
+		expect(reader.getState().backgroundJobs).toHaveLength(1);
+	});
+
+	it('ignores saved audio when it is not linked in notes', async () => {
+		const reader = makeReader({ linkAudioInNote: false });
+		fakes.audioInfo = { status: 'up-to-date', savedVoice: undefined };
+		await reader.generateNoteInBackground(makeView(makeFile('A'), ['A1']));
+
+		expect(reader.getState().backgroundJobs).toHaveLength(1);
 	});
 });

@@ -54,6 +54,7 @@ const BACKGROUND_BUTTONS: Record<GenerateInBackgroundAction, BackgroundButtonSpe
 		tooltip: 'This note finished generating in the background. Play it from its card below, or discard the card to generate it again.',
 		onClick: null,
 	},
+	'saved-up-to-date': { ...GENERATE_IN_BACKGROUND, tooltip: 'This note\'s saved audio is already up to date.', onClick: null },
 	generate: { ...GENERATE_IN_BACKGROUND, onClick: 'generate' },
 };
 
@@ -794,7 +795,7 @@ export class PlayerView extends ItemView {
 		if (spec.onClick === 'move') {
 			backgroundButton.onclick = () => this.plugin.reader.continueGeneratingInBackground();
 		} else if (spec.onClick === 'generate') {
-			backgroundButton.onclick = () => this.plugin.reader.generateNoteInBackground(this.getActiveMarkdownView() ?? undefined);
+			backgroundButton.onclick = () => void this.plugin.reader.generateNoteInBackground(this.getActiveMarkdownView() ?? undefined);
 		}
 
 		if (!activeFile || !this.plugin.settings.linkAudioInNote) return;
@@ -809,14 +810,22 @@ export class PlayerView extends ItemView {
 					// isn't gated the same way: it's available the instant a saved file exists, even mid-read, since
 					// clicking it just stops whatever's currently happening and plays the saved copy instead (same
 					// pattern as Read/Regenerate staying clickable while a *different* note is playing).
+					const narrator = this.plugin.reader.getActiveNarrator();
+					const voiceMismatch = info.savedVoice !== undefined && !!narrator && !savedVoiceMatches(info.savedVoice, narrator.voice);
 					if (!active) {
-						const narrator = this.plugin.reader.getActiveNarrator();
-						const voiceMismatch = info.savedVoice !== undefined && !!narrator && !savedVoiceMatches(info.savedVoice, narrator.voice);
 						if (info.status === 'outdated') {
 							this.setButtonLabel(readButton, readLabelEl, 'Regenerate');
 						} else if (voiceMismatch) {
 							this.setButtonLabel(readButton, readLabelEl, 'Regenerate with new narrator');
 						}
+					}
+
+					// Up to date with this narrator: nothing worth paying to generate again (the command
+					// refuses too -- same conditions as Reader.hasUpToDateSavedAudio()).
+					if (action === 'generate' && info.status === 'up-to-date' && !voiceMismatch) {
+						backgroundButton.disabled = true;
+						backgroundButton.onclick = null;
+						attachTooltip(backgroundButton, BACKGROUND_BUTTONS['saved-up-to-date'].tooltip);
 					}
 
 					playSavedButton.disabled = false;
