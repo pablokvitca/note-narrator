@@ -43,6 +43,9 @@ export class Reader extends Events {
 
 	private nextJobId = 0;
 
+	/** Set by dispose(), for async work that resumes after the plugin has unloaded. */
+	private disposed = false;
+
 	/** The job currently bound to playback and driving `state`. Null when nothing is generating/playing (or a saved file is playing directly, with no generation job involved). */
 	private activeJob: GenerationJob | null = null;
 
@@ -126,6 +129,7 @@ export class Reader extends Events {
 
 	/** Stops playback and cancels every generation job, background ones included; called when the plugin unloads so nothing keeps generating or saving afterwards. */
 	dispose(): void {
+		this.disposed = true;
 		this.stop();
 		for (const job of this.backgroundJobs) job.cancelled = true;
 		this.backgroundJobs = [];
@@ -265,10 +269,13 @@ export class Reader extends Events {
 			return;
 		}
 
-		// Awaited first so that everything after it, from the decision to enqueueing, runs without a gap
-		// another click or command could slip into.
-		const savedAudioUpToDate = await this.hasUpToDateSavedAudio(file);
+		// The note's text is taken before the await: by the time it resolves the view may show another note.
 		const { fullValue, rawText, positionBase } = this.buildNoteInput(target);
+		// Awaited before deciding, so that everything after it, from the decision to enqueueing, runs without
+		// a gap another click or command could slip into.
+		const savedAudioUpToDate = await this.hasUpToDateSavedAudio(file);
+		// Unloaded meanwhile: dispose() has already cleared everything, so don't start a (paid) job now.
+		if (this.disposed) return;
 		const action = this.getGenerateInBackgroundAction(file, fullValue, savedAudioUpToDate);
 		if (action === 'move-active') {
 			this.continueGeneratingInBackground();

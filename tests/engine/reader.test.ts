@@ -21,6 +21,8 @@ const fakes = vi.hoisted(() => ({
 	synthCalls: [] as SynthCall[],
 	/** What SavedAudio.getAudioInfo() reports for any note: its linked audio's status and the voice it was made with. */
 	audioInfo: null as { status: 'up-to-date' | 'outdated'; savedVoice: string | undefined } | null,
+	/** When set, getAudioInfo() waits for it -- to hold Reader inside its saved-audio check. */
+	audioInfoGate: null as Promise<void> | null,
 	/** What vault.cachedRead() returns for any note. */
 	diskContent: '',
 	/** When true, decodeAudioDuration() stays pending until the test releases it (see releaseDecodes()). */
@@ -89,7 +91,7 @@ vi.mock('../../src/engine/saved-audio', () => ({
 			return Promise.resolve('none');
 		}
 		getAudioInfo() {
-			return Promise.resolve(fakes.audioInfo);
+			return (fakes.audioInfoGate ?? Promise.resolve()).then(() => fakes.audioInfo);
 		}
 		stalenessHash(rawContent: string) {
 			return `hash of ${rawContent}`;
@@ -203,6 +205,7 @@ beforeEach(() => {
 	vi.stubGlobal('Audio', FakeAudio);
 	fakes.synthCalls.length = 0;
 	fakes.audioInfo = null;
+	fakes.audioInfoGate = null;
 	fakes.narrator = { ...fakes.narrator, fingerprint: 'f' };
 	fakes.diskContent = '';
 	fakes.holdDecodes = false;
@@ -809,6 +812,52 @@ describe('Reader.generateNoteInBackground with saved audio', () => {
 		await reader.generateNoteInBackground(makeView(makeFile('A'), ['A1']));
 
 		expect(reader.getState().backgroundJobs).toHaveLength(1);
+	});
+
+	/** Holds getAudioInfo() open until the returned function is called. */
+	function holdSavedAudioCheck(): () => void {
+		let release!: () => void;
+		fakes.audioInfoGate = new Promise<void>((resolve) => (release = resolve));
+		return release;
+	}
+
+	it('generates the note it was asked for, even if the view switches notes during the saved-audio check', async () => {
+		const reader = makeReader({ linkAudioInNote: true });
+		const a = makeFile('A');
+		const view = { file: a, lines: ['A1', 'A2'] };
+		const liveView = fake<MarkdownView>({
+			get file() {
+				return view.file;
+			},
+			editor: { getValue: () => view.lines.join('\n'), getSelection: () => '' },
+		});
+		const release = holdSavedAudioCheck();
+		const done = reader.generateNoteInBackground(liveView);
+
+		view.file = makeFile('B');
+		view.lines = ['B1'];
+		release();
+		await done;
+		await settle();
+
+		const jobs = reader.getState().backgroundJobs;
+		expect(jobs.map((job) => [job.file?.basename, job.chunkCount])).toEqual([['A', 2]]);
+		expect(callsFor('B')).toHaveLength(0);
+		expect(callsFor('A')).toHaveLength(1);
+	});
+
+	it('starts nothing if the plugin unloads during the saved-audio check', async () => {
+		const reader = makeReader({ linkAudioInNote: true });
+		const release = holdSavedAudioCheck();
+		const done = reader.generateNoteInBackground(makeView(makeFile('A'), ['A1']));
+
+		reader.dispose();
+		release();
+		await done;
+		await settle();
+
+		expect(reader.getState().backgroundJobs).toHaveLength(0);
+		expect(fakes.synthCalls).toHaveLength(0);
 	});
 
 	it('ignores saved audio when it is not linked in notes', async () => {
