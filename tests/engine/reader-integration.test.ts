@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { App, MarkdownView, TFile } from 'obsidian';
-import { Notice, TFile as StubTFile, parseYaml } from '../stubs/obsidian';
+import { Notice, TFile as StubTFile, parseYaml, stringifyYaml } from '../stubs/obsidian';
 import { Reader } from '../../src/engine/reader';
 import { DEFAULT_SETTINGS, NoteNarratorSettings } from '../../src/settings/settings';
 import { migrateProfileSettings } from '../../src/settings/profiles';
@@ -8,8 +8,10 @@ import { extractFrontmatterYaml } from '../../src/text/text-utils';
 
 /**
  * Reader with its real collaborators (NoteText, SavedAudio, profiles, text chunking) against an in-memory
- * vault that behaves like Obsidian's where it matters here: processFrontMatter rewrites the note's YAML,
- * the editor shows the file's current text, and the metadata cache is the parsed frontmatter. Only the TTS
+ * vault that behaves like Obsidian's where it matters here: processFrontMatter rewrites the note's YAML as
+ * block YAML (real YAML library), the editor shows the file's current text, and the metadata cache is a
+ * snapshot that lags edits -- it's only refreshed (with a 'changed' event) after processFrontMatter, or when
+ * a test calls refreshCache(), like Obsidian re-indexing a note a moment after it changes. Only the TTS
  * provider (every chunk becomes an 8-byte buffer) and audio decoding are faked, so no network or audio.
  * Complements reader.test.ts, which fakes those collaborators to control timing precisely.
  */
@@ -64,11 +66,47 @@ function fake<T>(value: object): T {
 class FakeVault {
 	readonly text = new Map<string, string>();
 	readonly binary = new Map<string, ArrayBuffer>();
+	/** The metadata cache's frontmatter per note: a snapshot, refreshed only by refreshCache(). */
+	private readonly cache = new Map<string, Record<string, unknown> | undefined>();
+	private readonly changedHandlers = new Set<(file: TFile) => void>();
+	private readonly deleteHandlers = new Set<(file: TFile) => void>();
+	/** Like Obsidian, one TFile instance per path. */
+	private readonly files = new Map<string, TFile>();
 
-	file(path: string): TFile {
-		return fake<TFile>(Object.assign(new StubTFile(), { path, basename: path.replace(/^.*\//, '').replace(/\.[^.]+$/, ''), extension: path.split('.').pop() }));
+	/** Subscribes to the vault's 'delete' event (what main.ts wires to Reader.handleFileDeleted()). */
+	onDelete(handler: (file: TFile) => void): void {
+		this.deleteHandlers.add(handler);
 	}
 
+	/** Deletes a file the way Obsidian's trash does: it's gone, and the vault fires 'delete'. */
+	trash(path: string): void {
+		const file = this.file(path);
+		this.text.delete(path);
+		this.binary.delete(path);
+		for (const handler of this.deleteHandlers) handler(file);
+	}
+
+	/** Sets a note's text, as an edit in the editor would; the metadata cache lags until refreshCache(). */
+	write(path: string, content: string): void {
+		this.text.set(path, content);
+	}
+
+	/** Re-indexes a note, like Obsidian's metadata cache does shortly after it changes, and fires 'changed'. */
+	refreshCache(path: string): void {
+		this.cache.set(path, this.frontmatter(path));
+		for (const handler of this.changedHandlers) handler(this.file(path));
+	}
+
+	file(path: string): TFile {
+		let file = this.files.get(path);
+		if (!file) {
+			file = fake<TFile>(Object.assign(new StubTFile(), { path, basename: path.replace(/^.*\//, '').replace(/\.[^.]+$/, ''), extension: path.split('.').pop() }));
+			this.files.set(path, file);
+		}
+		return file;
+	}
+
+	/** The frontmatter as the file's text has it right now (what the cache will show once refreshed). */
 	frontmatter(path: string): Record<string, unknown> | undefined {
 		const yaml = extractFrontmatterYaml(this.text.get(path) ?? '');
 		return yaml === null ? undefined : (parseYaml(yaml) as Record<string, unknown>);
@@ -91,16 +129,28 @@ class FakeVault {
 				createFolder: () => Promise.resolve(),
 				getAbstractFileByPath: (path: string) => (this.text.has(path) || this.binary.has(path) ? this.file(path) : null),
 			},
-			metadataCache: { getFileCache: (f: TFile) => ({ frontmatter: this.frontmatter(f.path) }), on: () => ({}), offref: () => {} },
+			metadataCache: {
+				getFileCache: (f: TFile) => ({ frontmatter: this.cache.get(f.path) }),
+				on: (_name: 'changed', handler: (file: TFile) => void) => {
+					this.changedHandlers.add(handler);
+					return handler;
+				},
+				offref: (ref: (file: TFile) => void) => this.changedHandlers.delete(ref),
+			},
 			fileManager: {
 				generateMarkdownLink: (f: TFile) => `[[${f.path}]]`,
-				// Like Obsidian: hands over the parsed frontmatter, then writes it back as YAML above the body.
+				trashFile: (f: TFile) => {
+					this.trash(f.path);
+					return Promise.resolve();
+				},
+				// Like Obsidian: hands over the frontmatter parsed from the file, writes it back as block YAML above
+				// the body, and the metadata cache catches up a moment later.
 				processFrontMatter: (f: TFile, update: (frontmatter: Record<string, unknown>) => void) => {
 					const data = this.frontmatter(f.path) ?? {};
 					update(data);
 					const body = (this.text.get(f.path) ?? '').replace(/^---\n[\s\S]*?\n---(\n|$)/, '');
-					const yaml = Object.entries(data).map(([key, value]) => `${key}: ${JSON.stringify(value)}`).join('\n');
-					this.text.set(f.path, `---\n${yaml}\n---\n${body}`);
+					this.text.set(f.path, `---\n${stringifyYaml(data)}---\n${body}`);
+					queueMicrotask(() => this.refreshCache(f.path));
 					return Promise.resolve();
 				},
 			},
@@ -145,9 +195,12 @@ beforeEach(() => {
 	FakeAudio.instances = [];
 	Notice.messages = [];
 	vault = new FakeVault();
-	vault.text.set('Note.md', NOTE);
+	vault.write('Note.md', NOTE);
+	vault.refreshCache('Note.md');
 	const settings = { ...DEFAULT_SETTINGS, ...migrateProfileSettings({}), saveAudioFile: true, linkAudioInNote: true } as NoteNarratorSettings;
 	reader = new Reader(vault.app(), settings);
+	// As main.ts wires it.
+	vault.onDelete((file) => reader.handleFileDeleted(file.path));
 });
 
 afterEach(() => {
@@ -186,7 +239,7 @@ describe('Reader end to end: a finished background job and its own save', () => 
 		await settle();
 		await finishGenerating();
 
-		vault.text.set('Note.md', `${vault.text.get('Note.md') ?? ''}\n\nAn added line.`);
+		vault.write('Note.md', `${vault.text.get('Note.md') ?? ''}\n\nAn added line.`);
 		expect(await reader.getAudioStatus(vault.file('Note.md'))).toBe('outdated');
 
 		// Not awaited: a fresh read only resolves once it has played to the end.
@@ -196,6 +249,40 @@ describe('Reader end to end: a finished background job and its own save', () => 
 		expect(reader.getState().backgroundJobs).toHaveLength(0);
 		expect(reader.getState().status).toBe('generating');
 		expect(fakes.synthCalls.length).toBeGreaterThan(0);
+	});
+});
+
+describe('Reader end to end: a note with its own properties', () => {
+	const WITH_PROPERTIES = '---\nstatus: draft\ntags:\n  - reading\n---\n' + NOTE;
+
+	it('keeps the user\'s properties through the save, and the job stays fresh', async () => {
+		vault.write('Note.md', WITH_PROPERTIES);
+		vault.refreshCache('Note.md');
+		const note = vault.file('Note.md');
+		reader.generateNoteInBackground(vault.view('Note.md'));
+		await settle();
+		await finishGenerating();
+
+		expect(vault.frontmatter('Note.md')).toMatchObject({ status: 'draft', tags: ['reading'] });
+		expect(await reader.getAudioStatus(note)).toBe('up-to-date');
+		expect(reader.getGenerateInBackgroundAction(note, vault.text.get('Note.md'))).toBe('ready-in-background');
+	});
+
+	it('treats a property edit as a change right away, before the metadata cache catches up', async () => {
+		vault.write('Note.md', WITH_PROPERTIES);
+		vault.refreshCache('Note.md');
+		const note = vault.file('Note.md');
+		reader.generateNoteInBackground(vault.view('Note.md'));
+		await settle();
+		await finishGenerating();
+
+		// Edited in the editor; the cache still has "draft".
+		vault.write('Note.md', (vault.text.get('Note.md') ?? '').replace('status: draft', 'status: final'));
+		expect(reader.getGenerateInBackgroundAction(note, vault.text.get('Note.md'))).toBe('generate');
+		expect(await reader.getAudioStatus(note)).toBe('outdated');
+
+		vault.refreshCache('Note.md');
+		expect(await reader.getAudioStatus(note)).toBe('outdated');
 	});
 });
 
@@ -230,7 +317,7 @@ describe('Reader end to end: Play saved', () => {
 
 	it('plays an outdated saved file as one piece, since its chunks no longer line up with the note', async () => {
 		const { note, audio } = await saveAudioByReading();
-		vault.text.set('Note.md', `${vault.text.get('Note.md') ?? ''}\n\n# Third\n\nA new section.`);
+		vault.write('Note.md', `${vault.text.get('Note.md') ?? ''}\n\n# Third\n\nA new section.`);
 
 		void reader.playSavedFile(audio, note);
 		await settle();
@@ -238,5 +325,60 @@ describe('Reader end to end: Play saved', () => {
 		const state = reader.getState();
 		expect(state.status).toBe('playing');
 		expect(state.chunkCount).toBe(1);
+	});
+});
+
+describe('Reader end to end: deleting and clearing saved audio', () => {
+	async function generateAndSave(): Promise<string> {
+		reader.generateNoteInBackground(vault.view('Note.md'));
+		await settle();
+		await finishGenerating();
+		const info = await reader.getAudioInfo(vault.file('Note.md'));
+		if (!info) throw new Error('expected saved audio');
+		return info.audioFile.path;
+	}
+
+	it('drops the finished card when its saved audio is deleted, so the note can be generated again', async () => {
+		const audioPath = await generateAndSave();
+		expect(reader.getState().backgroundJobs.map((job) => job.status)).toEqual(['done']);
+
+		vault.trash(audioPath);
+
+		expect(reader.getState().backgroundJobs).toHaveLength(0);
+		expect(reader.getGenerateInBackgroundAction(vault.file('Note.md'), vault.text.get('Note.md'))).toBe('generate');
+	});
+
+	it('Clear removes the audio, its properties and the finished card', async () => {
+		const audioPath = await generateAndSave();
+
+		await reader.clearReaderFiles(vault.file('Note.md'));
+		await settle();
+
+		expect(vault.binary.has(audioPath)).toBe(false);
+		// No Note Narrator properties left, and the note itself untouched.
+		expect(Object.keys(vault.frontmatter('Note.md') ?? {})).toEqual([]);
+		expect(vault.text.get('Note.md')?.endsWith(NOTE)).toBe(true);
+		expect(await reader.getAudioStatus(vault.file('Note.md'))).toBe('none');
+		expect(reader.getState().backgroundJobs).toHaveLength(0);
+	});
+
+	it('Clear keeps a generation in progress, which then saves and links its new audio', async () => {
+		const oldAudio = await generateAndSave();
+		reader.discardBackgroundJob(reader.getState().backgroundJobs[0]?.id ?? -1);
+		vault.write('Note.md', `${vault.text.get('Note.md') ?? ''}\n\nAn added line.`);
+		reader.generateNoteInBackground(vault.view('Note.md'));
+		await settle();
+		expect(reader.getState().backgroundJobs.map((job) => job.status)).toEqual(['generating']);
+
+		await reader.clearReaderFiles(vault.file('Note.md'));
+		await settle();
+
+		expect(vault.binary.has(oldAudio)).toBe(false);
+		expect(reader.getState().backgroundJobs.map((job) => job.status)).toEqual(['generating']);
+
+		await finishGenerating();
+
+		expect(reader.getState().backgroundJobs.map((job) => job.status)).toEqual(['done']);
+		expect(await reader.getAudioStatus(vault.file('Note.md'))).toBe('up-to-date');
 	});
 });
