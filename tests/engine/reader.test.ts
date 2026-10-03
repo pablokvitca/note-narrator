@@ -19,6 +19,9 @@ interface SynthCall {
 
 const fakes = vi.hoisted(() => ({
 	synthCalls: [] as SynthCall[],
+	/** When true, decodeAudioDuration() stays pending until the test releases it (see releaseDecodes()). */
+	holdDecodes: false,
+	heldDecodes: [] as (() => void)[],
 	saveAudioFile: [] as unknown[][],
 	narrator: {
 		profile: { id: 'p' },
@@ -67,7 +70,8 @@ vi.mock('../../src/engine/saved-audio', () => ({
 }));
 
 vi.mock('../../src/engine/audio-utils', () => ({
-	decodeAudioDuration: () => Promise.resolve(1),
+	decodeAudioDuration: () =>
+		fakes.holdDecodes ? new Promise<number>((resolve) => fakes.heldDecodes.push(() => resolve(1))) : Promise.resolve(1),
 	sliceIntoChunks: () => null,
 }));
 
@@ -138,6 +142,13 @@ async function settle(): Promise<void> {
 	for (let i = 0; i < 50; i++) await Promise.resolve();
 }
 
+/** Lets every held decodeAudioDuration() call finish, and stops holding new ones. */
+async function releaseDecodes(): Promise<void> {
+	fakes.holdDecodes = false;
+	for (const release of fakes.heldDecodes.splice(0)) release();
+	await settle();
+}
+
 function callsFor(prefix: string): SynthCall[] {
 	return fakes.synthCalls.filter((call) => call.text.startsWith(prefix));
 }
@@ -163,6 +174,8 @@ beforeEach(() => {
 	});
 	vi.stubGlobal('Audio', FakeAudio);
 	fakes.synthCalls.length = 0;
+	fakes.holdDecodes = false;
+	fakes.heldDecodes.length = 0;
 	fakes.saveAudioFile.length = 0;
 	FakeAudio.instances = [];
 	Notice.messages = [];
@@ -451,5 +464,30 @@ describe('Reader moving a read to the background', () => {
 		const queued = reader.getState().backgroundJobs[1];
 		expect(queued).toMatchObject({ status: 'queued' });
 		expect(queued?.chunkReady).toEqual([true, true, false]);
+	});
+});
+
+describe('Reader handing a job over while chunks are still being decoded', () => {
+	it('still marks a moved read done, and starts the next job, once its last chunks finish decoding', async () => {
+		const reader = makeReader();
+		void reader.readNote(makeView(makeFile('A'), ['A1', 'A2']));
+		await settle();
+
+		// Both chunks are synthesized, but neither has finished decoding when the read moves to the background.
+		fakes.holdDecodes = true;
+		for (const call of callsFor('A')) call.resolve();
+		await settle();
+		reader.continueGeneratingInBackground();
+		await settle();
+		reader.generateNoteInBackground(makeView(makeFile('C'), ['C1']));
+		await settle();
+
+		await releaseDecodes();
+
+		expect(reader.getState().backgroundJobs.map((job) => [job.file?.basename, job.status])).toEqual([
+			['A', 'done'],
+			['C', 'generating'],
+		]);
+		expect(callsFor('C')).toHaveLength(1);
 	});
 });
