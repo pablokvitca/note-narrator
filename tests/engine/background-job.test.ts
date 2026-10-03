@@ -110,6 +110,10 @@ describe('decideGenerateInBackground', () => {
 		expect(decideGenerateInBackground(input({ backgroundJobPaths: ['b.md', 'a.md'] }))).toBe('already-queued');
 	});
 
+	it('generates while a different note plays from saved audio', () => {
+		expect(decideGenerateInBackground(input({ activePath: 'b.md', activeKind: 'saved' }))).toBe('generate');
+	});
+
 	it('generates without touching a read of a different note', () => {
 		expect(decideGenerateInBackground(input({ activePath: 'b.md', activeKind: 'full', activePendingGeneration: true, backgroundJobPaths: ['c.md', null] }))).toBe('generate');
 	});
