@@ -70,6 +70,8 @@ export function parseYaml(yaml: string): unknown {
 function parseScalar(raw: string): unknown {
 	const value = raw.trim();
 	if (/^(["']).*\1$/.test(value)) return value.slice(1, -1);
+	// Flow sequences/maps written as JSON (e.g. `durations: [[1.5, 800]]`) are valid YAML too.
+	if (value.startsWith('[') || value.startsWith('{')) return JSON.parse(value) as unknown;
 	if (value === 'true' || value === 'false') return value === 'true';
 	if (value !== '' && !Number.isNaN(Number(value))) return Number(value);
 	return value;
