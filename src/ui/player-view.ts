@@ -784,7 +784,10 @@ export class PlayerView extends ItemView {
 		// background; otherwise (including while only a selection of it is being read) it starts generating
 		// the whole note in the background without playing it. Same decision as the command's.
 		const activeFile = this.getActiveFile();
-		const action = activeFile ? this.plugin.reader.getGenerateInBackgroundAction(activeFile) : null;
+		// The editor's current text lets a background job made from an older version count as stale.
+		const view = this.getActiveMarkdownView();
+		const currentContent = view && activeFile && view.file?.path === activeFile.path ? view.editor.getValue() : undefined;
+		const action = activeFile ? this.plugin.reader.getGenerateInBackgroundAction(activeFile, currentContent) : null;
 		const spec: BackgroundButtonSpec = action ? BACKGROUND_BUTTONS[action] : { ...GENERATE_IN_BACKGROUND, onClick: null };
 		const { button: backgroundButton } = this.createLabeledButton(actionsRow, 'note-narrator-background-button', spec.icon, spec.label, spec.tooltip);
 		backgroundButton.disabled = spec.onClick === null;
