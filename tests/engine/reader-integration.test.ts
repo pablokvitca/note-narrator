@@ -157,7 +157,7 @@ afterEach(() => {
 describe('Reader end to end: a finished background job and its own save', () => {
 	it('stays fresh after its save writes Note Narrator properties into the note, so Read plays it', async () => {
 		const note = vault.file('Note.md');
-		await reader.generateNoteInBackground(vault.view('Note.md'));
+		reader.generateNoteInBackground(vault.view('Note.md'));
 		await settle();
 		await finishGenerating();
 		const generated = reader.getState().backgroundJobs[0]?.chunkCount ?? 0;
@@ -182,7 +182,7 @@ describe('Reader end to end: a finished background job and its own save', () => 
 	});
 
 	it('counts as stale, and Read generates again, once the note body is edited after the save', async () => {
-		await reader.generateNoteInBackground(vault.view('Note.md'));
+		reader.generateNoteInBackground(vault.view('Note.md'));
 		await settle();
 		await finishGenerating();
 
@@ -201,7 +201,7 @@ describe('Reader end to end: a finished background job and its own save', () => 
 
 describe('Reader end to end: Play saved', () => {
 	async function saveAudioByReading(): Promise<{ note: TFile; audio: TFile; chunkCount: number }> {
-		await reader.generateNoteInBackground(vault.view('Note.md'));
+		reader.generateNoteInBackground(vault.view('Note.md'));
 		await settle();
 		await finishGenerating();
 		const chunkCount = reader.getState().backgroundJobs[0]?.chunkCount ?? 0;

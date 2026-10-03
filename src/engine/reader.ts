@@ -3,7 +3,7 @@ import { decodeAudioDuration, sliceIntoChunks } from './audio-utils';
 import { AudioLinkStatus, ChunkOutcome, GenerationJob, IDLE_STATE, PositionBase, ReaderState, SavedPlaybackTimeline } from './reader-types';
 import { ChunkPosition, RawSpan } from '../text/text-position';
 import { HighlightGranularity, NoteNarratorSettings } from '../settings/settings';
-import { ResolvedNarrator, generationWindow, savedVoiceMatches } from '../settings/profiles';
+import { ResolvedNarrator, generationWindow } from '../settings/profiles';
 import { GenerateInBackgroundAction, buildBackgroundJobInfo, decideGenerateInBackground, hasPendingGeneration } from './background-job';
 import { chunkNote, stripFrontmatter } from '../text/text-utils';
 import { createTTSProvider, getProviderApiKey, missingApiKeyMessage } from '../tts/registry';
@@ -42,9 +42,6 @@ export class Reader extends Events {
 	private muted = false;
 
 	private nextJobId = 0;
-
-	/** Set by dispose(), for async work that resumes after the plugin has unloaded. */
-	private disposed = false;
 
 	/** Pause was pressed while the chunk to play was still generating; it starts paused when it arrives. */
 	private pauseWhenChunkArrives = false;
@@ -135,7 +132,6 @@ export class Reader extends Events {
 
 	/** Stops playback and cancels every generation job, background ones included; called when the plugin unloads so nothing keeps generating or saving afterwards. */
 	dispose(): void {
-		this.disposed = true;
 		this.stop();
 		for (const job of this.backgroundJobs) job.cancelled = true;
 		this.backgroundJobs = [];
@@ -231,19 +227,6 @@ export class Reader extends Events {
 	}
 
 	/**
-	 * Whether the note's linked saved audio is up to date with its text and was made with the active
-	 * narrator -- the same conditions under which the panel's Read button stays "Read" rather than becoming
-	 * "Regenerate" / "Regenerate with new narrator". Always false when saved audio isn't linked in notes.
-	 */
-	async hasUpToDateSavedAudio(file: TFile): Promise<boolean> {
-		if (!this.settings.linkAudioInNote) return false;
-		const info = await this.savedAudio.getAudioInfo(file);
-		if (!info || info.status !== 'up-to-date') return false;
-		const narrator = this.noteText.getActiveNarrator();
-		return info.savedVoice === undefined || !narrator || savedVoiceMatches(info.savedVoice, narrator.voice);
-	}
-
-	/**
 	 * Whether a background job no longer matches its note: generated with a different narrator than the
 	 * active one, or (when `currentContent` is given) from text that's since been edited. Playing it would
 	 * play the old version, so Read and "Generate in background" replace it instead.
@@ -272,7 +255,7 @@ export class Reader extends Events {
 	 * See {@link decideGenerateInBackground} for what happens when the note is already being read or
 	 * already has a background job. Always the full note, never a selection.
 	 */
-	async generateNoteInBackground(view?: MarkdownView): Promise<void> {
+	generateNoteInBackground(view?: MarkdownView): void {
 		const target = view ?? this.app.workspace.getActiveViewOfType(MarkdownView);
 		const file = target?.file;
 		if (!target || !file) {
@@ -280,14 +263,10 @@ export class Reader extends Events {
 			return;
 		}
 
-		// The note's text is taken before the await: by the time it resolves the view may show another note.
 		const { fullValue, rawText, positionBase } = this.buildNoteInput(target);
-		// Awaited before deciding, so that everything after it, from the decision to enqueueing, runs without
-		// a gap another click or command could slip into.
-		const savedAudioUpToDate = await this.hasUpToDateSavedAudio(file);
-		// Unloaded meanwhile: dispose() has already cleared everything, so don't start a (paid) job now.
-		if (this.disposed) return;
-		const action = this.getGenerateInBackgroundAction(file, fullValue, savedAudioUpToDate);
+		// Up-to-date saved audio doesn't stop it: like Read, it regenerates (the panel labels the button
+		// "Regenerate in background" then), so the decision doesn't need the saved-audio status here.
+		const action = this.getGenerateInBackgroundAction(file, fullValue);
 		if (action === 'move-active') {
 			this.continueGeneratingInBackground();
 			return;
@@ -306,10 +285,6 @@ export class Reader extends Events {
 		}
 		if (action === 'ready-in-background') {
 			new Notice(`"${file.basename}" has already finished generating in the background.`);
-			return;
-		}
-		if (action === 'saved-up-to-date') {
-			new Notice(`"${file.basename}" already has up-to-date saved audio.`);
 			return;
 		}
 
