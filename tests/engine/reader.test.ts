@@ -281,3 +281,76 @@ describe('Reader.dispose', () => {
 		expect(reader.getState().backgroundJobs).toHaveLength(0);
 	});
 });
+
+describe('Reader selection reads and the background queue', () => {
+	it('never moves a selection read to the background', async () => {
+		const reader = makeReader();
+		void reader.readNote(makeView(makeFile('A'), ['A1', 'A2'], 'selected one\nselected two'));
+		await settle();
+		expect(reader.getState().activeReadKind).toBe('selection');
+
+		reader.continueGeneratingInBackground();
+		await settle();
+
+		expect(reader.getState().backgroundJobs).toHaveLength(0);
+		expect(reader.getState().status).not.toBe('idle');
+	});
+
+	it('discards a selection read instead of backgrounding it when another note starts', async () => {
+		const reader = makeReader({ autoBackgroundOnSwitch: true });
+		void reader.readNote(makeView(makeFile('A'), ['A1', 'A2'], 'selected one\nselected two'));
+		await settle();
+
+		const b = makeFile('B');
+		void reader.readNote(makeView(b, ['B1', 'B2']));
+		await settle();
+
+		expect(reader.getState().backgroundJobs).toHaveLength(0);
+		expect(reader.getState().activeFile).toBe(b);
+	});
+
+	it('keeps the note\'s background job when a selection of the same note is read', async () => {
+		const reader = makeReader();
+		const a = makeFile('A');
+		reader.generateNoteInBackground(makeView(a, ['A1', 'A2']));
+		await settle();
+
+		void reader.readNote(makeView(a, ['A1', 'A2'], 'selected'));
+		await settle();
+
+		const state = reader.getState();
+		expect(state.activeReadKind).toBe('selection');
+		expect(state.backgroundJobs.map((job) => job.file)).toEqual([a]);
+	});
+
+	it('generates the full note in the background while a selection of it plays', async () => {
+		const reader = makeReader();
+		const a = makeFile('A');
+		void reader.readNote(makeView(a, ['A1', 'A2'], 'selected'));
+		await settle();
+
+		reader.generateNoteInBackground(makeView(a, ['A1', 'A2'], 'selected'));
+		await settle();
+
+		const state = reader.getState();
+		expect(state.activeReadKind).toBe('selection');
+		expect(state.backgroundJobs).toHaveLength(1);
+		expect(state.backgroundJobs[0]).toMatchObject({ file: a, chunkCount: 2 });
+	});
+
+	it('does nothing, with a notice, for a full read of the note that has finished generating', async () => {
+		const reader = makeReader();
+		const a = makeFile('A');
+		const view = makeView(a, ['A1', 'A2']);
+		void reader.readNote(view);
+		await settle();
+		await finishGenerating('A');
+
+		reader.generateNoteInBackground(view);
+		await settle();
+
+		expect(reader.getState().backgroundJobs).toHaveLength(0);
+		expect(reader.getState().activeFile).toBe(a);
+		expect(Notice.messages).toContain('"A" has already finished generating.');
+	});
+});
