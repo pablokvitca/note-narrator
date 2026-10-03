@@ -249,11 +249,11 @@ export class Reader extends Events {
 			return;
 		}
 
-		const { rawText, positionBase } = this.buildNoteInput(target);
+		const { fullValue, rawText, positionBase } = this.buildNoteInput(target);
 		const prepared = this.prepareRead(rawText, positionBase);
 		if (!prepared) return;
 
-		this.enqueueBackgroundJob(this.createJob(file, prepared, true));
+		this.enqueueBackgroundJob(this.createJob(file, prepared, true, fullValue));
 	}
 
 	/**
@@ -491,18 +491,19 @@ export class Reader extends Events {
 			return;
 		}
 
-		const { rawText, positionBase } = this.buildNoteInput(target);
-		await this.readText(rawText, target.file, { allowSave: true, positionBase });
+		const { fullValue, rawText, positionBase } = this.buildNoteInput(target);
+		await this.readText(rawText, target.file, { allowSave: true, positionBase, sourceContent: fullValue });
 	}
 
 	/** The full text a note is read from (spoken preamble plus body, frontmatter stripped), and where that body sits in the file for highlighting. */
-	private buildNoteInput(target: MarkdownView): { rawText: string; positionBase: PositionBase } {
+	private buildNoteInput(target: MarkdownView): { fullValue: string; rawText: string; positionBase: PositionBase } {
 		const fullValue = target.editor.getValue();
 		const body = stripFrontmatter(fullValue);
 		const fileOffset = fullValue.length - body.length;
 		const frontmatter = target.file ? this.app.metadataCache.getFileCache(target.file)?.frontmatter : undefined;
 		const preamble = this.noteText.buildPreamble(target.file?.basename ?? null, frontmatter);
 		return {
+			fullValue,
 			rawText: preamble ? `${preamble}\n\n${body}` : body,
 			positionBase: { rawTextOffset: preamble ? preamble.length + 2 : 0, fileOffset, length: body.length },
 		};
@@ -529,8 +530,12 @@ export class Reader extends Events {
 		return { narrator, apiKey, chunks, positions };
 	}
 
-	/** Builds a fresh, not-yet-started generation job. The caller decides whether it becomes the active (playing) job or goes to the background queue. */
-	private createJob(sourceFile: TFile | null, prepared: PreparedRead, allowSave: boolean): GenerationJob {
+	/**
+	 * Builds a fresh, not-yet-started generation job. The caller decides whether it becomes the active
+	 * (playing) job or goes to the background queue. `sourceContent` is the note's full text the job was
+	 * built from, hashed now for its saved audio's staleness check.
+	 */
+	private createJob(sourceFile: TFile | null, prepared: PreparedRead, allowSave: boolean, sourceContent?: string): GenerationJob {
 		const { narrator, apiKey, chunks, positions } = prepared;
 		let job!: GenerationJob;
 		job = {
@@ -546,6 +551,7 @@ export class Reader extends Events {
 			provider: createTTSProvider(narrator.provider, narrator.voice, apiKey, () => this.handleRateLimited(job)),
 			narrator,
 			sourceFileForSave: allowSave ? sourceFile : null,
+			contentHash: allowSave && sourceFile && sourceContent !== undefined ? this.savedAudio.stalenessHash(sourceContent, sourceFile) : null,
 			isSelection: !allowSave,
 			savedForSession: false,
 			rateLimited: false,
@@ -556,7 +562,11 @@ export class Reader extends Events {
 		return job;
 	}
 
-	private async readText(rawText: string, sourceFile: TFile | null, options: { allowSave: boolean; positionBase?: PositionBase }): Promise<void> {
+	private async readText(
+		rawText: string,
+		sourceFile: TFile | null,
+		options: { allowSave: boolean; positionBase?: PositionBase; sourceContent?: string },
+	): Promise<void> {
 		const prepared = this.prepareRead(rawText, options.positionBase);
 		if (!prepared) return;
 
@@ -580,7 +590,7 @@ export class Reader extends Events {
 		const session = this.sessionId;
 		this.currentPlaybackRate = this.settings.playbackRate;
 
-		const job = this.createJob(sourceFile, prepared, options.allowSave);
+		const job = this.createJob(sourceFile, prepared, options.allowSave, options.sourceContent);
 		this.activeJob = job;
 
 		this.setState({
@@ -779,7 +789,7 @@ export class Reader extends Events {
 		job.savedForSession = true;
 		const buffers = job.chunkBuffers.filter((buffer): buffer is ArrayBuffer => buffer !== undefined);
 		const chunkDurations = job.chunkDurations.map((duration) => duration ?? 0);
-		void this.savedAudio.saveAudioFile(buffers, job.sourceFileForSave, chunkDurations, job.narrator);
+		void this.savedAudio.saveAudioFile(buffers, job.sourceFileForSave, chunkDurations, job.narrator, job.contentHash);
 	}
 
 	/**
@@ -800,6 +810,8 @@ export class Reader extends Events {
 			if (!apiKey) return;
 
 			const rawText = await this.app.vault.cachedRead(file);
+			// Taken now, from the text being generated, so edits made while it generates show as outdated.
+			const contentHash = this.savedAudio.stalenessHash(rawText, file);
 			const body = stripFrontmatter(rawText);
 			const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
 			const preamble = this.noteText.buildPreamble(file.basename, frontmatter);
@@ -826,7 +838,7 @@ export class Reader extends Events {
 				chunkDurations.push(await decodeAudioDuration(buffer));
 			}
 
-			await this.savedAudio.saveAudioFile(buffers, file, chunkDurations, narrator);
+			await this.savedAudio.saveAudioFile(buffers, file, chunkDurations, narrator, contentHash);
 		} catch (error) {
 			console.error('Note Narrator: auto-generate on open failed', error);
 		}

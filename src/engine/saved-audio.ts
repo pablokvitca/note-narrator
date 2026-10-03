@@ -20,7 +20,18 @@ export class SavedAudio {
 		private onAudioStatusChange: (file: TFile) => void,
 	) {}
 
-	async saveAudioFile(chunks: ArrayBuffer[], sourceFile: TFile | null, chunkDurations: number[], narrator: ResolvedNarrator): Promise<void> {
+	/**
+	 * `contentHash` is the note's staleness hash (see {@link stalenessHash}) for the text the audio was
+	 * generated from, captured when generation started. Without it the note is hashed as it is now, which
+	 * marks the audio up to date even if the note was edited while it generated.
+	 */
+	async saveAudioFile(
+		chunks: ArrayBuffer[],
+		sourceFile: TFile | null,
+		chunkDurations: number[],
+		narrator: ResolvedNarrator,
+		contentHash: string | null = null,
+	): Promise<void> {
 		try {
 			const apiKey = getProviderApiKey(this.app, narrator.provider);
 			const voiceName = apiKey ? await resolveVoiceLabel(narrator.provider, narrator.voice, apiKey) : this.voiceFallbackLabel(narrator.voice);
@@ -48,7 +59,7 @@ export class SavedAudio {
 
 			if (this.settings.linkAudioInNote && sourceFile) {
 				const chunkMeta = chunkDurations.map((duration, i) => ({ duration, byteLength: chunks[i]?.byteLength ?? 0 }));
-				await this.linkAudioInNote(audioFile, sourceFile, chunkMeta, narrator);
+				await this.linkAudioInNote(audioFile, sourceFile, chunkMeta, narrator, contentHash);
 			}
 		} catch (error) {
 			console.error('Note Narrator: failed to save audio file', error);
@@ -76,9 +87,11 @@ export class SavedAudio {
 	 * these properties (including this very hash) into the file's frontmatter right after computing it, so
 	 * every later read of "current content" would include them while the stored hash never could —
 	 * guaranteeing a permanent mismatch. Excluding them keeps the hash stable across saves.
+	 *
+	 * `rawContent` is the note's full text (frontmatter included); the frontmatter itself comes from the
+	 * metadata cache as it is right now.
 	 */
-	private async computeStalenessHash(file: TFile): Promise<string> {
-		const rawContent = await this.app.vault.cachedRead(file);
+	stalenessHash(rawContent: string, file: TFile): string {
 		const body = stripFrontmatter(rawContent);
 		const frontmatter: Record<string, unknown> = { ...(this.app.metadataCache.getFileCache(file)?.frontmatter ?? {}) };
 		delete frontmatter.position;
@@ -93,6 +106,10 @@ export class SavedAudio {
 			if (trimmed) delete frontmatter[trimmed];
 		}
 		return hashText(`${JSON.stringify(frontmatter)}\n${body}`);
+	}
+
+	private async computeStalenessHash(file: TFile): Promise<string> {
+		return this.stalenessHash(await this.app.vault.cachedRead(file), file);
 	}
 
 	/**
@@ -120,9 +137,15 @@ export class SavedAudio {
 		});
 	}
 
-	private async linkAudioInNote(audioFile: TFile, sourceFile: TFile, chunkMeta: { duration: number; byteLength: number }[], narrator: ResolvedNarrator): Promise<void> {
+	private async linkAudioInNote(
+		audioFile: TFile,
+		sourceFile: TFile,
+		chunkMeta: { duration: number; byteLength: number }[],
+		narrator: ResolvedNarrator,
+		contentHash: string | null,
+	): Promise<void> {
 		const link = this.app.fileManager.generateMarkdownLink(audioFile, sourceFile.path);
-		const hash = await this.computeStalenessHash(sourceFile);
+		const hash = contentHash ?? (await this.computeStalenessHash(sourceFile));
 
 		const cacheUpdated = this.waitForMetadataCacheUpdate(sourceFile);
 		await this.app.fileManager.processFrontMatter(sourceFile, (frontmatter: Record<string, unknown>) => {

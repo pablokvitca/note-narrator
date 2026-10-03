@@ -66,6 +66,9 @@ vi.mock('../../src/engine/saved-audio', () => ({
 		getAudioStatus() {
 			return Promise.resolve('none');
 		}
+		stalenessHash(rawContent: string) {
+			return `hash of ${rawContent}`;
+		}
 	},
 }));
 
@@ -551,5 +554,43 @@ describe('Reader handing a job over while chunks are still being decoded', () =>
 			['C', 'generating'],
 		]);
 		expect(callsFor('C')).toHaveLength(1);
+	});
+});
+
+describe('Reader saving generated audio', () => {
+	it('marks saved audio with the text it was generated from, not the note as edited since', async () => {
+		const reader = makeReader({ saveAudioFile: true });
+		const lines = ['A1', 'A2'];
+		const view = fake<MarkdownView>({ file: makeFile('A'), editor: { getValue: () => lines.join('\n'), getSelection: () => '' } });
+		reader.generateNoteInBackground(view);
+		await settle();
+
+		lines.push('A3 added while generating');
+		await finishGenerating('A');
+
+		expect(fakes.saveAudioFile).toHaveLength(1);
+		expect(fakes.saveAudioFile[0]?.[4]).toBe('hash of A1\nA2');
+	});
+
+	it('marks a played read\'s saved audio with the text it started from', async () => {
+		const reader = makeReader({ saveAudioFile: true });
+		const lines = ['A1', 'A2'];
+		const view = fake<MarkdownView>({ file: makeFile('A'), editor: { getValue: () => lines.join('\n'), getSelection: () => '' } });
+		void reader.readNote(view);
+		await settle();
+
+		lines.push('A3 added while generating');
+		await finishGenerating('A');
+
+		expect(fakes.saveAudioFile[0]?.[4]).toBe('hash of A1\nA2');
+	});
+
+	it('never saves a selection read', async () => {
+		const reader = makeReader({ saveAudioFile: true });
+		void reader.readNote(makeView(makeFile('A'), ['A1'], 'selected'));
+		await settle();
+		await finishGenerating('selected');
+
+		expect(fakes.saveAudioFile).toHaveLength(0);
 	});
 });
