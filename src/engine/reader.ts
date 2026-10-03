@@ -289,6 +289,15 @@ export class Reader extends Events {
 		// that was only 'queued' or already 'done' wasn't occupying that slot, so nothing to advance.
 		if (wasGenerating) this.advanceBackgroundQueue();
 
+		// A job that never generated in the foreground (started by "Generate in background", or queued and
+		// never started) has no foreground worker pool -- without one, only playFromIndex() would generate,
+		// one chunk at a time as each is needed, with a silent gap before every chunk. Starting one at the
+		// foreground window is safe even if another pool is still running: ensureChunkBuffer() never
+		// generates the same chunk twice.
+		if (hasPendingGeneration(job.chunkReady)) {
+			void this.runGenerationWorkerPool(job, generationWindow(job.narrator.provider, false));
+		}
+
 		void this.playFromIndex(session, job, 0);
 	}
 
