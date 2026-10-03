@@ -19,6 +19,8 @@ interface SynthCall {
 
 const fakes = vi.hoisted(() => ({
 	synthCalls: [] as SynthCall[],
+	/** What vault.cachedRead() returns for any note. */
+	diskContent: '',
 	/** When true, decodeAudioDuration() stays pending until the test releases it (see releaseDecodes()). */
 	holdDecodes: false,
 	heldDecodes: [] as (() => void)[],
@@ -50,11 +52,29 @@ vi.mock('../../src/engine/note-text', () => ({
 		buildPreamble() {
 			return '';
 		}
+		getCharLimit() {
+			return 1000;
+		}
+		getReadingConfig() {
+			return { chunkerStyle: 'sentence', maxHeadingDepth: 6 };
+		}
+		getStripMarkdownOptions() {
+			return {};
+		}
+		getSkipHeadingPatterns() {
+			return [];
+		}
 		buildChunksAndPositions(rawText: string) {
 			const chunks = rawText.split('\n').filter((line) => line.length > 0);
 			return { chunks, positions: chunks.map(() => ({ span: null, sectionSpan: null, sectionHeadingSpan: null })) };
 		}
 	},
+}));
+
+// Auto-generate on open chunks with chunkNote() directly; one chunk per non-empty line, like the NoteText fake.
+vi.mock('../../src/text/text-utils', async (importOriginal) => ({
+	...(await importOriginal<typeof import('../../src/text/text-utils')>()),
+	chunkNote: (text: string) => text.split('\n').filter((line) => line.length > 0),
 }));
 
 vi.mock('../../src/engine/saved-audio', () => ({
@@ -65,6 +85,9 @@ vi.mock('../../src/engine/saved-audio', () => ({
 		}
 		getAudioStatus() {
 			return Promise.resolve('none');
+		}
+		stalenessHash(rawContent: string) {
+			return `hash of ${rawContent}`;
 		}
 	},
 }));
@@ -125,7 +148,7 @@ function makeReader(settings: Partial<NoteNarratorSettings> = {}): Reader {
 	const app = fake<App>({
 		workspace: { getActiveViewOfType: () => null },
 		metadataCache: { getFileCache: () => ({}) },
-		vault: {},
+		vault: { cachedRead: () => Promise.resolve(fakes.diskContent) },
 	});
 	return new Reader(app, {
 		playbackRate: 1,
@@ -174,6 +197,7 @@ beforeEach(() => {
 	});
 	vi.stubGlobal('Audio', FakeAudio);
 	fakes.synthCalls.length = 0;
+	fakes.diskContent = '';
 	fakes.holdDecodes = false;
 	fakes.heldDecodes.length = 0;
 	fakes.saveAudioFile.length = 0;
@@ -551,5 +575,59 @@ describe('Reader handing a job over while chunks are still being decoded', () =>
 			['C', 'generating'],
 		]);
 		expect(callsFor('C')).toHaveLength(1);
+	});
+});
+
+describe('Reader saving generated audio', () => {
+	it('marks saved audio with the text it was generated from, not the note as edited since', async () => {
+		const reader = makeReader({ saveAudioFile: true });
+		const lines = ['A1', 'A2'];
+		const view = fake<MarkdownView>({ file: makeFile('A'), editor: { getValue: () => lines.join('\n'), getSelection: () => '' } });
+		reader.generateNoteInBackground(view);
+		await settle();
+
+		lines.push('A3 added while generating');
+		await finishGenerating('A');
+
+		expect(fakes.saveAudioFile).toHaveLength(1);
+		expect(fakes.saveAudioFile[0]?.[4]).toBe('hash of A1\nA2');
+	});
+
+	it('marks a played read\'s saved audio with the text it started from', async () => {
+		const reader = makeReader({ saveAudioFile: true });
+		const lines = ['A1', 'A2'];
+		const view = fake<MarkdownView>({ file: makeFile('A'), editor: { getValue: () => lines.join('\n'), getSelection: () => '' } });
+		void reader.readNote(view);
+		await settle();
+
+		lines.push('A3 added while generating');
+		await finishGenerating('A');
+
+		expect(fakes.saveAudioFile[0]?.[4]).toBe('hash of A1\nA2');
+	});
+
+	it('never saves a selection read', async () => {
+		const reader = makeReader({ saveAudioFile: true });
+		void reader.readNote(makeView(makeFile('A'), ['A1'], 'selected'));
+		await settle();
+		await finishGenerating('selected');
+
+		expect(fakes.saveAudioFile).toHaveLength(0);
+	});
+});
+
+describe('Reader auto-generating on open', () => {
+	it('marks the saved audio with the text it read at the start, even if the note changes meanwhile', async () => {
+		const reader = makeReader({ saveAudioFile: true, linkAudioInNote: true, autoGenerateOnOpen: true });
+		fakes.diskContent = 'A1\nA2';
+		const done = reader.autoGenerateIfNeeded(makeFile('A'));
+		await settle();
+
+		fakes.diskContent = 'A1\nA2\nA3 added while generating';
+		await finishGenerating('A');
+		await done;
+
+		expect(fakes.saveAudioFile).toHaveLength(1);
+		expect(fakes.saveAudioFile[0]?.[4]).toBe('hash of A1\nA2');
 	});
 });

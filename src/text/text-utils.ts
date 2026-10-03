@@ -7,6 +7,12 @@ export function stripFrontmatter(markdown: string): string {
 	return markdown.replace(/^---\n[\s\S]*?\n---(\n|$)/, '');
 }
 
+/** The YAML between a note's leading `---` fences (the part {@link stripFrontmatter} removes), or null when it has none. */
+export function extractFrontmatterYaml(markdown: string): string | null {
+	const match = /^---\n([\s\S]*?)\n---(\n|$)/.exec(markdown);
+	return match ? (match[1] ?? '') : null;
+}
+
 export interface StripMarkdownOptions {
 	/** Remove Obsidian/Markdown comments (`%% ... %%`) entirely, content included, before reading. */
 	stripMarkdownComments: boolean;

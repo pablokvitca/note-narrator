@@ -1,17 +1,23 @@
-import { App, Notice, TFile, moment, normalizePath } from 'obsidian';
+import { App, Notice, TFile, moment, normalizePath, parseYaml } from 'obsidian';
 import { AudioLinkStatus } from './reader-types';
 import { cleanVaultFolderPath } from './vault-path';
 import { DEFAULT_SETTINGS, NoteNarratorSettings } from '../settings/settings';
 import { ResolvedNarrator, VoiceConfig } from '../settings/profiles';
 import { concatArrayBuffers, sanitizeFilenameComponent } from './audio-utils';
 import { getProviderApiKey, resolveVoiceLabel } from '../tts/registry';
-import { hashText, stripFrontmatter } from '../text/text-utils';
+import { extractFrontmatterYaml, hashText, stripFrontmatter } from '../text/text-utils';
 
 /**
  * A note's saved audio: writing the `.mp3` next to it, linking it in the note's frontmatter, deciding whether
  * it is up to date or outdated (by hashing the note), and clearing it. Everything here goes through the vault
  * and the note's frontmatter; playback and generation live in {@link Reader}.
  */
+/**
+ * Marks staleness hashes computed by {@link SavedAudio.stalenessHash} (1.1+). Hashes stored by 1.0.0 have no
+ * prefix and are checked with the 1.0.0 algorithm instead, so existing saved audio stays up to date.
+ */
+const HASH_VERSION_PREFIX = 'v2:';
+
 export class SavedAudio {
 	constructor(
 		private app: App,
@@ -20,7 +26,18 @@ export class SavedAudio {
 		private onAudioStatusChange: (file: TFile) => void,
 	) {}
 
-	async saveAudioFile(chunks: ArrayBuffer[], sourceFile: TFile | null, chunkDurations: number[], narrator: ResolvedNarrator): Promise<void> {
+	/**
+	 * `contentHash` is the note's staleness hash (see {@link stalenessHash}) for the text the audio was
+	 * generated from, captured when generation started. Required on purpose: hashing the note as it is when
+	 * saving finishes instead would mark the audio up to date even if the note was edited while it generated.
+	 */
+	async saveAudioFile(
+		chunks: ArrayBuffer[],
+		sourceFile: TFile | null,
+		chunkDurations: number[],
+		narrator: ResolvedNarrator,
+		contentHash: string,
+	): Promise<void> {
 		try {
 			const apiKey = getProviderApiKey(this.app, narrator.provider);
 			const voiceName = apiKey ? await resolveVoiceLabel(narrator.provider, narrator.voice, apiKey) : this.voiceFallbackLabel(narrator.voice);
@@ -48,7 +65,7 @@ export class SavedAudio {
 
 			if (this.settings.linkAudioInNote && sourceFile) {
 				const chunkMeta = chunkDurations.map((duration, i) => ({ duration, byteLength: chunks[i]?.byteLength ?? 0 }));
-				await this.linkAudioInNote(audioFile, sourceFile, chunkMeta, narrator);
+				await this.linkAudioInNote(audioFile, sourceFile, chunkMeta, narrator, contentHash);
 			}
 		} catch (error) {
 			console.error('Note Narrator: failed to save audio file', error);
@@ -76,11 +93,40 @@ export class SavedAudio {
 	 * these properties (including this very hash) into the file's frontmatter right after computing it, so
 	 * every later read of "current content" would include them while the stored hash never could —
 	 * guaranteeing a permanent mismatch. Excluding them keeps the hash stable across saves.
+	 *
+	 * `rawContent` is the note's full text, frontmatter included. Both halves of the hash come from it, so an
+	 * editor's unsaved text hashes the same as that text once it's on disk: the frontmatter is parsed from
+	 * `rawContent` rather than read from the metadata cache (which lags unsaved edits), and line endings are
+	 * normalized (the editor works in LF while a file on disk may still use CRLF).
 	 */
-	private async computeStalenessHash(file: TFile): Promise<string> {
-		const rawContent = await this.app.vault.cachedRead(file);
-		const body = stripFrontmatter(rawContent);
-		const frontmatter: Record<string, unknown> = { ...(this.app.metadataCache.getFileCache(file)?.frontmatter ?? {}) };
+	stalenessHash(rawContent: string, file: TFile): string {
+		const content = rawContent.replace(/\r\n/g, '\n');
+		return `${HASH_VERSION_PREFIX}${this.hashNote(this.parseFrontmatter(content, file), stripFrontmatter(content))}`;
+	}
+
+	/**
+	 * The hash before 1.1: frontmatter from the metadata cache, no line-ending normalization, no version
+	 * prefix. Only used to check hashes stored by 1.0.0 (unprefixed), never stored, so audio saved by an
+	 * older version doesn't all turn "outdated" on update just because the hash is now computed differently.
+	 */
+	private legacyStalenessHash(rawContent: string, file: TFile): string {
+		return this.hashNote(this.app.metadataCache.getFileCache(file)?.frontmatter ?? {}, stripFrontmatter(rawContent));
+	}
+
+	/** Falls back to the metadata cache's copy if the YAML doesn't parse (Obsidian's own view of it is the best we have then). */
+	private parseFrontmatter(content: string, file: TFile): Record<string, unknown> {
+		const yaml = extractFrontmatterYaml(content);
+		if (yaml === null) return {};
+		try {
+			const parsed: unknown = parseYaml(yaml);
+			return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {};
+		} catch {
+			return this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
+		}
+	}
+
+	private hashNote(sourceFrontmatter: Record<string, unknown>, body: string): string {
+		const frontmatter: Record<string, unknown> = { ...sourceFrontmatter };
 		delete frontmatter.position;
 		delete frontmatter[this.settings.audioLinkProperty];
 		delete frontmatter[this.settings.audioHashProperty];
@@ -120,14 +166,19 @@ export class SavedAudio {
 		});
 	}
 
-	private async linkAudioInNote(audioFile: TFile, sourceFile: TFile, chunkMeta: { duration: number; byteLength: number }[], narrator: ResolvedNarrator): Promise<void> {
+	private async linkAudioInNote(
+		audioFile: TFile,
+		sourceFile: TFile,
+		chunkMeta: { duration: number; byteLength: number }[],
+		narrator: ResolvedNarrator,
+		contentHash: string,
+	): Promise<void> {
 		const link = this.app.fileManager.generateMarkdownLink(audioFile, sourceFile.path);
-		const hash = await this.computeStalenessHash(sourceFile);
 
 		const cacheUpdated = this.waitForMetadataCacheUpdate(sourceFile);
 		await this.app.fileManager.processFrontMatter(sourceFile, (frontmatter: Record<string, unknown>) => {
 			frontmatter[this.settings.audioLinkProperty] = link;
-			frontmatter[this.settings.audioHashProperty] = hash;
+			frontmatter[this.settings.audioHashProperty] = contentHash;
 			frontmatter[this.settings.audioPathProperty] = audioFile.path;
 			frontmatter[this.settings.audioTimestampProperty] = moment().toISOString(true);
 			// A fingerprint of the narrator's voice settings, not its name or provider account, so renaming a profile doesn't look like a new narrator.
@@ -188,8 +239,12 @@ export class SavedAudio {
 			return 'none';
 		}
 
-		const currentHash = await this.computeStalenessHash(file);
-		return currentHash === storedHash ? 'up-to-date' : 'outdated';
+		const content = await this.app.vault.cachedRead(file);
+		// A hash saved since 1.1 is versioned and only ever compared with the current algorithm. Falling back
+		// to the 1.0.0 one for it too would briefly undo reading frontmatter from the text: right after a
+		// property edit, the cache-based 1.0.0 hash still matches until Obsidian re-indexes the note.
+		const currentHash = storedHash.startsWith(HASH_VERSION_PREFIX) ? this.stalenessHash(content, file) : this.legacyStalenessHash(content, file);
+		return storedHash === currentHash ? 'up-to-date' : 'outdated';
 	}
 
 	/** Info about a note's linked saved audio, for the player view's "Play saved"/"Regenerate" buttons. Null if none exists. */
