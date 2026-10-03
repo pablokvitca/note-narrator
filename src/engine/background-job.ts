@@ -59,8 +59,8 @@ export type ActiveReadKind = 'none' | 'full' | 'selection' | 'saved';
  * - 'playing-saved': it's playing from its saved audio (and has no background job), so nothing happens
  *   rather than paying to regenerate audio that's playing right now.
  * - 'already-queued': it already has a background job, still queued or generating.
- * - 'ready-in-background': its background job has finished (play it from its card, or discard the card to
- *   generate again).
+ * - 'ready-in-background': its background job has finished (play it from its card, or clear it from the
+ *   list to generate again).
  * - 'saved-up-to-date': its saved audio is up to date (same text, same narrator), so, like Read, there's
  *   nothing worth paying to generate again.
  * - 'generate': starts a new background job.

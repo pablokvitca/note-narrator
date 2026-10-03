@@ -249,9 +249,14 @@ export class Reader extends Events {
 		return job.contentHash !== this.savedAudio.stalenessHash(currentContent, file);
 	}
 
+	/** The note's background job, if it has one. A note never has more than one: generating again replaces or reuses it. */
+	private findBackgroundJob(file: TFile): GenerationJob | undefined {
+		return this.backgroundJobs.find((job) => job.file?.path === file.path);
+	}
+
 	/** Discards this note's background job if it's stale (see {@link isBackgroundJobStale}). */
 	private discardStaleBackgroundJob(file: TFile, currentContent: string): void {
-		const existing = this.backgroundJobs.find((job) => job.file?.path === file.path);
+		const existing = this.findBackgroundJob(file);
 		if (existing && this.isBackgroundJobStale(existing, file, currentContent)) this.discardBackgroundJob(existing.id);
 	}
 
@@ -638,7 +643,7 @@ export class Reader extends Events {
 		// Read -- or "Regenerate" -- actually generates the note as it is now.
 		if (sourceFile && options.kind === 'full') {
 			if (options.sourceContent !== undefined) this.discardStaleBackgroundJob(sourceFile, options.sourceContent);
-			const existing = this.backgroundJobs.find((job) => job.file?.path === sourceFile.path);
+			const existing = this.findBackgroundJob(sourceFile);
 			if (existing) {
 				this.adoptBackgroundJob(existing);
 				return;
@@ -969,8 +974,8 @@ export class Reader extends Events {
 		// is now gone (its file may not even be the one deleted, e.g. with saving off or "Keep old versions").
 		// A queued or generating job is left alone: clearing old audio shouldn't throw away a (paid)
 		// generation in progress, whose new audio is saved and linked when it finishes.
-		const finished = this.backgroundJobs.find((j) => j.file?.path === sourceFile.path && j.backgroundStatus === 'done');
-		if (finished) this.discardBackgroundJob(finished.id);
+		const job = this.findBackgroundJob(sourceFile);
+		if (job?.backgroundStatus === 'done') this.discardBackgroundJob(job.id);
 	}
 
 
