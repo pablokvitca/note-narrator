@@ -45,7 +45,7 @@ const GENERATE_IN_BACKGROUND: Omit<BackgroundButtonSpec, 'onClick'> = {
 
 const BACKGROUND_BUTTONS: Record<GenerateInBackgroundAction, BackgroundButtonSpec> = {
 	'move-active': { ...MOVE_TO_BACKGROUND, onClick: 'move' },
-	'already-generated': { ...MOVE_TO_BACKGROUND, onClick: null },
+	'already-generated': { ...MOVE_TO_BACKGROUND, tooltip: 'This note has finished generating, so there is nothing to move to the background.', onClick: null },
 	'playing-saved': { ...GENERATE_IN_BACKGROUND, tooltip: 'This note is playing from its saved audio.', onClick: null },
 	'already-queued': { ...GENERATE_IN_BACKGROUND, tooltip: 'This note is already in the background queue.', onClick: null },
 	'ready-in-background': {
@@ -272,9 +272,9 @@ export class PlayerView extends ItemView {
 
 		const selectedFile = this.getActiveFile();
 		// Read/Play saved/Regenerate act on the *selected* note, not whatever's currently playing — while
-		// reading a different note, they should stay clickable so clicking one stops that read and starts
-		// this one instead (until background generation lands and playing elsewhere no longer needs to
-		// interrupt at all).
+		// reading a different note, they should stay clickable so clicking one starts this note instead
+		// (moving the other read to the background if "Keep generating when starting another note" is on,
+		// otherwise stopping it).
 		const activeForSelected = active && !!state.activeFile && !!selectedFile && state.activeFile.path === selectedFile.path;
 		// Not just status === 'generating': once quick-start playback begins, status flips to 'playing' while
 		// later chunks can still be generating in the background (parallel generation/lookahead) — Cancel
