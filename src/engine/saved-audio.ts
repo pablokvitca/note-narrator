@@ -30,6 +30,8 @@ export class SavedAudio {
 	 * `contentHash` is the note's staleness hash (see {@link stalenessHash}) for the text the audio was
 	 * generated from, captured when generation started. Required on purpose: hashing the note as it is when
 	 * saving finishes instead would mark the audio up to date even if the note was edited while it generated.
+	 *
+	 * Resolves to the saved audio file, or null if saving failed (already reported with a notice).
 	 */
 	async saveAudioFile(
 		chunks: ArrayBuffer[],
@@ -37,7 +39,7 @@ export class SavedAudio {
 		chunkDurations: number[],
 		narrator: ResolvedNarrator,
 		contentHash: string,
-	): Promise<void> {
+	): Promise<TFile | null> {
 		try {
 			const apiKey = getProviderApiKey(this.app, narrator.provider);
 			const voiceName = apiKey ? await resolveVoiceLabel(narrator.provider, narrator.voice, apiKey) : this.voiceFallbackLabel(narrator.voice);
@@ -67,9 +69,11 @@ export class SavedAudio {
 				const chunkMeta = chunkDurations.map((duration, i) => ({ duration, byteLength: chunks[i]?.byteLength ?? 0 }));
 				await this.linkAudioInNote(audioFile, sourceFile, chunkMeta, narrator, contentHash);
 			}
+			return audioFile;
 		} catch (error) {
 			console.error('Note Narrator: failed to save audio file', error);
 			new Notice(`Failed to save audio file: ${error instanceof Error ? error.message : String(error)}`);
+			return null;
 		}
 	}
 
