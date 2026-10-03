@@ -873,15 +873,12 @@ export class Reader extends Events {
 	}
 
 	/**
-	 * Keeps a job's saved-audio path in step with the file being moved or renamed. Moving it into Obsidian's
-	 * `.trash` folder is how "delete" works with the "Move to Obsidian trash" setting, so that counts as a
-	 * deletion (see {@link handleFileDeleted}).
+	 * Keeps a job's saved-audio path in step with the file being moved or renamed, so deleting it from its
+	 * new place still drops the job. (Trashing a file, to the system trash or Obsidian's `.trash` folder,
+	 * fires a delete event, not a rename -- see {@link handleFileDeleted}. A renamed note needs nothing here:
+	 * the job holds the same TFile, whose path Obsidian updates.)
 	 */
 	handleFileRenamed(newPath: string, oldPath: string): void {
-		if (newPath.startsWith('.trash/')) {
-			this.handleFileDeleted(oldPath);
-			return;
-		}
 		for (const job of this.backgroundJobs) {
 			if (job.savedAudioPath === oldPath) job.savedAudioPath = newPath;
 		}
@@ -961,11 +958,12 @@ export class Reader extends Events {
 
 	/** Deletes a note's linked audio file (if any) and removes the Note Narrator audio properties from its frontmatter. */
 	async clearReaderFiles(sourceFile: TFile): Promise<void> {
-		// Directly rather than relying on the vault's delete event: depending on the "Deleted files" setting,
-		// trashing the audio can show up as a move into .trash instead.
-		for (const job of this.backgroundJobs.filter((j) => j.file?.path === sourceFile.path)) {
-			this.discardBackgroundJob(job.id);
-		}
+		// A finished job's card stands for the note's audio, which is being cleared (its file may not even be
+		// the one deleted, e.g. with saving off or "Keep old versions"). A queued or generating job is left
+		// alone: clearing old audio shouldn't throw away a (paid) generation in progress, whose new audio is
+		// saved and linked when it finishes.
+		const finished = this.backgroundJobs.find((j) => j.file?.path === sourceFile.path && j.backgroundStatus === 'done');
+		if (finished) this.discardBackgroundJob(finished.id);
 		await this.savedAudio.clearReaderFiles(sourceFile);
 	}
 
