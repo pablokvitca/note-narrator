@@ -5,6 +5,8 @@ import { globalIgnores, defineConfig } from 'eslint/config';
 export default defineConfig(
 	globalIgnores([
 		'node_modules',
+		// Claude Code agent worktrees: full checkouts of other branches, not this one's code.
+		'.claude',
 		'dist',
 		'esbuild.config.mjs',
 		'version-bump.mjs',
