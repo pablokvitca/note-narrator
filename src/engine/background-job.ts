@@ -48,11 +48,6 @@ export function queuePosition(jobs: BackgroundJobInfo[], jobId: number): number 
 	return jobs.filter((job) => job.status === 'queued').findIndex((job) => job.id === jobId) + 1;
 }
 
-/** The background job (in any status) for a note, if there is one. Generic so it works on both the reader's live jobs and the panel's `BackgroundJobInfo` snapshots. */
-export function findBackgroundJobForNote<T extends { file: { path: string } | null }>(jobs: T[], notePath: string): T | undefined {
-	return jobs.find((job) => job.file?.path === notePath);
-}
-
 /** What's driving playback right now: nothing, a full-note read, a selection read, or "Play saved" (no generation job at all). */
 export type ActiveReadKind = 'none' | 'full' | 'selection' | 'saved';
 
