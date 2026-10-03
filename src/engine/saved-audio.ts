@@ -1,11 +1,11 @@
-import { App, Notice, TFile, moment, normalizePath } from 'obsidian';
+import { App, Notice, TFile, moment, normalizePath, parseYaml } from 'obsidian';
 import { AudioLinkStatus } from './reader-types';
 import { cleanVaultFolderPath } from './vault-path';
 import { DEFAULT_SETTINGS, NoteNarratorSettings } from '../settings/settings';
 import { ResolvedNarrator, VoiceConfig } from '../settings/profiles';
 import { concatArrayBuffers, sanitizeFilenameComponent } from './audio-utils';
 import { getProviderApiKey, resolveVoiceLabel } from '../tts/registry';
-import { hashText, stripFrontmatter } from '../text/text-utils';
+import { extractFrontmatterYaml, hashText, stripFrontmatter } from '../text/text-utils';
 
 /**
  * A note's saved audio: writing the `.mp3` next to it, linking it in the note's frontmatter, deciding whether
@@ -88,12 +88,39 @@ export class SavedAudio {
 	 * every later read of "current content" would include them while the stored hash never could —
 	 * guaranteeing a permanent mismatch. Excluding them keeps the hash stable across saves.
 	 *
-	 * `rawContent` is the note's full text (frontmatter included); the frontmatter itself comes from the
-	 * metadata cache as it is right now.
+	 * `rawContent` is the note's full text, frontmatter included. Both halves of the hash come from it, so an
+	 * editor's unsaved text hashes the same as that text once it's on disk: the frontmatter is parsed from
+	 * `rawContent` rather than read from the metadata cache (which lags unsaved edits), and line endings are
+	 * normalized (the editor works in LF while a file on disk may still use CRLF).
 	 */
 	stalenessHash(rawContent: string, file: TFile): string {
-		const body = stripFrontmatter(rawContent);
-		const frontmatter: Record<string, unknown> = { ...(this.app.metadataCache.getFileCache(file)?.frontmatter ?? {}) };
+		const content = rawContent.replace(/\r\n/g, '\n');
+		return this.hashNote(this.parseFrontmatter(content, file), stripFrontmatter(content));
+	}
+
+	/**
+	 * The hash before 1.1: frontmatter from the metadata cache, no line-ending normalization. Only ever
+	 * compared against, never stored, so audio saved by an older version doesn't all turn "outdated" on
+	 * update just because the hash is now computed differently.
+	 */
+	private legacyStalenessHash(rawContent: string, file: TFile): string {
+		return this.hashNote(this.app.metadataCache.getFileCache(file)?.frontmatter ?? {}, stripFrontmatter(rawContent));
+	}
+
+	/** Falls back to the metadata cache's copy if the YAML doesn't parse (Obsidian's own view of it is the best we have then). */
+	private parseFrontmatter(content: string, file: TFile): Record<string, unknown> {
+		const yaml = extractFrontmatterYaml(content);
+		if (yaml === null) return {};
+		try {
+			const parsed: unknown = parseYaml(yaml);
+			return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {};
+		} catch {
+			return this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
+		}
+	}
+
+	private hashNote(sourceFrontmatter: Record<string, unknown>, body: string): string {
+		const frontmatter: Record<string, unknown> = { ...sourceFrontmatter };
 		delete frontmatter.position;
 		delete frontmatter[this.settings.audioLinkProperty];
 		delete frontmatter[this.settings.audioHashProperty];
@@ -211,8 +238,9 @@ export class SavedAudio {
 			return 'none';
 		}
 
-		const currentHash = await this.computeStalenessHash(file);
-		return currentHash === storedHash ? 'up-to-date' : 'outdated';
+		const content = await this.app.vault.cachedRead(file);
+		const matches = storedHash === this.stalenessHash(content, file) || storedHash === this.legacyStalenessHash(content, file);
+		return matches ? 'up-to-date' : 'outdated';
 	}
 
 	/** Info about a note's linked saved audio, for the player view's "Play saved"/"Regenerate" buttons. Null if none exists. */
