@@ -28,7 +28,7 @@ const BACKGROUND_BUTTONS: Record<GenerateInBackgroundAction, BackgroundButtonSpe
 	'ready-in-background': {
 		label: 'Ready in background',
 		icon: 'check',
-		tooltip: 'This note finished generating in the background. Play it from its card below, or discard the card to generate it again.',
+		tooltip: 'This note finished generating in the background. Play it from its card below, or clear it from the list to generate it again.',
 		onClick: null,
 	},
 	'saved-up-to-date': { ...GENERATE_IN_BACKGROUND, tooltip: 'This note\'s saved audio is already up to date.', onClick: null },
