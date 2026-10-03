@@ -284,6 +284,15 @@ export class Reader extends Events {
 		const wasGenerating = job.backgroundStatus === 'generating';
 		this.publishBackgroundJobs();
 
+		// Promoting the job that held the one "generating" slot frees it for the next queued job. A job
+		// that was only 'queued' or already 'done' wasn't occupying that slot, so nothing to advance.
+		// Advanced before the current read moves aside below, so jobs keep the order they were backgrounded in.
+		if (wasGenerating) this.advanceBackgroundQueue();
+
+		// Same as starting any other note: with "Keep generating when starting another note" on, a read of a
+		// different note that's still generating moves to the background instead of being thrown away. It
+		// joins the back of the queue (or takes the generating slot if nothing else wants it).
+		this.backgroundActiveJobForOtherNote(job.file);
 		this.stop();
 		job.cancelled = false;
 		this.activeJob = job;
@@ -301,10 +310,6 @@ export class Reader extends Events {
 			activeFile: job.file,
 			activeReadKind: 'full',
 		});
-
-		// Promoting the job that held the one "generating" slot frees it for the next queued job. A job
-		// that was only 'queued' or already 'done' wasn't occupying that slot, so nothing to advance.
-		if (wasGenerating) this.advanceBackgroundQueue();
 
 		// Without a foreground worker pool only playFromIndex() would generate, one chunk at a time as each
 		// is needed, with a silent gap before every chunk. Starting one also retires the background pool
