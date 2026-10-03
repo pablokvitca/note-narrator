@@ -13,6 +13,8 @@ import { NoteNarratorSettings } from '../../src/settings/settings';
 
 interface SynthCall {
 	text: string;
+	/** The cancellation check Reader passed in, as the real provider polls it between retries. */
+	isCancelled: () => boolean;
 	resolve: () => void;
 	reject: (error: Error) => void;
 }
@@ -41,9 +43,9 @@ vi.mock('../../src/tts/registry', () => ({
 	getProviderApiKey: () => 'key',
 	missingApiKeyMessage: () => 'No API key.',
 	createTTSProvider: () => ({
-		synthesize: (text: string) =>
+		synthesize: (text: string, isCancelled: () => boolean = () => false) =>
 			new Promise<ArrayBuffer>((resolve, reject) => {
-				fakes.synthCalls.push({ text, resolve: () => resolve(new ArrayBuffer(8)), reject });
+				fakes.synthCalls.push({ text, isCancelled, resolve: () => resolve(new ArrayBuffer(8)), reject });
 			}),
 	}),
 }));
@@ -866,5 +868,117 @@ describe('Reader.generateNoteInBackground with saved audio', () => {
 		await reader.generateNoteInBackground(makeView(makeFile('A'), ['A1']));
 
 		expect(reader.getState().backgroundJobs).toHaveLength(1);
+	});
+});
+
+describe('Reader when generation fails', () => {
+	it('drops a failed background job with a notice and starts the next one', async () => {
+		const reader = makeReader();
+		void reader.generateNoteInBackground(makeView(makeFile('A'), ['A1', 'A2']));
+		void reader.generateNoteInBackground(makeView(makeFile('B'), ['B1']));
+		await settle();
+
+		callsFor('A')[0]?.reject(new Error('boom'));
+		await settle();
+
+		expect(Notice.messages).toContain('Failed to generate audio for "A": boom');
+		expect(reader.getState().backgroundJobs.map((job) => [job.file?.basename, job.status])).toEqual([['B', 'generating']]);
+		expect(callsFor('B')).toHaveLength(1);
+	});
+
+	it('stops a read whose generation fails, with a single notice', async () => {
+		const reader = makeReader();
+		void reader.readNote(makeView(makeFile('A'), ['A1', 'A2']));
+		await settle();
+
+		callsFor('A')[0]?.reject(new Error('boom'));
+		await settle();
+
+		expect(reader.getState().status).toBe('idle');
+		expect(Notice.messages.filter((message) => message.includes('boom'))).toHaveLength(1);
+	});
+});
+
+describe('Reader.discardBackgroundJob', () => {
+	it('cancels the generating job and starts the next queued one', async () => {
+		const reader = makeReader();
+		void reader.generateNoteInBackground(makeView(makeFile('A'), ['A1', 'A2']));
+		void reader.generateNoteInBackground(makeView(makeFile('B'), ['B1']));
+		await settle();
+
+		reader.discardBackgroundJob(reader.getState().backgroundJobs[0]?.id ?? -1);
+		await settle();
+
+		expect(callsFor('A')[0]?.isCancelled()).toBe(true);
+		expect(reader.getState().backgroundJobs.map((job) => [job.file?.basename, job.status])).toEqual([['B', 'generating']]);
+		expect(callsFor('B')).toHaveLength(1);
+
+		// The cancelled request finishing late doesn't bring A back or generate more of it.
+		callsFor('A')[0]?.resolve();
+		await settle();
+		expect(reader.getState().backgroundJobs.map((job) => job.file?.basename)).toEqual(['B']);
+		expect(callsFor('A')).toHaveLength(1);
+	});
+
+	it('removes a queued job without disturbing the one generating', async () => {
+		const reader = makeReader();
+		void reader.generateNoteInBackground(makeView(makeFile('A'), ['A1']));
+		void reader.generateNoteInBackground(makeView(makeFile('B'), ['B1']));
+		await settle();
+
+		reader.discardBackgroundJob(reader.getState().backgroundJobs[1]?.id ?? -1);
+		await settle();
+
+		expect(reader.getState().backgroundJobs.map((job) => [job.file?.basename, job.status])).toEqual([['A', 'generating']]);
+		expect(callsFor('A')[0]?.isCancelled()).toBe(false);
+		expect(callsFor('B')).toHaveLength(0);
+	});
+
+	it('clears a finished job', async () => {
+		const reader = makeReader();
+		void reader.generateNoteInBackground(makeView(makeFile('A'), ['A1']));
+		await settle();
+		await finishGenerating('A');
+
+		reader.discardBackgroundJob(reader.getState().backgroundJobs[0]?.id ?? -1);
+
+		expect(reader.getState().backgroundJobs).toHaveLength(0);
+	});
+});
+
+describe('Reader with "Start playback immediately" off', () => {
+	it('waits for the whole note to generate before playing', async () => {
+		const reader = makeReader({ startPlaybackImmediately: false });
+		void reader.readNote(makeView(makeFile('A'), ['A1', 'A2', 'A3']));
+		await settle();
+
+		callsFor('A')[0]?.resolve();
+		await settle();
+		expect(FakeAudio.instances).toHaveLength(0);
+		expect(reader.getState().status).toBe('generating');
+
+		await finishGenerating('A');
+
+		expect(FakeAudio.instances).toHaveLength(1);
+		expect(reader.getState().status).toBe('playing');
+	});
+});
+
+describe('Reader.dispose with generation still in flight', () => {
+	it('cancels it and ignores requests that finish afterwards', async () => {
+		const reader = makeReader();
+		void reader.generateNoteInBackground(makeView(makeFile('A'), ['A1', 'A2']));
+		void reader.generateNoteInBackground(makeView(makeFile('B'), ['B1']));
+		await settle();
+
+		reader.dispose();
+		expect(callsFor('A')[0]?.isCancelled()).toBe(true);
+
+		await finishGenerating('A');
+
+		expect(reader.getState().backgroundJobs).toHaveLength(0);
+		expect(callsFor('A')).toHaveLength(1);
+		expect(callsFor('B')).toHaveLength(0);
+		expect(Notice.messages.some((message) => message.startsWith('Finished generating'))).toBe(false);
 	});
 });
