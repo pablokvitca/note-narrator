@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { App, MarkdownView } from 'obsidian';
-import { Notice, TFile } from '../stubs/obsidian';
+import type { App, MarkdownView, TFile } from 'obsidian';
+import { Notice } from '../stubs/obsidian';
 import { Reader } from '../../src/engine/reader';
 import { NoteNarratorSettings } from '../../src/settings/settings';
 
@@ -103,24 +103,26 @@ class FakeAudio {
 	}
 }
 
+/** Test doubles only implement what Reader touches; this is the one place they stand in for the real types. */
+function fake<T>(value: object): T {
+	return value as T;
+}
+
 function makeFile(name: string): TFile {
-	const file = new TFile();
-	file.path = `${name}.md`;
-	file.basename = name;
-	return file;
+	return fake<TFile>({ path: `${name}.md`, basename: name, extension: 'md' });
 }
 
 /** A Markdown view whose note has `lines` as its body (one chunk per line), optionally with selected text. */
 function makeView(file: TFile, lines: string[], selection = ''): MarkdownView {
-	return { file, editor: { getValue: () => lines.join('\n'), getSelection: () => selection } } as unknown as MarkdownView;
+	return fake<MarkdownView>({ file, editor: { getValue: () => lines.join('\n'), getSelection: () => selection } });
 }
 
 function makeReader(settings: Partial<NoteNarratorSettings> = {}): Reader {
-	const app = {
+	const app = fake<App>({
 		workspace: { getActiveViewOfType: () => null },
 		metadataCache: { getFileCache: () => ({}) },
 		vault: {},
-	} as unknown as App;
+	});
 	return new Reader(app, {
 		playbackRate: 1,
 		autoBackgroundOnSwitch: true,
