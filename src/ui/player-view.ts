@@ -46,7 +46,7 @@ const GENERATE_IN_BACKGROUND: Omit<BackgroundButtonSpec, 'onClick'> = {
 const BACKGROUND_BUTTONS: Record<GenerateInBackgroundAction, BackgroundButtonSpec> = {
 	'move-active': { ...MOVE_TO_BACKGROUND, onClick: 'move' },
 	'already-generated': { ...MOVE_TO_BACKGROUND, onClick: null },
-	'playing-saved': { ...MOVE_TO_BACKGROUND, onClick: null },
+	'playing-saved': { ...GENERATE_IN_BACKGROUND, tooltip: 'This note is playing from its saved audio.', onClick: null },
 	'already-queued': { ...GENERATE_IN_BACKGROUND, tooltip: 'This note is already in the background queue.', onClick: null },
 	'ready-in-background': {
 		label: 'Ready in background',

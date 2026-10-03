@@ -79,6 +79,11 @@ describe('decideGenerateInBackground', () => {
 		expect(decideGenerateInBackground(input({ activePath: 'a.md', activeKind: 'saved' }))).toBe('playing-saved');
 	});
 
+	it('reports the note\'s background job while it plays from saved audio', () => {
+		expect(decideGenerateInBackground(input({ activePath: 'a.md', activeKind: 'saved', backgroundJobs: [{ path: 'a.md', status: 'generating' }] }))).toBe('already-queued');
+		expect(decideGenerateInBackground(input({ activePath: 'a.md', activeKind: 'saved', backgroundJobs: [{ path: 'a.md', status: 'done' }] }))).toBe('ready-in-background');
+	});
+
 	it('generates the full note alongside a selection read of it, never moving the selection', () => {
 		expect(decideGenerateInBackground(input({ activePath: 'a.md', activeKind: 'selection', activePendingGeneration: true }))).toBe('generate');
 	});
