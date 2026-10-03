@@ -141,6 +141,11 @@ class FakeAudio {
 	removeEventListener(name: string, callback: () => void): void {
 		this.listeners.set(name, (this.listeners.get(name) ?? []).filter((c) => c !== callback));
 	}
+
+	/** Fires a media event the way the browser would, e.g. 'ended' when the chunk finishes playing. */
+	fire(name: string): void {
+		for (const callback of this.listeners.get(name) ?? []) callback();
+	}
 }
 
 /** Test doubles only implement what Reader touches; this is the one place they stand in for the real types. */
@@ -1065,5 +1070,82 @@ describe('Reader when a background job\'s files are deleted', () => {
 		await reader.clearReaderFiles(makeFile('A'));
 
 		expect(reader.getState().backgroundJobs).toHaveLength(0);
+	});
+});
+
+describe('Reader pausing while the chunk to play is still generating', () => {
+	it('stays paused when the chunk arrives, then plays it on resume', async () => {
+		const reader = makeReader();
+		void reader.readNote(makeView(makeFile('A'), ['A1', 'A2']));
+		await settle();
+		expect(reader.getState().status).toBe('generating');
+
+		reader.pause();
+		expect(reader.getState().status).toBe('paused');
+
+		callsFor('A')[0]?.resolve();
+		await settle();
+
+		expect(reader.getState().status).toBe('paused');
+		expect(FakeAudio.instances).toHaveLength(1);
+		expect(FakeAudio.instances[0]?.paused).toBe(true);
+
+		reader.resume();
+
+		expect(reader.getState().status).toBe('playing');
+		expect(FakeAudio.instances[0]?.paused).toBe(false);
+	});
+
+	it('stays paused when paused in the gap between chunks', async () => {
+		const reader = makeReader();
+		void reader.readNote(makeView(makeFile('A'), ['A1', 'A2', 'A3']));
+		await settle();
+		callsFor('A')[0]?.resolve();
+		await settle();
+		expect(reader.getState().status).toBe('playing');
+
+		// The first chunk ends before the second has finished generating.
+		FakeAudio.instances[0]?.fire('ended');
+		await settle();
+		expect(reader.getState().status).toBe('generating');
+		reader.pause();
+
+		callsFor('A')[1]?.resolve();
+		await settle();
+
+		expect(reader.getState()).toMatchObject({ status: 'paused', chunkIndex: 1 });
+		expect(FakeAudio.instances[1]?.paused).toBe(true);
+	});
+
+	it('plays as normal if resumed before the chunk arrives', async () => {
+		const reader = makeReader();
+		void reader.readNote(makeView(makeFile('A'), ['A1', 'A2']));
+		await settle();
+
+		reader.pause();
+		reader.resume();
+		expect(reader.getState().status).toBe('generating');
+
+		callsFor('A')[0]?.resolve();
+		await settle();
+
+		expect(reader.getState().status).toBe('playing');
+		expect(FakeAudio.instances[0]?.paused).toBe(false);
+	});
+
+	it('forgets a pending pause once the read stops', async () => {
+		const reader = makeReader();
+		const view = makeView(makeFile('A'), ['A1']);
+		void reader.readNote(view);
+		await settle();
+		reader.pause();
+		reader.stop();
+
+		void reader.readNote(makeView(makeFile('B'), ['B1']));
+		await settle();
+		callsFor('B')[0]?.resolve();
+		await settle();
+
+		expect(reader.getState().status).toBe('playing');
 	});
 });
