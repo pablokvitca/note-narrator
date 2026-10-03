@@ -4,7 +4,7 @@ import { AudioLinkStatus, ChunkOutcome, GenerationJob, IDLE_STATE, PositionBase,
 import { ChunkPosition, RawSpan } from '../text/text-position';
 import { HighlightGranularity, NoteNarratorSettings } from '../settings/settings';
 import { ResolvedNarrator, generationWindow } from '../settings/profiles';
-import { buildBackgroundJobInfo, decideGenerateInBackground, findBackgroundJobForNote, hasPendingGeneration } from './background-job';
+import { GenerateInBackgroundAction, buildBackgroundJobInfo, decideGenerateInBackground, findBackgroundJobForNote, hasPendingGeneration } from './background-job';
 import { chunkNote, stripFrontmatter } from '../text/text-utils';
 import { createTTSProvider, getProviderApiKey, missingApiKeyMessage } from '../tts/registry';
 import { NoteText } from './note-text';
@@ -149,11 +149,12 @@ export class Reader extends Events {
 	 * Detaches the active job from playback so it keeps generating its remaining chunks in the background,
 	 * using the (likely lower) background parallel-generation setting instead of competing with an actively
 	 * playing read. Only one job generates in the background at a time -- a second "continue in background"
-	 * queues behind whichever one is already generating, in the order they were backgrounded.
+	 * queues behind whichever one is already generating, in the order they were backgrounded. A selection
+	 * read is never moved (see `GenerationJob.isSelection`).
 	 */
 	continueGeneratingInBackground(): void {
 		const job = this.activeJob;
-		if (!job) return;
+		if (!job || job.isSelection) return;
 		if (!hasPendingGeneration(job.chunkReady)) return;
 
 		this.activeJob = null;
@@ -185,11 +186,23 @@ export class Reader extends Events {
 		if (job.backgroundStatus === 'generating') void this.runBackgroundJob(job);
 	}
 
+	/** What "Generate in background" would do for this note right now; shared by the command and the panel's button so they always agree. */
+	getGenerateInBackgroundAction(file: TFile): GenerateInBackgroundAction {
+		const state = this.state;
+		return decideGenerateInBackground({
+			notePath: file.path,
+			activePath: state.status === 'idle' ? null : (state.activeFile?.path ?? null),
+			activeKind: state.activeReadKind,
+			activePendingGeneration: hasPendingGeneration(state.chunkReady),
+			backgroundJobPaths: this.backgroundJobs.map((job) => job.file?.path ?? null),
+		});
+	}
+
 	/**
 	 * Generates the whole note straight into the background queue without ever playing it, so a note can
 	 * be prepared ahead of time without clicking Read first. Never interrupts whatever's currently playing.
-	 * If the note is the one being read right now, this is the same as `continueGeneratingInBackground()`;
-	 * if it already has a background job, nothing new is started. Always the full note, never a selection.
+	 * See {@link decideGenerateInBackground} for what happens when the note is already being read or
+	 * already has a background job. Always the full note, never a selection.
 	 */
 	generateNoteInBackground(view?: MarkdownView): void {
 		const target = view ?? this.app.workspace.getActiveViewOfType(MarkdownView);
@@ -199,13 +212,17 @@ export class Reader extends Events {
 			return;
 		}
 
-		const action = decideGenerateInBackground(
-			file.path,
-			this.activeJob?.file?.path ?? null,
-			this.backgroundJobs.map((job) => job.file?.path ?? null),
-		);
+		const action = this.getGenerateInBackgroundAction(file);
 		if (action === 'move-active') {
 			this.continueGeneratingInBackground();
+			return;
+		}
+		if (action === 'already-generated') {
+			new Notice(`"${file.basename}" has already finished generating.`);
+			return;
+		}
+		if (action === 'playing-saved') {
+			new Notice(`"${file.basename}" is playing from its saved audio.`);
 			return;
 		}
 		if (action === 'already-queued') {
@@ -224,7 +241,7 @@ export class Reader extends Events {
 	 * With "Keep generating when starting another note" on, hands a still-generating active job to the
 	 * background before something else replaces it. Only for a genuinely different note: the same note
 	 * restarts fresh as before. Does nothing (so the caller's stop() discards it) when the setting is off,
-	 * nothing is active, or the active job has nothing left to generate.
+	 * nothing is active, the active job is a selection read, or it has nothing left to generate.
 	 */
 	private backgroundActiveJobForOtherNote(nextFile: TFile | null): void {
 		if (!this.settings.autoBackgroundOnSwitch) return;
@@ -261,6 +278,7 @@ export class Reader extends Events {
 			chunkInFlight: [...job.chunkInFlight],
 			chunkDurations: [...job.chunkDurations],
 			activeFile: job.file,
+			activeReadKind: 'full',
 		});
 
 		// Promoting the job that held the one "generating" slot frees it for the next queued job. A job
@@ -503,6 +521,7 @@ export class Reader extends Events {
 			provider: createTTSProvider(narrator.provider, narrator.voice, apiKey, () => this.handleRateLimited(job)),
 			narrator,
 			sourceFileForSave: allowSave ? sourceFile : null,
+			isSelection: !allowSave,
 			savedForSession: false,
 			rateLimited: false,
 			cancelled: false,
@@ -518,7 +537,7 @@ export class Reader extends Events {
 		// Re-reading a note that already has a background job (queued, generating, or done) adopts that job
 		// in place rather than discarding its progress -- the same outcome as clicking the job's card, just
 		// triggered from Read instead. Only for a full-note read: a selection read's text won't match the
-		// background job's chunks, so that case still falls through to discarding below.
+		// background job's chunks, so it plays on its own and leaves the background job as it is.
 		if (sourceFile && options.allowSave) {
 			const existing = findBackgroundJobForNote(this.backgroundJobs, sourceFile.path);
 			if (existing) {
@@ -527,13 +546,10 @@ export class Reader extends Events {
 			}
 		}
 
+		// A selection read leaves the note's background job (if any) alone: it's for the whole note, so it
+		// doesn't conflict with reading just part of it, and discarding it would throw away paid generation.
 		this.backgroundActiveJobForOtherNote(sourceFile);
 		this.stop();
-		if (sourceFile) {
-			for (const existing of this.backgroundJobs.filter((job) => job.file?.path === sourceFile.path)) {
-				this.discardBackgroundJob(existing.id);
-			}
-		}
 
 		const session = this.sessionId;
 		this.currentPlaybackRate = this.settings.playbackRate;
@@ -551,6 +567,7 @@ export class Reader extends Events {
 			chunkInFlight: [...job.chunkInFlight],
 			chunkDurations: [...job.chunkDurations],
 			activeFile: sourceFile,
+			activeReadKind: job.isSelection ? 'selection' : 'full',
 		});
 
 		// Kicked off now and left running for the rest of the read -- runGenerationWorkerPool() is a
@@ -836,6 +853,7 @@ export class Reader extends Events {
 				chunkInFlight: new Array<boolean>(chunkCount).fill(false),
 				chunkDurations: sliced && timeline ? timeline.chunkDurations : [undefined],
 				activeFile: sourceFile,
+				activeReadKind: 'saved',
 			});
 
 			if (session !== this.sessionId) return;
