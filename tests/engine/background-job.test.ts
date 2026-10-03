@@ -60,6 +60,7 @@ describe('decideGenerateInBackground', () => {
 		activeKind: 'none',
 		activePendingGeneration: false,
 		backgroundJobs: [],
+		savedAudioUpToDate: false,
 		...overrides,
 	});
 
@@ -107,6 +108,15 @@ describe('decideGenerateInBackground', () => {
 
 	it('generates while a different note plays from saved audio', () => {
 		expect(decideGenerateInBackground(input({ activePath: 'b.md', activeKind: 'saved' }))).toBe('generate');
+	});
+
+	it('does not regenerate a note whose saved audio is up to date', () => {
+		expect(decideGenerateInBackground(input({ savedAudioUpToDate: true }))).toBe('saved-up-to-date');
+	});
+
+	it('reports a running read or a background job before up-to-date saved audio', () => {
+		expect(decideGenerateInBackground(input({ savedAudioUpToDate: true, backgroundJobs: [{ path: 'a.md', status: 'done' }] }))).toBe('ready-in-background');
+		expect(decideGenerateInBackground(input({ savedAudioUpToDate: true, activePath: 'a.md', activeKind: 'full', activePendingGeneration: true }))).toBe('move-active');
 	});
 
 	it('generates without touching a read of a different note', () => {
