@@ -372,3 +372,34 @@ describe('Reader with a finished background job', () => {
 		expect(Notice.messages).toContain('"A" has already finished generating in the background.');
 	});
 });
+
+describe('Reader adopting a background job that has chunks left', () => {
+	it('generates ahead at the foreground window when a queued job is adopted', async () => {
+		const reader = makeReader();
+		reader.generateNoteInBackground(makeView(makeFile('B'), ['B1', 'B2']));
+		const viewA = makeView(makeFile('A'), ['A1', 'A2', 'A3', 'A4']);
+		reader.generateNoteInBackground(viewA);
+		await settle();
+		expect(reader.getState().backgroundJobs.map((job) => job.status)).toEqual(['generating', 'queued']);
+		expect(callsFor('A')).toHaveLength(0);
+
+		void reader.readNote(viewA);
+		await settle();
+
+		// Foreground window is 2: chunk 0 for playback plus one ahead, not one chunk at a time on demand.
+		expect(callsFor('A').map((call) => call.text)).toEqual(['A1', 'A2']);
+	});
+
+	it('generates ahead at the foreground window when the generating job is adopted', async () => {
+		const reader = makeReader();
+		const viewA = makeView(makeFile('A'), ['A1', 'A2', 'A3', 'A4']);
+		reader.generateNoteInBackground(viewA);
+		await settle();
+		expect(callsFor('A')).toHaveLength(1);
+
+		void reader.readNote(viewA);
+		await settle();
+
+		expect(callsFor('A').map((call) => call.text)).toEqual(['A1', 'A2']);
+	});
+});
