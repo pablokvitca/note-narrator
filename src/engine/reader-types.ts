@@ -98,6 +98,8 @@ export interface GenerationJob {
 	/** The narrator this job was started with, resolved once so later edits to the profile or provider don't change a read (or its saved audio) mid-flight. */
 	narrator: ResolvedNarrator;
 	sourceFileForSave: TFile | null;
+	/** Staleness hash of the note text this job generates, taken when the job was created -- what its saved audio is marked with, so edits made while it generates (or waits in the queue) show it as outdated. Null when it won't be saved. */
+	contentHash: string | null;
 	/** A read of selected text rather than the whole note. Never moved to the background: its chunks wouldn't match the note's, so it could neither be saved nor stand in for the full note later. */
 	isSelection: boolean;
 	/** Whether this job's audio has already been saved (triggered once every chunk finishes generating). */
