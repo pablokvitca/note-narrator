@@ -13,6 +13,9 @@ import { SavedAudio } from './saved-audio';
 /** How a worker pool's run ended; see `Reader.runGenerationWorkerPool()`. */
 type PoolResult = 'done' | 'superseded' | 'failed';
 
+/** Whether a read covers the whole note or just the selected text. */
+type ReadKind = 'full' | 'selection';
+
 /** Everything needed to build a generation job, resolved and validated up front. */
 interface PreparedRead {
 	narrator: ResolvedNarrator;
@@ -253,7 +256,7 @@ export class Reader extends Events {
 		const prepared = this.prepareRead(rawText, positionBase);
 		if (!prepared) return;
 
-		this.enqueueBackgroundJob(this.createJob(file, prepared, true, fullValue));
+		this.enqueueBackgroundJob(this.createJob(file, prepared, 'full', fullValue));
 	}
 
 	/**
@@ -487,12 +490,12 @@ export class Reader extends Events {
 		if (this.settings.readSelectionIfPresent && selection.length > 0) {
 			// No reliable offset to rebase estimated spans onto (the selection could start anywhere in the
 			// document) -- selections just don't get highlighting/scroll-to-current.
-			await this.readText(selection, target.file, { allowSave: false });
+			await this.readText(selection, target.file, { kind: 'selection' });
 			return;
 		}
 
 		const { fullValue, rawText, positionBase } = this.buildNoteInput(target);
-		await this.readText(rawText, target.file, { allowSave: true, positionBase, sourceContent: fullValue });
+		await this.readText(rawText, target.file, { kind: 'full', positionBase, sourceContent: fullValue });
 	}
 
 	/** The full text a note is read from (spoken preamble plus body, frontmatter stripped), and where that body sits in the file for highlighting. */
@@ -535,7 +538,7 @@ export class Reader extends Events {
 	 * (playing) job or goes to the background queue. `sourceContent` is the note's full text the job was
 	 * built from, hashed now for its saved audio's staleness check.
 	 */
-	private createJob(sourceFile: TFile | null, prepared: PreparedRead, allowSave: boolean, sourceContent?: string): GenerationJob {
+	private createJob(sourceFile: TFile | null, prepared: PreparedRead, kind: ReadKind, sourceContent?: string): GenerationJob {
 		const { narrator, apiKey, chunks, positions } = prepared;
 		let job!: GenerationJob;
 		job = {
@@ -550,9 +553,10 @@ export class Reader extends Events {
 			positions,
 			provider: createTTSProvider(narrator.provider, narrator.voice, apiKey, () => this.handleRateLimited(job)),
 			narrator,
-			sourceFileForSave: allowSave ? sourceFile : null,
-			contentHash: allowSave && sourceFile && sourceContent !== undefined ? this.savedAudio.stalenessHash(sourceContent, sourceFile) : null,
-			isSelection: !allowSave,
+			// Only a full-note read is saved: a selection's audio isn't the note's audio.
+			sourceFileForSave: kind === 'full' ? sourceFile : null,
+			contentHash: kind === 'full' && sourceFile && sourceContent !== undefined ? this.savedAudio.stalenessHash(sourceContent, sourceFile) : null,
+			isSelection: kind === 'selection',
 			savedForSession: false,
 			rateLimited: false,
 			poolToken: 0,
@@ -565,7 +569,7 @@ export class Reader extends Events {
 	private async readText(
 		rawText: string,
 		sourceFile: TFile | null,
-		options: { allowSave: boolean; positionBase?: PositionBase; sourceContent?: string },
+		options: { kind: ReadKind; positionBase?: PositionBase; sourceContent?: string },
 	): Promise<void> {
 		const prepared = this.prepareRead(rawText, options.positionBase);
 		if (!prepared) return;
@@ -574,7 +578,7 @@ export class Reader extends Events {
 		// in place rather than discarding its progress -- the same outcome as clicking the job's card, just
 		// triggered from Read instead. Only for a full-note read: a selection read's text won't match the
 		// background job's chunks, so it plays on its own and leaves the background job as it is.
-		if (sourceFile && options.allowSave) {
+		if (sourceFile && options.kind === 'full') {
 			const existing = findBackgroundJobForNote(this.backgroundJobs, sourceFile.path);
 			if (existing) {
 				this.adoptBackgroundJob(existing);
@@ -590,7 +594,7 @@ export class Reader extends Events {
 		const session = this.sessionId;
 		this.currentPlaybackRate = this.settings.playbackRate;
 
-		const job = this.createJob(sourceFile, prepared, options.allowSave, options.sourceContent);
+		const job = this.createJob(sourceFile, prepared, options.kind, options.sourceContent);
 		this.activeJob = job;
 
 		this.setState({
