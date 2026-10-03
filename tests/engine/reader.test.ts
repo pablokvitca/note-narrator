@@ -631,3 +631,51 @@ describe('Reader auto-generating on open', () => {
 		expect(fakes.saveAudioFile[0]?.[4]).toBe('hash of A1\nA2');
 	});
 });
+
+describe('Reader playing a background job while another note is being read', () => {
+	it('moves the current read to the background when a background job\'s card is played', async () => {
+		const reader = makeReader({ autoBackgroundOnSwitch: true });
+		const b = makeFile('B');
+		reader.generateNoteInBackground(makeView(b, ['B1', 'B2']));
+		await settle();
+		void reader.readNote(makeView(makeFile('A'), ['A1', 'A2', 'A3']));
+		await settle();
+		const bJob = reader.getState().backgroundJobs[0];
+
+		reader.playBackgroundJob(bJob?.id ?? -1);
+		await settle();
+
+		const state = reader.getState();
+		expect(state.activeFile).toBe(b);
+		expect(state.backgroundJobs.map((job) => job.file?.basename)).toEqual(['A']);
+	});
+
+	it('moves the current read to the background when Read adopts another note\'s background job', async () => {
+		const reader = makeReader({ autoBackgroundOnSwitch: true });
+		const b = makeFile('B');
+		const viewB = makeView(b, ['B1', 'B2']);
+		reader.generateNoteInBackground(viewB);
+		await settle();
+		void reader.readNote(makeView(makeFile('A'), ['A1', 'A2', 'A3']));
+		await settle();
+
+		void reader.readNote(viewB);
+		await settle();
+
+		expect(reader.getState().activeFile).toBe(b);
+		expect(reader.getState().backgroundJobs.map((job) => job.file?.basename)).toEqual(['A']);
+	});
+
+	it('still discards the current read when "Keep generating when starting another note" is off', async () => {
+		const reader = makeReader({ autoBackgroundOnSwitch: false });
+		reader.generateNoteInBackground(makeView(makeFile('B'), ['B1']));
+		await settle();
+		void reader.readNote(makeView(makeFile('A'), ['A1', 'A2']));
+		await settle();
+
+		reader.playBackgroundJob(reader.getState().backgroundJobs[0]?.id ?? -1);
+		await settle();
+
+		expect(reader.getState().backgroundJobs).toHaveLength(0);
+	});
+});
