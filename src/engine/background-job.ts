@@ -1,9 +1,10 @@
 import type { TFile } from 'obsidian';
 
 /**
- * Pure, Obsidian-independent decision logic for "continue generating in background" (OBS-35), kept out of
- * reader.ts so it's unit-testable without a vault or a mocked Obsidian runtime -- reader.ts and player-view.ts
- * both delegate to this instead of duplicating the same `chunkReady.some(...)` check inline.
+ * Pure, Obsidian-independent logic for background generation -- "Move to background" (OBS-35) and
+ * "Generate in background" (OBS-127) -- kept out of reader.ts so it's unit-testable without a vault or a
+ * mocked Obsidian runtime. reader.ts and player-view.ts both delegate to this, so the panel's buttons and
+ * the commands always make the same decision.
  */
 
 /** A background job's lifecycle: waiting its turn, actively generating, or fully generated. Only one job is 'generating' at a time -- the rest queue in insertion order. */
