@@ -111,6 +111,10 @@ describe('decideGenerateInBackground', () => {
 		expect(decideGenerateInBackground(input({ backgroundJobs: [{ path: 'a.md', status: 'generating' }] }))).toBe('already-queued');
 	});
 
+	it('reports a finished background job as ready during a selection read of the same note', () => {
+		expect(decideGenerateInBackground(input({ activePath: 'a.md', activeKind: 'selection', backgroundJobs: [{ path: 'a.md', status: 'done' }] }))).toBe('ready-in-background');
+	});
+
 	it('reports a finished background job as ready rather than queued', () => {
 		expect(decideGenerateInBackground(input({ backgroundJobs: [{ path: 'a.md', status: 'done' }] }))).toBe('ready-in-background');
 	});
