@@ -4,7 +4,7 @@ import { AudioLinkStatus, ChunkOutcome, GenerationJob, IDLE_STATE, PositionBase,
 import { ChunkPosition, RawSpan } from '../text/text-position';
 import { HighlightGranularity, NoteNarratorSettings } from '../settings/settings';
 import { ResolvedNarrator, generationWindow } from '../settings/profiles';
-import { GenerateInBackgroundAction, buildBackgroundJobInfo, decideGenerateInBackground, findBackgroundJobForNote, hasPendingGeneration } from './background-job';
+import { GenerateInBackgroundAction, buildBackgroundJobInfo, decideGenerateInBackground, hasPendingGeneration } from './background-job';
 import { chunkNote, stripFrontmatter } from '../text/text-utils';
 import { createTTSProvider, getProviderApiKey, missingApiKeyMessage } from '../tts/registry';
 import { NoteText } from './note-text';
@@ -579,7 +579,7 @@ export class Reader extends Events {
 		// triggered from Read instead. Only for a full-note read: a selection read's text won't match the
 		// background job's chunks, so it plays on its own and leaves the background job as it is.
 		if (sourceFile && options.kind === 'full') {
-			const existing = findBackgroundJobForNote(this.backgroundJobs, sourceFile.path);
+			const existing = this.backgroundJobs.find((job) => job.file?.path === sourceFile.path);
 			if (existing) {
 				this.adoptBackgroundJob(existing);
 				return;
