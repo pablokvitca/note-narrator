@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildBackgroundJobInfo, hasPendingGeneration, queuePosition } from '../../src/engine/background-job';
+import { buildBackgroundJobInfo, decideGenerateInBackground, findBackgroundJobForNote, hasPendingGeneration, queuePosition } from '../../src/engine/background-job';
 
 describe('hasPendingGeneration', () => {
 	it('is false for an empty chunk list', () => {
@@ -50,5 +50,45 @@ describe('queuePosition', () => {
 		const jobs = [job(1, 'generating'), job(2, 'queued')];
 		expect(queuePosition(jobs, 1)).toBe(0);
 		expect(queuePosition(jobs, 999)).toBe(0);
+	});
+});
+
+describe('findBackgroundJobForNote', () => {
+	const job = (id: number, path: string | null) => ({ id, file: path === null ? null : { path } });
+
+	it('finds the job whose file matches the note path', () => {
+		const jobs = [job(1, 'a.md'), job(2, 'b.md')];
+		expect(findBackgroundJobForNote(jobs, 'b.md')?.id).toBe(2);
+	});
+
+	it('is undefined when no job is for that note', () => {
+		expect(findBackgroundJobForNote([job(1, 'a.md')], 'c.md')).toBeUndefined();
+		expect(findBackgroundJobForNote([], 'a.md')).toBeUndefined();
+	});
+
+	it('never matches a job with no backing file', () => {
+		expect(findBackgroundJobForNote([job(1, null)], '')).toBeUndefined();
+	});
+});
+
+describe('decideGenerateInBackground', () => {
+	it('moves the current read to the background when it is this note', () => {
+		expect(decideGenerateInBackground('a.md', 'a.md', [])).toBe('move-active');
+	});
+
+	it('prefers moving the current read even if the note somehow also has a background job', () => {
+		expect(decideGenerateInBackground('a.md', 'a.md', ['a.md'])).toBe('move-active');
+	});
+
+	it('does nothing new when the note already has a background job', () => {
+		expect(decideGenerateInBackground('a.md', null, ['b.md', 'a.md'])).toBe('already-queued');
+	});
+
+	it('generates when the note is neither being read nor in the background', () => {
+		expect(decideGenerateInBackground('a.md', null, [])).toBe('generate');
+	});
+
+	it('generates without touching a read of a different note', () => {
+		expect(decideGenerateInBackground('a.md', 'b.md', ['c.md', null])).toBe('generate');
 	});
 });

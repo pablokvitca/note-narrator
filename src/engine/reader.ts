@@ -4,11 +4,19 @@ import { AudioLinkStatus, ChunkOutcome, GenerationJob, IDLE_STATE, PositionBase,
 import { ChunkPosition, RawSpan } from '../text/text-position';
 import { HighlightGranularity, NoteNarratorSettings } from '../settings/settings';
 import { ResolvedNarrator, generationWindow } from '../settings/profiles';
-import { buildBackgroundJobInfo, hasPendingGeneration } from './background-job';
+import { buildBackgroundJobInfo, decideGenerateInBackground, findBackgroundJobForNote, hasPendingGeneration } from './background-job';
 import { chunkNote, stripFrontmatter } from '../text/text-utils';
 import { createTTSProvider, getProviderApiKey, missingApiKeyMessage } from '../tts/registry';
 import { NoteText } from './note-text';
 import { SavedAudio } from './saved-audio';
+
+/** Everything needed to build a generation job, resolved and validated up front. */
+interface PreparedRead {
+	narrator: ResolvedNarrator;
+	apiKey: string;
+	chunks: string[];
+	positions: ChunkPosition[];
+}
 
 export class Reader extends Events {
 	private audio: HTMLAudioElement | null = null;
@@ -164,12 +172,52 @@ export class Reader extends Events {
 			resolve('ended');
 		}
 
+		this.resetToIdle();
+		this.enqueueBackgroundJob(job);
+	}
+
+	/** Adds a job to the background list, starting it right away if nothing else is generating there, otherwise queueing it behind the one that is. */
+	private enqueueBackgroundJob(job: GenerationJob): void {
 		job.backgroundStatus = this.backgroundJobs.some((j) => j.backgroundStatus === 'generating') ? 'queued' : 'generating';
 		this.backgroundJobs.push(job);
-		this.resetToIdle();
 		this.publishBackgroundJobs();
 
 		if (job.backgroundStatus === 'generating') void this.runBackgroundJob(job);
+	}
+
+	/**
+	 * Generates the whole note straight into the background queue without ever playing it, so a note can
+	 * be prepared ahead of time without clicking Read first. Never interrupts whatever's currently playing.
+	 * If the note is the one being read right now, this is the same as `continueGeneratingInBackground()`;
+	 * if it already has a background job, nothing new is started. Always the full note, never a selection.
+	 */
+	generateNoteInBackground(view?: MarkdownView): void {
+		const target = view ?? this.app.workspace.getActiveViewOfType(MarkdownView);
+		const file = target?.file;
+		if (!target || !file) {
+			new Notice('Open a note to generate its audio.');
+			return;
+		}
+
+		const action = decideGenerateInBackground(
+			file.path,
+			this.activeJob?.file?.path ?? null,
+			this.backgroundJobs.map((job) => job.file?.path ?? null),
+		);
+		if (action === 'move-active') {
+			this.continueGeneratingInBackground();
+			return;
+		}
+		if (action === 'already-queued') {
+			new Notice(`"${file.basename}" is already in the background queue.`);
+			return;
+		}
+
+		const { rawText, positionBase } = this.buildNoteInput(target);
+		const prepared = this.prepareRead(rawText, positionBase);
+		if (!prepared) return;
+
+		this.enqueueBackgroundJob(this.createJob(file, prepared, true));
 	}
 
 	/**
@@ -400,42 +448,79 @@ export class Reader extends Events {
 			return;
 		}
 
+		const { rawText, positionBase } = this.buildNoteInput(target);
+		await this.readText(rawText, target.file, { allowSave: true, positionBase });
+	}
+
+	/** The full text a note is read from (spoken preamble plus body, frontmatter stripped), and where that body sits in the file for highlighting. */
+	private buildNoteInput(target: MarkdownView): { rawText: string; positionBase: PositionBase } {
 		const fullValue = target.editor.getValue();
 		const body = stripFrontmatter(fullValue);
 		const fileOffset = fullValue.length - body.length;
 		const frontmatter = target.file ? this.app.metadataCache.getFileCache(target.file)?.frontmatter : undefined;
 		const preamble = this.noteText.buildPreamble(target.file?.basename ?? null, frontmatter);
-
-		await this.readText(preamble ? `${preamble}\n\n${body}` : body, target.file, {
-			allowSave: true,
+		return {
+			rawText: preamble ? `${preamble}\n\n${body}` : body,
 			positionBase: { rawTextOffset: preamble ? preamble.length + 2 : 0, fileOffset, length: body.length },
-		});
+		};
 	}
 
-	private async readText(rawText: string, sourceFile: TFile | null, options: { allowSave: boolean; positionBase?: PositionBase }): Promise<void> {
+	/** Resolves the narrator and API key and chunks the text, showing a notice and returning null when any of that makes reading impossible. */
+	private prepareRead(rawText: string, positionBase?: PositionBase): PreparedRead | null {
 		const narrator = this.noteText.getActiveNarrator();
 		if (!narrator) {
 			new Notice('Add a provider and a narrator profile in the Note Narrator settings.');
-			return;
+			return null;
 		}
 		const apiKey = getProviderApiKey(this.app, narrator.provider);
 		if (!apiKey) {
 			new Notice(missingApiKeyMessage(narrator.provider));
-			return;
+			return null;
 		}
 
-		const { chunks, positions } = this.noteText.buildChunksAndPositions(rawText, options.positionBase);
+		const { chunks, positions } = this.noteText.buildChunksAndPositions(rawText, positionBase);
 		if (chunks.length === 0) {
 			new Notice('Nothing to read.');
-			return;
+			return null;
 		}
+		return { narrator, apiKey, chunks, positions };
+	}
+
+	/** Builds a fresh, not-yet-started generation job. The caller decides whether it becomes the active (playing) job or goes to the background queue. */
+	private createJob(sourceFile: TFile | null, prepared: PreparedRead, allowSave: boolean): GenerationJob {
+		const { narrator, apiKey, chunks, positions } = prepared;
+		let job!: GenerationJob;
+		job = {
+			id: this.nextJobId++,
+			file: sourceFile,
+			chunks,
+			chunkBuffers: new Array<ArrayBuffer | undefined>(chunks.length),
+			chunkPromises: new Array<Promise<ArrayBuffer> | undefined>(chunks.length),
+			chunkReady: new Array<boolean>(chunks.length).fill(false),
+			chunkInFlight: new Array<boolean>(chunks.length).fill(false),
+			chunkDurations: new Array<number | undefined>(chunks.length).fill(undefined),
+			positions,
+			provider: createTTSProvider(narrator.provider, narrator.voice, apiKey, () => this.handleRateLimited(job)),
+			narrator,
+			sourceFileForSave: allowSave ? sourceFile : null,
+			savedForSession: false,
+			rateLimited: false,
+			cancelled: false,
+			backgroundStatus: 'queued',
+		};
+		return job;
+	}
+
+	private async readText(rawText: string, sourceFile: TFile | null, options: { allowSave: boolean; positionBase?: PositionBase }): Promise<void> {
+		const prepared = this.prepareRead(rawText, options.positionBase);
+		if (!prepared) return;
 
 		// Re-reading a note that already has a background job (queued, generating, or done) adopts that job
 		// in place rather than discarding its progress -- the same outcome as clicking the job's card, just
 		// triggered from Read instead. Only for a full-note read: a selection read's text won't match the
 		// background job's chunks, so that case still falls through to discarding below.
 		if (sourceFile && options.allowSave) {
-			const existing = this.backgroundJobs.find((job) => job.file?.path === sourceFile.path);
+			const existing = findBackgroundJobForNote(this.backgroundJobs, sourceFile.path);
 			if (existing) {
 				this.adoptBackgroundJob(existing);
 				return;
@@ -453,31 +538,13 @@ export class Reader extends Events {
 		const session = this.sessionId;
 		this.currentPlaybackRate = this.settings.playbackRate;
 
-		let job!: GenerationJob;
-		job = {
-			id: this.nextJobId++,
-			file: sourceFile,
-			chunks,
-			chunkBuffers: new Array<ArrayBuffer | undefined>(chunks.length),
-			chunkPromises: new Array<Promise<ArrayBuffer> | undefined>(chunks.length),
-			chunkReady: new Array<boolean>(chunks.length).fill(false),
-			chunkInFlight: new Array<boolean>(chunks.length).fill(false),
-			chunkDurations: new Array<number | undefined>(chunks.length).fill(undefined),
-			positions,
-			provider: createTTSProvider(narrator.provider, narrator.voice, apiKey, () => this.handleRateLimited(job)),
-			narrator,
-			sourceFileForSave: options.allowSave ? sourceFile : null,
-			savedForSession: false,
-			rateLimited: false,
-			cancelled: false,
-			backgroundStatus: 'queued',
-		};
+		const job = this.createJob(sourceFile, prepared, options.allowSave);
 		this.activeJob = job;
 
 		this.setState({
 			status: 'generating',
 			chunkIndex: 0,
-			chunkCount: chunks.length,
+			chunkCount: job.chunks.length,
 			currentTime: 0,
 			duration: 0,
 			chunkReady: [...job.chunkReady],
@@ -492,7 +559,7 @@ export class Reader extends Events {
 		// once its small window finished generating early and nothing re-triggered more until the play
 		// index itself advanced. It never touches playback's status/chunkIndex, so it can't fight with
 		// playFromIndex()'s own tracking of what's actually playing.
-		const windowSize = generationWindow(narrator.provider, false);
+		const windowSize = generationWindow(job.narrator.provider, false);
 		const generation = this.runGenerationWorkerPool(job, windowSize);
 
 		if (!this.settings.startPlaybackImmediately) {

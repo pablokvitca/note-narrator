@@ -2,7 +2,7 @@ import { debounce, ItemView, MarkdownView, Menu, setIcon, Setting, TFile, Worksp
 import { ConfirmModal } from './confirm-modal';
 import NoteNarratorPlugin from '../main';
 import { getActiveProfile, getDropdownProfiles, savedVoiceMatches } from '../settings/profiles';
-import { hasPendingGeneration } from '../engine/background-job';
+import { findBackgroundJobForNote, hasPendingGeneration } from '../engine/background-job';
 import { PLAY_SAVED_ICON_ID, skipIconId } from './icons';
 import { AudioLinkStatus, ReaderState } from '../engine/reader-types';
 import { computeFullReadTimes, formatTimeDisplay } from '../engine/time-utils';
@@ -271,7 +271,7 @@ export class PlayerView extends ItemView {
 		this.renderNarratorSelector(scroll);
 		this.renderNoteStats(scroll, selectedFile);
 
-		// 6. Play saved / Read / Cancel / Background
+		// 6. Play saved / Read / Cancel / Move to (or Generate in) background
 		this.renderPrimaryActions(scroll, activeForSelected, pendingGeneration);
 
 		// 7. Progress bars/text
@@ -702,7 +702,7 @@ export class PlayerView extends ItemView {
 	 * callers can update just the text later (e.g. Read -> Regenerate) via {@link setButtonLabel}
 	 * without disturbing the icon. `tooltip` (defaulting to `label`) is attached once via
 	 * {@link attachTooltip} -- callers that need a longer/different tooltip than the visible label
-	 * (Cancel, Background) must pass it here rather than calling attachTooltip again
+	 * (Cancel, Move to background / Generate in background) must pass it here rather than calling attachTooltip again
 	 * themselves, which would double up its long-press listeners on the same button.
 	 */
 	private createLabeledButton(
@@ -719,7 +719,7 @@ export class PlayerView extends ItemView {
 		return { button, labelEl };
 	}
 
-	/** Updates both a labeled button's visible text and its tooltip (see {@link createLabeledButton}) together, so the icon-only tooltip never drifts from what a wide layout shows as text. Only for buttons whose tooltip always matches their label -- Cancel/Background set theirs once at creation instead. */
+	/** Updates both a labeled button's visible text and its tooltip (see {@link createLabeledButton}) together, so the icon-only tooltip never drifts from what a wide layout shows as text. Only for buttons whose tooltip always matches their label -- Cancel and the background button set theirs once at creation instead. */
 	private setButtonLabel(button: HTMLButtonElement, labelEl: HTMLElement, text: string): void {
 		labelEl.setText(text);
 		attachTooltip(button, text);
@@ -746,12 +746,34 @@ export class PlayerView extends ItemView {
 		attachTooltip(cancelButton, 'Cancel generation');
 		cancelButton.onclick = () => this.plugin.reader.stop();
 
-		const { button: backgroundButton } = this.createLabeledButton(actionsRow, 'note-narrator-background-button', 'layers', 'Background');
-		backgroundButton.disabled = !pendingGeneration;
-		attachTooltip(backgroundButton, 'Stop playback but keep generating the rest of this note in the background, so you can jump back into it later.');
-		backgroundButton.onclick = () => this.plugin.reader.continueGeneratingInBackground();
-
+		// One slot, two jobs: while the selected note is being read it moves that read to the background;
+		// otherwise it starts generating the selected note in the background without playing it at all.
 		const activeFile = this.getActiveFile();
+		if (active) {
+			const { button: moveButton } = this.createLabeledButton(
+				actionsRow,
+				'note-narrator-background-button',
+				'layers',
+				'Move to background',
+				'Stop playback but keep generating the rest of this note in the background, so you can jump back into it later.',
+			);
+			moveButton.disabled = !pendingGeneration;
+			moveButton.onclick = () => this.plugin.reader.continueGeneratingInBackground();
+		} else {
+			const alreadyQueued = !!activeFile && !!findBackgroundJobForNote(this.plugin.reader.getState().backgroundJobs, activeFile.path);
+			const { button: generateButton } = this.createLabeledButton(
+				actionsRow,
+				'note-narrator-background-button',
+				'layers',
+				'Generate in background',
+				alreadyQueued
+					? 'This note is already in the background queue.'
+					: 'Generate this note in the background without playing it, so you can listen to it later.',
+			);
+			generateButton.disabled = !activeFile || alreadyQueued;
+			generateButton.onclick = () => this.plugin.reader.generateNoteInBackground(this.getActiveMarkdownView() ?? undefined);
+		}
+
 		if (!activeFile || !this.plugin.settings.linkAudioInNote) return;
 
 		void (async () => {
