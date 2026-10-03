@@ -66,8 +66,9 @@ describe('findBackgroundJobForNote', () => {
 		expect(findBackgroundJobForNote([], 'a.md')).toBeUndefined();
 	});
 
-	it('never matches a job with no backing file', () => {
-		expect(findBackgroundJobForNote([job(1, null)], '')).toBeUndefined();
+	it('skips jobs with no backing file instead of failing on them', () => {
+		const jobs = [job(1, null), job(2, 'a.md')];
+		expect(findBackgroundJobForNote(jobs, 'a.md')?.id).toBe(2);
 	});
 });
 
