@@ -68,6 +68,17 @@ export default class NoteNarratorPlugin extends Plugin {
 		});
 
 		this.addCommand({
+			id: 'generate-note-in-background',
+			name: 'Generate note audio in background',
+			checkCallback: (checking) => {
+				const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+				if (!view) return false;
+				if (!checking) this.reader.generateNoteInBackground(view);
+				return true;
+			},
+		});
+
+		this.addCommand({
 			id: 'stop-reading',
 			name: 'Stop reading',
 			callback: () => this.reader.stop(),
