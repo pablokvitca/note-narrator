@@ -53,8 +53,9 @@ export interface ReaderState {
 	/** What kind of read `activeFile`'s status is about -- the panel needs it to tell a full-note read (which can move to the background) from a selection read or "Play saved" (which can't). */
 	activeReadKind: ActiveReadKind;
 	/**
-	 * Notes generating in the background after being detached from playback, plus ones that have finished
-	 * (kept until explicitly cleared). Only one is ever 'generating' at once; the rest are 'queued' (waiting
+	 * Notes generating in the background, whether moved there from playback ("Move to background") or
+	 * started there directly ("Generate in background"), plus ones that have finished (kept until
+	 * explicitly cleared). Only one is ever 'generating' at once; the rest are 'queued' (waiting
 	 * their turn, in this array's order) or 'done'. Independent of the playback fields above.
 	 */
 	backgroundJobs: BackgroundJobInfo[];
@@ -79,9 +80,10 @@ export type ChunkOutcome = 'ended' | 'next' | 'previous';
 /**
  * A single read's generation state: its chunk texts, buffers/promises/readiness, and the provider used to
  * synthesize them. Exactly one job at a time drives active playback (`Reader.activeJob`); any number of
- * others can be queued/generating/done in the background (`Reader.backgroundJobs`) after being detached from
- * playback via `continueGeneratingInBackground()`. Kept as a plain object (rather than flat fields on Reader)
- * so a job can be handed off between roles, or discarded, without those roles' state colliding.
+ * others can be queued/generating/done in the background (`Reader.backgroundJobs`), either moved there from
+ * playback (`continueGeneratingInBackground()`) or created there directly (`generateNoteInBackground()`).
+ * Kept as a plain object (rather than flat fields on Reader) so a job can be handed off between roles, or
+ * discarded, without those roles' state colliding.
  */
 export interface GenerationJob {
 	id: number;
