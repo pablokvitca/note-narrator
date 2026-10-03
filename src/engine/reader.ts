@@ -703,11 +703,12 @@ export class Reader extends Events {
 	}
 
 	private ensureChunkBuffer(job: GenerationJob, index: number): Promise<ArrayBuffer> {
-		const cached = job.chunkBuffers[index];
-		if (cached) return Promise.resolve(cached);
-
-		const inFlight = job.chunkPromises[index];
-		if (inFlight) return inFlight;
+		// A chunk's promise, not its buffer, is what says it's finished: generateChunk() stores the buffer
+		// before decoding its duration and only marks the chunk ready after, so returning the buffer as soon
+		// as it exists would let a worker pool finish while that chunk isn't ready yet -- and a background job
+		// whose pool finishes with chunks not ready is never marked done, stalling the queue behind it.
+		const existing = job.chunkPromises[index];
+		if (existing) return existing;
 
 		if (job.cancelled) return Promise.reject(new Error('Generation job was cancelled.'));
 
