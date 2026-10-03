@@ -657,6 +657,8 @@ export class Reader extends Events {
 
 		try {
 			await Promise.all(Array.from({ length: windowSize }, (_, workerId) => worker(workerId)));
+			// Workers also stop early once the job is cancelled, which isn't "every chunk generated".
+			if (job.cancelled) return 'failed';
 			return job.poolToken === token ? 'done' : 'superseded';
 		} catch (error) {
 			if (job.cancelled) return 'failed';

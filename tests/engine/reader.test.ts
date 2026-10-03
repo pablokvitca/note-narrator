@@ -503,6 +503,30 @@ describe('Reader moving a read to the background', () => {
 		expect(Notice.messages.filter((message) => message === 'Finished generating "A" in the background.')).toHaveLength(1);
 		expect(reader.getState().backgroundJobs.map((job) => job.status)).toEqual(['done']);
 	});
+
+	it('reports a job discarded mid-generation as failed, not done', async () => {
+		const results: Promise<string>[] = [];
+		const prototype = Reader.prototype as unknown as { runGenerationWorkerPool: (...args: unknown[]) => Promise<string> };
+		const original = prototype.runGenerationWorkerPool;
+		const spy = vi.spyOn(prototype, 'runGenerationWorkerPool').mockImplementation(function (this: unknown, ...args: unknown[]) {
+			const result = original.apply(this, args);
+			results.push(result);
+			return result;
+		});
+		try {
+			const reader = makeReader();
+			void reader.generateNoteInBackground(makeView(makeFile('A'), ['A1', 'A2']));
+			await settle();
+
+			reader.discardBackgroundJob(reader.getState().backgroundJobs[0]?.id ?? -1);
+			callsFor('A')[0]?.resolve();
+			await settle();
+
+			expect(await Promise.all(results)).toEqual(['failed']);
+		} finally {
+			spy.mockRestore();
+		}
+	});
 });
 
 describe('Reader handing a job over while chunks are still being decoded', () => {
