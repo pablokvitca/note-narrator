@@ -762,15 +762,17 @@ export class PlayerView extends ItemView {
 			moveButton.disabled = action !== 'move-active';
 			moveButton.onclick = () => this.plugin.reader.continueGeneratingInBackground();
 		} else {
-			const alreadyQueued = action === 'already-queued';
+			const ready = action === 'ready-in-background';
 			const { button: generateButton } = this.createLabeledButton(
 				actionsRow,
 				'note-narrator-background-button',
-				'layers',
-				'Generate in background',
-				alreadyQueued
-					? 'This note is already in the background queue.'
-					: 'Generate this note in the background without playing it, so you can listen to it later.',
+				ready ? 'check' : 'layers',
+				ready ? 'Ready in background' : 'Generate in background',
+				ready
+					? 'This note finished generating in the background. Play it from its card below, or discard the card to generate it again.'
+					: action === 'already-queued'
+						? 'This note is already in the background queue.'
+						: 'Generate this note in the background without playing it, so you can listen to it later.',
 			);
 			generateButton.disabled = action !== 'generate';
 			generateButton.onclick = () => this.plugin.reader.generateNoteInBackground(this.getActiveMarkdownView() ?? undefined);
