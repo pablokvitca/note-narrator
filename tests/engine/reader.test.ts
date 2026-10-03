@@ -23,8 +23,6 @@ const fakes = vi.hoisted(() => ({
 	synthCalls: [] as SynthCall[],
 	/** When true, SavedAudio.clearReaderFiles() fails. */
 	clearFails: false,
-	/** What SavedAudio.getAudioInfo() reports for any note: its linked audio's status and the voice it was made with. */
-	audioInfo: null as { status: 'up-to-date' | 'outdated'; savedVoice: string | undefined } | null,
 	/** What vault.cachedRead() returns for any note. */
 	diskContent: '',
 	/** When true, decodeAudioDuration() stays pending until the test releases it (see releaseDecodes()). */
@@ -95,9 +93,6 @@ vi.mock('../../src/engine/saved-audio', () => ({
 		}
 		getAudioStatus() {
 			return Promise.resolve('none');
-		}
-		getAudioInfo() {
-			return Promise.resolve(fakes.audioInfo);
 		}
 		stalenessHash(rawContent: string) {
 			return `hash of ${rawContent}`;
@@ -216,7 +211,6 @@ beforeEach(() => {
 	vi.stubGlobal('Audio', FakeAudio);
 	fakes.synthCalls.length = 0;
 	fakes.clearFails = false;
-	fakes.audioInfo = null;
 	fakes.narrator = { ...fakes.narrator, fingerprint: 'f' };
 	fakes.diskContent = '';
 	fakes.holdDecodes = false;
@@ -560,7 +554,7 @@ describe('Reader moving a read to the background', () => {
 		});
 		try {
 			const reader = makeReader();
-			void reader.generateNoteInBackground(makeView(makeFile('A'), ['A1', 'A2']));
+			reader.generateNoteInBackground(makeView(makeFile('A'), ['A1', 'A2']));
 			await settle();
 
 			reader.discardBackgroundJob(reader.getState().backgroundJobs[0]?.id ?? -1);
@@ -689,8 +683,8 @@ describe('Reader playing a background job while another note is being read', () 
 
 	it('keeps queue order: the next queued job starts before the read that was moved aside', async () => {
 		const reader = makeReader({ autoBackgroundOnSwitch: true });
-		void reader.generateNoteInBackground(makeView(makeFile('G'), ['G1', 'G2']));
-		void reader.generateNoteInBackground(makeView(makeFile('K'), ['K1', 'K2']));
+		reader.generateNoteInBackground(makeView(makeFile('G'), ['G1', 'G2']));
+		reader.generateNoteInBackground(makeView(makeFile('K'), ['K1', 'K2']));
 		await settle();
 		void reader.readNote(makeView(makeFile('A'), ['A1', 'A2', 'A3']));
 		await settle();
@@ -795,16 +789,6 @@ describe('Reader with a background job that no longer matches the note', () => {
 		const jobs = reader.getState().backgroundJobs;
 		expect(jobs).toHaveLength(1);
 		expect(jobs[0]).toMatchObject({ status: 'generating', chunkCount: 3 });
-	});
-});
-
-describe('Reader.generateNoteInBackground with saved audio', () => {
-	it('regenerates a note whose saved audio is up to date, like Read does', () => {
-		const reader = makeReader({ linkAudioInNote: true });
-		fakes.audioInfo = { status: 'up-to-date', savedVoice: undefined };
-		reader.generateNoteInBackground(makeView(makeFile('A'), ['A1']));
-
-		expect(reader.getState().backgroundJobs).toHaveLength(1);
 	});
 });
 
@@ -993,7 +977,7 @@ describe('Reader when a background job\'s files are deleted', () => {
 
 	it('keeps a job that is still generating when the note\'s Note Narrator files are cleared', async () => {
 		const reader = makeReader({ saveAudioFile: true });
-		void reader.generateNoteInBackground(makeView(makeFile('A'), ['A1', 'A2']));
+		reader.generateNoteInBackground(makeView(makeFile('A'), ['A1', 'A2']));
 		await settle();
 
 		await reader.clearReaderFiles(makeFile('A'));

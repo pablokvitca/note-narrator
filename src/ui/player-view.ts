@@ -770,12 +770,21 @@ export class PlayerView extends ItemView {
 			spec.label,
 			spec.tooltip,
 		);
-		backgroundButton.disabled = spec.onClick === null;
-		if (spec.onClick === 'move') {
-			backgroundButton.onclick = () => this.plugin.reader.continueGeneratingInBackground();
-		} else if (spec.onClick === 'generate') {
-			backgroundButton.onclick = () => this.plugin.reader.generateNoteInBackground(this.getActiveMarkdownView() ?? undefined);
-		}
+		/** Shows a decision's button: icon, label, tooltip, and what clicking it does (nothing when disabled). */
+		const showBackgroundButton = (shown: BackgroundButtonSpec) => {
+			const iconEl = backgroundButton.querySelector<HTMLElement>('.note-narrator-button-icon');
+			if (iconEl) setIcon(iconEl, shown.icon);
+			backgroundLabelEl.setText(shown.label);
+			attachTooltip(backgroundButton, shown.tooltip);
+			backgroundButton.disabled = shown.onClick === null;
+			backgroundButton.onclick =
+				shown.onClick === 'move'
+					? () => this.plugin.reader.continueGeneratingInBackground()
+					: shown.onClick === 'generate'
+						? () => this.plugin.reader.generateNoteInBackground(this.getActiveMarkdownView() ?? undefined)
+						: null;
+		};
+		showBackgroundButton(spec);
 
 		if (!activeFile || !this.plugin.settings.linkAudioInNote) return;
 
@@ -799,13 +808,12 @@ export class PlayerView extends ItemView {
 						}
 					}
 
-					// Up to date with this narrator: generating again regenerates it, so say so -- the same way Read
-					// is the button that regenerates. Still clickable; the click handler is unchanged.
-					if (action === 'generate' && info.status === 'up-to-date' && !voiceMismatch) {
-						const regenerate = backgroundButtonSpec('regenerate');
-						backgroundLabelEl.setText(regenerate.label);
-						attachTooltip(backgroundButton, regenerate.tooltip);
-					}
+					// Now that the saved audio's status is known, decide again with it: up to date with this
+					// narrator turns "Generate in background" into "Regenerate in background", the same way Read
+					// is the button that regenerates.
+					const savedAudioUpToDate = info.status === 'up-to-date' && !voiceMismatch;
+					const decided = this.plugin.reader.getGenerateInBackgroundAction(activeFile, currentContent, savedAudioUpToDate);
+					if (decided !== action) showBackgroundButton(backgroundButtonSpec(decided));
 
 					playSavedButton.disabled = false;
 					playSavedButton.onclick = () => void this.plugin.reader.playSavedFile(info.audioFile, activeFile);
