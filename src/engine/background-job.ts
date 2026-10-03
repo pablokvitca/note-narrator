@@ -61,8 +61,8 @@ export type ActiveReadKind = 'none' | 'full' | 'selection' | 'saved';
  * - 'already-queued': it already has a background job, still queued or generating.
  * - 'ready-in-background': its background job has finished (play it from its card, or clear it from the
  *   list to generate again).
- * - 'saved-up-to-date': its saved audio is up to date (same text, same narrator), so, like Read, there's
- *   nothing worth paying to generate again.
+ * - 'regenerate': its saved audio is up to date (same text, same narrator). Like Read, it can still be
+ *   generated again on purpose; the panel then labels the button "Regenerate in background".
  * - 'generate': starts a new background job.
  * A selection read of the note is never moved (selection reads can't go to the background); the full note
  * is generated alongside it instead.
@@ -73,7 +73,7 @@ export type GenerateInBackgroundAction =
 	| 'playing-saved'
 	| 'already-queued'
 	| 'ready-in-background'
-	| 'saved-up-to-date'
+	| 'regenerate'
 	| 'generate';
 
 export interface GenerateInBackgroundInput {
@@ -96,6 +96,6 @@ export function decideGenerateInBackground(input: GenerateInBackgroundInput): Ge
 	const existing = input.backgroundJobs.find((job) => job.path === input.notePath);
 	if (existing) return existing.status === 'done' ? 'ready-in-background' : 'already-queued';
 	if (isActive && input.activeKind === 'saved') return 'playing-saved';
-	if (input.savedAudioUpToDate) return 'saved-up-to-date';
+	if (input.savedAudioUpToDate) return 'regenerate';
 	return 'generate';
 }
