@@ -106,6 +106,8 @@ export interface GenerationJob {
 	isSelection: boolean;
 	/** Whether this job's audio has already been saved (triggered once every chunk finishes generating). */
 	savedForSession: boolean;
+	/** Where its audio was saved, once that finishes -- so deleting that file can drop the job too. */
+	savedAudioPath: string | null;
 	/** Set once a 429 is seen for this job; falls back its generation to sequential (1 at a time) to avoid repeating it. */
 	rateLimited: boolean;
 	/**

@@ -41,7 +41,9 @@ export default class NoteNarratorPlugin extends Plugin {
 		this.registerEvent(this.app.vault.on('modify', refreshIcons));
 		// The linked audio file being deleted or moved (from the file explorer or outside Obsidian) changes the status too.
 		this.registerEvent(this.app.vault.on('delete', refreshIcons));
+		this.registerEvent(this.app.vault.on('delete', (file) => this.reader.handleFileDeleted(file.path)));
 		this.registerEvent(this.app.vault.on('rename', refreshIcons));
+		this.registerEvent(this.app.vault.on('rename', (file, oldPath) => this.reader.handleFileRenamed(file.path, oldPath)));
 		// A note's link/hash actually changed (audio saved, or cleared from the panel): refresh right away.
 		this.registerEvent(this.reader.on('audio-status-change', () => void this.refreshActionIcons()));
 		this.registerEvent(
