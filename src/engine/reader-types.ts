@@ -104,6 +104,13 @@ export interface GenerationJob {
 	savedForSession: boolean;
 	/** Set once a 429 is seen for this job; falls back its generation to sequential (1 at a time) to avoid repeating it. */
 	rateLimited: boolean;
+	/**
+	 * Identifies the one worker pool allowed to keep claiming this job's chunks: each `runGenerationWorkerPool()`
+	 * call takes the next value, and workers holding an older one stop (after finishing any chunk already in
+	 * flight). Lets a job change hands -- foreground to background queue, or background back to playback --
+	 * without the previous owner's pool generating on alongside the new one.
+	 */
+	poolToken: number;
 	/** Set once this job is discarded (stopped, superseded, or promoted elsewhere) so any still-settling promises know not to touch playback/background state on completion. */
 	cancelled: boolean;
 	/** Only meaningful while the job is in `Reader.backgroundJobs` -- see {@link BackgroundJobStatus}. */
