@@ -1025,17 +1025,37 @@ describe('Reader when a background job\'s files are deleted', () => {
 		expect(reader.getState().backgroundJobs).toHaveLength(1);
 	});
 
-	it('treats moving the saved audio into .trash as deleting it, and follows any other move', async () => {
+	it('follows the saved audio when it is moved, so deleting it from its new place still drops the job', async () => {
 		const reader = makeReader({ saveAudioFile: true });
 		await finishedJobWithSavedAudio(reader, 'A');
-		await finishedJobWithSavedAudio(reader, 'B');
 
 		reader.handleFileRenamed('archive/A.mp3', 'audio/A.mp3');
-		reader.handleFileRenamed('.trash/B.mp3', 'audio/B.mp3');
-		expect(reader.getState().backgroundJobs.map((job) => job.file?.basename)).toEqual(['A']);
+		expect(reader.getState().backgroundJobs).toHaveLength(1);
 
+		reader.handleFileDeleted('audio/A.mp3');
+		expect(reader.getState().backgroundJobs).toHaveLength(1);
 		reader.handleFileDeleted('archive/A.mp3');
 		expect(reader.getState().backgroundJobs).toHaveLength(0);
+	});
+
+	it('keeps a job when its note is renamed or moved', async () => {
+		const reader = makeReader({ saveAudioFile: true });
+		await finishedJobWithSavedAudio(reader, 'A');
+
+		reader.handleFileRenamed('Archive/A.md', 'A.md');
+
+		expect(reader.getState().backgroundJobs).toHaveLength(1);
+	});
+
+	it('keeps a job that is still generating when the note\'s Note Narrator files are cleared', async () => {
+		const reader = makeReader({ saveAudioFile: true });
+		void reader.generateNoteInBackground(makeView(makeFile('A'), ['A1', 'A2']));
+		await settle();
+
+		await reader.clearReaderFiles(makeFile('A'));
+
+		expect(reader.getState().backgroundJobs.map((job) => job.status)).toEqual(['generating']);
+		expect(callsFor('A')[0]?.isCancelled()).toBe(false);
 	});
 
 	it('drops the note\'s job when its Note Narrator files are cleared', async () => {
