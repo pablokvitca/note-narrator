@@ -354,3 +354,21 @@ describe('Reader selection reads and the background queue', () => {
 		expect(Notice.messages).toContain('"A" has already finished generating.');
 	});
 });
+
+describe('Reader with a finished background job', () => {
+	it('says the note is ready rather than queued when generating it again', async () => {
+		const reader = makeReader();
+		const a = makeFile('A');
+		const view = makeView(a, ['A1', 'A2']);
+		reader.generateNoteInBackground(view);
+		await settle();
+		await finishGenerating('A');
+
+		reader.generateNoteInBackground(view);
+		await settle();
+
+		expect(reader.getState().backgroundJobs).toHaveLength(1);
+		expect(reader.getGenerateInBackgroundAction(a)).toBe('ready-in-background');
+		expect(Notice.messages).toContain('"A" has already finished generating in the background.');
+	});
+});

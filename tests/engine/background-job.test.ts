@@ -78,7 +78,7 @@ describe('decideGenerateInBackground', () => {
 		activePath: null,
 		activeKind: 'none',
 		activePendingGeneration: false,
-		backgroundJobPaths: [],
+		backgroundJobs: [],
 		...overrides,
 	});
 
@@ -103,11 +103,20 @@ describe('decideGenerateInBackground', () => {
 	});
 
 	it('reports a selection read of a note that is already queued as already queued', () => {
-		expect(decideGenerateInBackground(input({ activePath: 'a.md', activeKind: 'selection', backgroundJobPaths: ['a.md'] }))).toBe('already-queued');
+		expect(decideGenerateInBackground(input({ activePath: 'a.md', activeKind: 'selection', backgroundJobs: [{ path: 'a.md', status: 'queued' }] }))).toBe('already-queued');
 	});
 
-	it('does nothing new when the note already has a background job', () => {
-		expect(decideGenerateInBackground(input({ backgroundJobPaths: ['b.md', 'a.md'] }))).toBe('already-queued');
+	it('does nothing new when the note already has a queued or generating background job', () => {
+		expect(decideGenerateInBackground(input({ backgroundJobs: [{ path: 'b.md', status: 'generating' }, { path: 'a.md', status: 'queued' }] }))).toBe('already-queued');
+		expect(decideGenerateInBackground(input({ backgroundJobs: [{ path: 'a.md', status: 'generating' }] }))).toBe('already-queued');
+	});
+
+	it('reports a finished background job as ready during a selection read of the same note', () => {
+		expect(decideGenerateInBackground(input({ activePath: 'a.md', activeKind: 'selection', backgroundJobs: [{ path: 'a.md', status: 'done' }] }))).toBe('ready-in-background');
+	});
+
+	it('reports a finished background job as ready rather than queued', () => {
+		expect(decideGenerateInBackground(input({ backgroundJobs: [{ path: 'a.md', status: 'done' }] }))).toBe('ready-in-background');
 	});
 
 	it('generates while a different note plays from saved audio', () => {
@@ -115,6 +124,6 @@ describe('decideGenerateInBackground', () => {
 	});
 
 	it('generates without touching a read of a different note', () => {
-		expect(decideGenerateInBackground(input({ activePath: 'b.md', activeKind: 'full', activePendingGeneration: true, backgroundJobPaths: ['c.md', null] }))).toBe('generate');
+		expect(decideGenerateInBackground(input({ activePath: 'b.md', activeKind: 'full', activePendingGeneration: true, backgroundJobs: [{ path: 'c.md', status: 'done' }, { path: null, status: 'queued' }] }))).toBe('generate');
 	});
 });
