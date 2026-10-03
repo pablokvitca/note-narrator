@@ -197,6 +197,7 @@ beforeEach(() => {
 	});
 	vi.stubGlobal('Audio', FakeAudio);
 	fakes.synthCalls.length = 0;
+	fakes.narrator = { ...fakes.narrator, fingerprint: 'f' };
 	fakes.diskContent = '';
 	fakes.holdDecodes = false;
 	fakes.heldDecodes.length = 0;
@@ -700,5 +701,79 @@ describe('Reader playing a background job while another note is being read', () 
 		await settle();
 
 		expect(reader.getState().backgroundJobs).toHaveLength(0);
+	});
+});
+
+describe('Reader with a background job that no longer matches the note', () => {
+	function editableView(name: string, lines: string[]) {
+		const file = makeFile(name);
+		return { file, lines, view: fake<MarkdownView>({ file, editor: { getValue: () => lines.join('\n'), getSelection: () => '' } }) };
+	}
+
+	it('Read generates the edited note afresh instead of playing the old background job', async () => {
+		const reader = makeReader();
+		const a = editableView('A', ['A1', 'A2']);
+		reader.generateNoteInBackground(a.view);
+		await settle();
+		await finishGenerating('A');
+
+		a.lines.push('A3');
+		void reader.readNote(a.view);
+		await settle();
+
+		const state = reader.getState();
+		expect(state.backgroundJobs).toHaveLength(0);
+		expect(state.activeFile).toBe(a.file);
+		expect(state.chunkCount).toBe(3);
+		expect(callsFor('A').map((call) => call.text)).toEqual(['A1', 'A2', 'A1', 'A2']);
+	});
+
+	it('Read generates afresh after the narrator changed', async () => {
+		const reader = makeReader();
+		const a = editableView('A', ['A1', 'A2']);
+		reader.generateNoteInBackground(a.view);
+		await settle();
+		await finishGenerating('A');
+
+		// A new object, like a real narrator change (resolved fresh), rather than mutating the job's own copy.
+		fakes.narrator = { ...fakes.narrator, fingerprint: 'another narrator' };
+		void reader.readNote(a.view);
+		await settle();
+
+		expect(reader.getState().backgroundJobs).toHaveLength(0);
+		expect(callsFor('A')).toHaveLength(4);
+	});
+
+	it('Read still plays the background job when the note is unchanged', async () => {
+		const reader = makeReader();
+		const a = editableView('A', ['A1', 'A2']);
+		reader.generateNoteInBackground(a.view);
+		await settle();
+		await finishGenerating('A');
+
+		void reader.readNote(a.view);
+		await settle();
+
+		expect(callsFor('A')).toHaveLength(2);
+		expect(reader.getState().status).toBe('playing');
+	});
+
+	it('offers Generate in background again, and replaces the old job, once the note is edited', async () => {
+		const reader = makeReader();
+		const a = editableView('A', ['A1', 'A2']);
+		reader.generateNoteInBackground(a.view);
+		await settle();
+		await finishGenerating('A');
+		expect(reader.getGenerateInBackgroundAction(a.file, a.lines.join('\n'))).toBe('ready-in-background');
+
+		a.lines.push('A3');
+		expect(reader.getGenerateInBackgroundAction(a.file, a.lines.join('\n'))).toBe('generate');
+
+		reader.generateNoteInBackground(a.view);
+		await settle();
+
+		const jobs = reader.getState().backgroundJobs;
+		expect(jobs).toHaveLength(1);
+		expect(jobs[0]).toMatchObject({ status: 'generating', chunkCount: 3 });
 	});
 });

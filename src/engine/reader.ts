@@ -204,15 +204,36 @@ export class Reader extends Events {
 	}
 
 	/** What "Generate in background" would do for this note right now; shared by the command and the panel's button so they always agree. */
-	getGenerateInBackgroundAction(file: TFile): GenerateInBackgroundAction {
+	getGenerateInBackgroundAction(file: TFile, currentContent?: string): GenerateInBackgroundAction {
 		const state = this.state;
 		return decideGenerateInBackground({
 			notePath: file.path,
 			activePath: state.status === 'idle' ? null : (state.activeFile?.path ?? null),
 			activeKind: state.activeReadKind,
 			activePendingGeneration: hasPendingGeneration(state.chunkReady),
-			backgroundJobs: this.backgroundJobs.map((job) => ({ path: job.file?.path ?? null, status: job.backgroundStatus })),
+			// A stale job for this note doesn't count: generating again replaces it.
+			backgroundJobs: this.backgroundJobs
+				.filter((job) => job.file?.path !== file.path || !this.isBackgroundJobStale(job, file, currentContent))
+				.map((job) => ({ path: job.file?.path ?? null, status: job.backgroundStatus })),
 		});
+	}
+
+	/**
+	 * Whether a background job no longer matches its note: generated with a different narrator than the
+	 * active one, or (when `currentContent` is given) from text that's since been edited. Playing it would
+	 * play the old version, so Read and "Generate in background" replace it instead.
+	 */
+	private isBackgroundJobStale(job: GenerationJob, file: TFile, currentContent?: string): boolean {
+		const narrator = this.noteText.getActiveNarrator();
+		if (narrator && narrator.fingerprint !== job.narrator.fingerprint) return true;
+		if (currentContent === undefined || job.contentHash === null) return false;
+		return job.contentHash !== this.savedAudio.stalenessHash(currentContent, file);
+	}
+
+	/** Discards this note's background job if it's stale (see {@link isBackgroundJobStale}). */
+	private discardStaleBackgroundJob(file: TFile, currentContent: string): void {
+		const existing = this.backgroundJobs.find((job) => job.file?.path === file.path);
+		if (existing && this.isBackgroundJobStale(existing, file, currentContent)) this.discardBackgroundJob(existing.id);
 	}
 
 	/**
@@ -229,7 +250,8 @@ export class Reader extends Events {
 			return;
 		}
 
-		const action = this.getGenerateInBackgroundAction(file);
+		const { fullValue, rawText, positionBase } = this.buildNoteInput(target);
+		const action = this.getGenerateInBackgroundAction(file, fullValue);
 		if (action === 'move-active') {
 			this.continueGeneratingInBackground();
 			return;
@@ -251,10 +273,10 @@ export class Reader extends Events {
 			return;
 		}
 
-		const { fullValue, rawText, positionBase } = this.buildNoteInput(target);
 		const prepared = this.prepareRead(rawText, positionBase);
 		if (!prepared) return;
 
+		this.discardStaleBackgroundJob(file, fullValue);
 		this.enqueueBackgroundJob(this.createJob(file, prepared, 'full', fullValue));
 	}
 
@@ -582,8 +604,11 @@ export class Reader extends Events {
 		// Re-reading a note that already has a background job (queued, generating, or done) adopts that job
 		// in place rather than discarding its progress -- the same outcome as clicking the job's card, just
 		// triggered from Read instead. Only for a full-note read: a selection read's text won't match the
-		// background job's chunks, so it plays on its own and leaves the background job as it is.
+		// background job's chunks, so it plays on its own and leaves the background job as it is. A stale job
+		// (the note was edited, or the narrator changed, since it was generated) is discarded instead, so
+		// Read -- or "Regenerate" -- actually generates the note as it is now.
 		if (sourceFile && options.kind === 'full') {
+			if (options.sourceContent !== undefined) this.discardStaleBackgroundJob(sourceFile, options.sourceContent);
 			const existing = this.backgroundJobs.find((job) => job.file?.path === sourceFile.path);
 			if (existing) {
 				this.adoptBackgroundJob(existing);
