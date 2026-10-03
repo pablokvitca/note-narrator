@@ -708,10 +708,10 @@ export class PlayerView extends ItemView {
 	/**
 	 * An icon + text label button for the primary-actions row. Returns the label span separately so
 	 * callers can update just the text later (e.g. Read -> Regenerate) via {@link setButtonLabel}
-	 * without disturbing the icon. `tooltip` (defaulting to `label`) is attached once via
-	 * {@link attachTooltip} -- callers that need a longer/different tooltip than the visible label
-	 * (Cancel, Move to background / Generate in background) must pass it here rather than calling attachTooltip again
-	 * themselves, which would double up its long-press listeners on the same button.
+	 * without disturbing the icon. `tooltip` (defaulting to `label`) is attached via {@link attachTooltip};
+	 * callers whose tooltip differs from the visible label (Cancel, the background button) pass it here.
+	 * Calling attachTooltip again later only replaces the text (it never stacks listeners), which is how a
+	 * label/tooltip changes once the async saved-audio lookup has run.
 	 */
 	private createLabeledButton(
 		container: HTMLElement,
@@ -727,7 +727,7 @@ export class PlayerView extends ItemView {
 		return { button, labelEl };
 	}
 
-	/** Updates both a labeled button's visible text and its tooltip (see {@link createLabeledButton}) together, so the icon-only tooltip never drifts from what a wide layout shows as text. Only for buttons whose tooltip always matches their label -- Cancel and the background button set theirs once at creation instead. */
+	/** Updates both a labeled button's visible text and its tooltip (see {@link createLabeledButton}) together, so the icon-only tooltip never drifts from what a wide layout shows as text. Only for buttons whose tooltip matches their label; Cancel and the background button have a different tooltip, so the background button updates its label text and tooltip separately. */
 	private setButtonLabel(button: HTMLButtonElement, labelEl: HTMLElement, text: string): void {
 		labelEl.setText(text);
 		attachTooltip(button, text);
