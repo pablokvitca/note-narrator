@@ -22,15 +22,15 @@ export class SavedAudio {
 
 	/**
 	 * `contentHash` is the note's staleness hash (see {@link stalenessHash}) for the text the audio was
-	 * generated from, captured when generation started. Without it the note is hashed as it is now, which
-	 * marks the audio up to date even if the note was edited while it generated.
+	 * generated from, captured when generation started. Required on purpose: hashing the note as it is when
+	 * saving finishes instead would mark the audio up to date even if the note was edited while it generated.
 	 */
 	async saveAudioFile(
 		chunks: ArrayBuffer[],
 		sourceFile: TFile | null,
 		chunkDurations: number[],
 		narrator: ResolvedNarrator,
-		contentHash: string | null = null,
+		contentHash: string,
 	): Promise<void> {
 		try {
 			const apiKey = getProviderApiKey(this.app, narrator.provider);
@@ -135,10 +135,6 @@ export class SavedAudio {
 		return hashText(`${JSON.stringify(frontmatter)}\n${body}`);
 	}
 
-	private async computeStalenessHash(file: TFile): Promise<string> {
-		return this.stalenessHash(await this.app.vault.cachedRead(file), file);
-	}
-
 	/**
 	 * `processFrontMatter()`'s returned promise can resolve before `metadataCache.getFileCache()` actually
 	 * reflects the write — the cache recomputes on its own pipeline after the underlying `vault.modify`,
@@ -169,15 +165,14 @@ export class SavedAudio {
 		sourceFile: TFile,
 		chunkMeta: { duration: number; byteLength: number }[],
 		narrator: ResolvedNarrator,
-		contentHash: string | null,
+		contentHash: string,
 	): Promise<void> {
 		const link = this.app.fileManager.generateMarkdownLink(audioFile, sourceFile.path);
-		const hash = contentHash ?? (await this.computeStalenessHash(sourceFile));
 
 		const cacheUpdated = this.waitForMetadataCacheUpdate(sourceFile);
 		await this.app.fileManager.processFrontMatter(sourceFile, (frontmatter: Record<string, unknown>) => {
 			frontmatter[this.settings.audioLinkProperty] = link;
-			frontmatter[this.settings.audioHashProperty] = hash;
+			frontmatter[this.settings.audioHashProperty] = contentHash;
 			frontmatter[this.settings.audioPathProperty] = audioFile.path;
 			frontmatter[this.settings.audioTimestampProperty] = moment().toISOString(true);
 			// A fingerprint of the narrator's voice settings, not its name or provider account, so renaming a profile doesn't look like a new narrator.
