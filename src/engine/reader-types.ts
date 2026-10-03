@@ -1,5 +1,5 @@
 import { TFile } from 'obsidian';
-import { BackgroundJobInfo } from './background-job';
+import { ActiveReadKind, BackgroundJobInfo } from './background-job';
 import { ChunkPosition } from '../text/text-position';
 import { ResolvedNarrator } from '../settings/profiles';
 import { TTSProvider } from '../tts/provider';
@@ -50,6 +50,8 @@ export interface ReaderState {
 	chunkDurations: (number | undefined)[];
 	/** The note this status is about, so the panel can show it even when it isn't the currently-active note. Null when reading a selection with no backing file, or once idle. */
 	activeFile: TFile | null;
+	/** What kind of read `activeFile`'s status is about -- the panel needs it to tell a full-note read (which can move to the background) from a selection read or "Play saved" (which can't). */
+	activeReadKind: ActiveReadKind;
 	/**
 	 * Notes generating in the background after being detached from playback, plus ones that have finished
 	 * (kept until explicitly cleared). Only one is ever 'generating' at once; the rest are 'queued' (waiting
@@ -68,6 +70,7 @@ export const IDLE_STATE: ReaderState = {
 	chunkInFlight: [],
 	chunkDurations: [],
 	activeFile: null,
+	activeReadKind: 'none',
 	backgroundJobs: [],
 };
 
@@ -95,6 +98,8 @@ export interface GenerationJob {
 	/** The narrator this job was started with, resolved once so later edits to the profile or provider don't change a read (or its saved audio) mid-flight. */
 	narrator: ResolvedNarrator;
 	sourceFileForSave: TFile | null;
+	/** A read of selected text rather than the whole note. Never moved to the background: its chunks wouldn't match the note's, so it could neither be saved nor stand in for the full note later. */
+	isSelection: boolean;
 	/** Whether this job's audio has already been saved (triggered once every chunk finishes generating). */
 	savedForSession: boolean;
 	/** Set once a 429 is seen for this job; falls back its generation to sequential (1 at a time) to avoid repeating it. */

@@ -52,11 +52,33 @@ export function findBackgroundJobForNote<T extends { file: { path: string } | nu
 	return jobs.find((job) => job.file?.path === notePath);
 }
 
-/** What "Generate in background" does for a note: move its current read to the background, nothing (it's already there), or start a new background job. */
-export type GenerateInBackgroundAction = 'move-active' | 'already-queued' | 'generate';
+/** What's driving playback right now: nothing, a full-note read, a selection read, or "Play saved" (no generation job at all). */
+export type ActiveReadKind = 'none' | 'full' | 'selection' | 'saved';
 
-export function decideGenerateInBackground(notePath: string, activeJobPath: string | null, backgroundJobPaths: (string | null)[]): GenerateInBackgroundAction {
-	if (activeJobPath === notePath) return 'move-active';
-	if (backgroundJobPaths.includes(notePath)) return 'already-queued';
+/**
+ * What "Generate in background" does for a note. 'move-active' moves its current full-note read to the
+ * background; 'already-generated' and 'playing-saved' mean that read has nothing left to generate (so,
+ * like the panel's disabled "Move to background", nothing happens); 'already-queued' means it already has
+ * a background job; 'generate' starts a new one. A selection read of the note is never moved (selection
+ * reads can't go to the background) -- the full note is generated alongside it instead.
+ */
+export type GenerateInBackgroundAction = 'move-active' | 'already-generated' | 'playing-saved' | 'already-queued' | 'generate';
+
+export interface GenerateInBackgroundInput {
+	notePath: string;
+	/** The note playback is currently about, or null when idle. */
+	activePath: string | null;
+	activeKind: ActiveReadKind;
+	/** Whether the current read still has chunks left to generate. */
+	activePendingGeneration: boolean;
+	backgroundJobPaths: (string | null)[];
+}
+
+export function decideGenerateInBackground(input: GenerateInBackgroundInput): GenerateInBackgroundAction {
+	if (input.activePath === input.notePath) {
+		if (input.activeKind === 'full') return input.activePendingGeneration ? 'move-active' : 'already-generated';
+		if (input.activeKind === 'saved') return 'playing-saved';
+	}
+	if (input.backgroundJobPaths.includes(input.notePath)) return 'already-queued';
 	return 'generate';
 }

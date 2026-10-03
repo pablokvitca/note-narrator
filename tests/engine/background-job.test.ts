@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildBackgroundJobInfo, decideGenerateInBackground, findBackgroundJobForNote, hasPendingGeneration, queuePosition } from '../../src/engine/background-job';
+import { GenerateInBackgroundInput, buildBackgroundJobInfo, decideGenerateInBackground, findBackgroundJobForNote, hasPendingGeneration, queuePosition } from '../../src/engine/background-job';
 
 describe('hasPendingGeneration', () => {
 	it('is false for an empty chunk list', () => {
@@ -73,23 +73,44 @@ describe('findBackgroundJobForNote', () => {
 });
 
 describe('decideGenerateInBackground', () => {
-	it('moves the current read to the background when it is this note', () => {
-		expect(decideGenerateInBackground('a.md', 'a.md', [])).toBe('move-active');
-	});
-
-	it('prefers moving the current read even if the note somehow also has a background job', () => {
-		expect(decideGenerateInBackground('a.md', 'a.md', ['a.md'])).toBe('move-active');
-	});
-
-	it('does nothing new when the note already has a background job', () => {
-		expect(decideGenerateInBackground('a.md', null, ['b.md', 'a.md'])).toBe('already-queued');
+	const input = (overrides: Partial<GenerateInBackgroundInput> = {}): GenerateInBackgroundInput => ({
+		notePath: 'a.md',
+		activePath: null,
+		activeKind: 'none',
+		activePendingGeneration: false,
+		backgroundJobPaths: [],
+		...overrides,
 	});
 
 	it('generates when the note is neither being read nor in the background', () => {
-		expect(decideGenerateInBackground('a.md', null, [])).toBe('generate');
+		expect(decideGenerateInBackground(input())).toBe('generate');
+	});
+
+	it('moves a full read of this note that is still generating', () => {
+		expect(decideGenerateInBackground(input({ activePath: 'a.md', activeKind: 'full', activePendingGeneration: true }))).toBe('move-active');
+	});
+
+	it('does nothing for a full read of this note that has finished generating', () => {
+		expect(decideGenerateInBackground(input({ activePath: 'a.md', activeKind: 'full', activePendingGeneration: false }))).toBe('already-generated');
+	});
+
+	it('does nothing while this note plays from saved audio, instead of paying to regenerate it', () => {
+		expect(decideGenerateInBackground(input({ activePath: 'a.md', activeKind: 'saved' }))).toBe('playing-saved');
+	});
+
+	it('generates the full note alongside a selection read of it, never moving the selection', () => {
+		expect(decideGenerateInBackground(input({ activePath: 'a.md', activeKind: 'selection', activePendingGeneration: true }))).toBe('generate');
+	});
+
+	it('reports a selection read of a note that is already queued as already queued', () => {
+		expect(decideGenerateInBackground(input({ activePath: 'a.md', activeKind: 'selection', backgroundJobPaths: ['a.md'] }))).toBe('already-queued');
+	});
+
+	it('does nothing new when the note already has a background job', () => {
+		expect(decideGenerateInBackground(input({ backgroundJobPaths: ['b.md', 'a.md'] }))).toBe('already-queued');
 	});
 
 	it('generates without touching a read of a different note', () => {
-		expect(decideGenerateInBackground('a.md', 'b.md', ['c.md', null])).toBe('generate');
+		expect(decideGenerateInBackground(input({ activePath: 'b.md', activeKind: 'full', activePendingGeneration: true, backgroundJobPaths: ['c.md', null] }))).toBe('generate');
 	});
 });

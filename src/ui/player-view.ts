@@ -2,7 +2,7 @@ import { debounce, ItemView, MarkdownView, Menu, setIcon, Setting, TFile, Worksp
 import { ConfirmModal } from './confirm-modal';
 import NoteNarratorPlugin from '../main';
 import { getActiveProfile, getDropdownProfiles, savedVoiceMatches } from '../settings/profiles';
-import { findBackgroundJobForNote, hasPendingGeneration } from '../engine/background-job';
+import { hasPendingGeneration } from '../engine/background-job';
 import { PLAY_SAVED_ICON_ID, skipIconId } from './icons';
 import { AudioLinkStatus, ReaderState } from '../engine/reader-types';
 import { computeFullReadTimes, formatTimeDisplay } from '../engine/time-utils';
@@ -746,10 +746,12 @@ export class PlayerView extends ItemView {
 		attachTooltip(cancelButton, 'Cancel generation');
 		cancelButton.onclick = () => this.plugin.reader.stop();
 
-		// One slot, two jobs: while the selected note is being read it moves that read to the background;
-		// otherwise it starts generating the selected note in the background without playing it at all.
+		// One slot, two jobs: while the selected note's full read is playing it moves that read to the
+		// background; otherwise (including while only a selection of it is being read) it starts generating
+		// the whole note in the background without playing it. Same decision as the command's.
 		const activeFile = this.getActiveFile();
-		if (active) {
+		const action = activeFile ? this.plugin.reader.getGenerateInBackgroundAction(activeFile) : null;
+		if (action === 'move-active' || action === 'already-generated' || action === 'playing-saved') {
 			const { button: moveButton } = this.createLabeledButton(
 				actionsRow,
 				'note-narrator-background-button',
@@ -757,10 +759,10 @@ export class PlayerView extends ItemView {
 				'Move to background',
 				'Stop playback but keep generating the rest of this note in the background, so you can jump back into it later.',
 			);
-			moveButton.disabled = !pendingGeneration;
+			moveButton.disabled = action !== 'move-active';
 			moveButton.onclick = () => this.plugin.reader.continueGeneratingInBackground();
 		} else {
-			const alreadyQueued = !!activeFile && !!findBackgroundJobForNote(this.plugin.reader.getState().backgroundJobs, activeFile.path);
+			const alreadyQueued = action === 'already-queued';
 			const { button: generateButton } = this.createLabeledButton(
 				actionsRow,
 				'note-narrator-background-button',
@@ -770,7 +772,7 @@ export class PlayerView extends ItemView {
 					? 'This note is already in the background queue.'
 					: 'Generate this note in the background without playing it, so you can listen to it later.',
 			);
-			generateButton.disabled = !activeFile || alreadyQueued;
+			generateButton.disabled = action !== 'generate';
 			generateButton.onclick = () => this.plugin.reader.generateNoteInBackground(this.getActiveMarkdownView() ?? undefined);
 		}
 
