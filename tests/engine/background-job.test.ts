@@ -110,8 +110,8 @@ describe('decideGenerateInBackground', () => {
 		expect(decideGenerateInBackground(input({ activePath: 'b.md', activeKind: 'saved' }))).toBe('generate');
 	});
 
-	it('does not regenerate a note whose saved audio is up to date', () => {
-		expect(decideGenerateInBackground(input({ savedAudioUpToDate: true }))).toBe('saved-up-to-date');
+	it('offers to regenerate a note whose saved audio is up to date', () => {
+		expect(decideGenerateInBackground(input({ savedAudioUpToDate: true }))).toBe('regenerate');
 	});
 
 	it('reports a running read or a background job before up-to-date saved audio', () => {
