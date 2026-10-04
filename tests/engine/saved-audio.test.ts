@@ -90,6 +90,14 @@ describe('SavedAudio.getAudioStatus', () => {
 		expect(await saved.getAudioStatus(note)).toBe('up-to-date');
 	});
 
+	it('reports a stored hash that isn\'t text (e.g. edited into a number) as outdated instead of failing', async () => {
+		const vault: Vault = { content: 'Body' };
+		const { saved, note, settings } = makeSavedAudio(vault);
+		vault.cachedFrontmatter = { ...linked(settings, 'unused'), [settings.audioHashProperty]: 12345678 };
+
+		expect(await saved.getAudioStatus(note)).toBe('outdated');
+	});
+
 	it('is outdated once the note changes', async () => {
 		const vault: Vault = { content: 'Body' };
 		const { saved, note, settings } = makeSavedAudio(vault);

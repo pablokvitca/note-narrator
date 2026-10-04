@@ -224,7 +224,8 @@ export class SavedAudio {
 	async getAudioStatus(file: TFile): Promise<AudioLinkStatus> {
 		const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
 		const link = frontmatter?.[this.settings.audioLinkProperty] as string | undefined;
-		const storedHash = frontmatter?.[this.settings.audioHashProperty] as string | undefined;
+		// User-editable, so not necessarily text (e.g. edited into a number): anything else is just "outdated".
+		const storedHash: unknown = frontmatter?.[this.settings.audioHashProperty];
 		if (!link || !storedHash) return 'none';
 
 		// The note still links to audio that's since been moved/deleted outside Note Narrator — there's
@@ -239,6 +240,7 @@ export class SavedAudio {
 			return 'none';
 		}
 
+		if (typeof storedHash !== 'string') return 'outdated';
 		const content = await this.app.vault.cachedRead(file);
 		// A hash saved since 1.1 is versioned and only ever compared with the current algorithm. Falling back
 		// to the 1.0.0 one for it too would briefly undo reading frontmatter from the text: right after a

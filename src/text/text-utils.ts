@@ -2,14 +2,17 @@ export type ChunkerStyle = 'markdown-aware' | 'sentence';
 
 const SENTENCE_MARKER = '~~NOTE-NARRATOR-SENTENCE-BREAK~~';
 
+/** A leading YAML frontmatter block; group 1 is the YAML between its `---` fences. Shared so the two helpers below always agree. */
+const FRONTMATTER_BLOCK = /^---\n([\s\S]*?)\n---(\n|$)/;
+
 /** Removes a leading YAML frontmatter block, if present. */
 export function stripFrontmatter(markdown: string): string {
-	return markdown.replace(/^---\n[\s\S]*?\n---(\n|$)/, '');
+	return markdown.replace(FRONTMATTER_BLOCK, '');
 }
 
 /** The YAML between a note's leading `---` fences (the part {@link stripFrontmatter} removes), or null when it has none. */
 export function extractFrontmatterYaml(markdown: string): string | null {
-	const match = /^---\n([\s\S]*?)\n---(\n|$)/.exec(markdown);
+	const match = FRONTMATTER_BLOCK.exec(markdown);
 	return match ? (match[1] ?? '') : null;
 }
 
