@@ -111,7 +111,7 @@ export interface GenerationJob {
 	 * without the previous owner's pool generating on alongside the new one.
 	 */
 	poolToken: number;
-	/** Set once this job is discarded (stopped, superseded, or promoted elsewhere) so any still-settling promises know not to touch playback/background state on completion. */
+	/** Set once this job is discarded (stopped, discarded from the background, failed, or the plugin unloaded) so any still-settling promises know not to touch playback/background state on completion. Handing a job between owners (playback and the background queue) doesn't cancel it -- see `poolToken`. */
 	cancelled: boolean;
 	/** Only meaningful while the job is in `Reader.backgroundJobs` -- see {@link BackgroundJobStatus}. */
 	backgroundStatus: 'queued' | 'generating' | 'done';
