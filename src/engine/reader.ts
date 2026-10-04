@@ -102,9 +102,10 @@ export class Reader extends Events {
 		const result = await this.runGenerationWorkerPool(job, windowSize);
 		// Superseded: a newer pool owns the job now (it was adopted into playback, maybe moved back here
 		// since), and whichever run owns it finishes it -- acting here too would finish it twice.
+		// A 'failed' run has always cancelled the job, so past this check the run is 'done'.
 		if (result === 'superseded' || job.cancelled || !this.backgroundJobs.includes(job)) return;
 
-		if (result === 'done') this.finishBackgroundJob(job);
+		this.finishBackgroundJob(job);
 		this.advanceBackgroundQueue();
 	}
 
@@ -282,7 +283,6 @@ export class Reader extends Events {
 		this.publishBackgroundJobs();
 
 		this.stop();
-		job.cancelled = false;
 		this.activeJob = job;
 		const session = this.sessionId;
 		this.currentPlaybackRate = this.settings.playbackRate;
