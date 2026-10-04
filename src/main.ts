@@ -127,7 +127,13 @@ export default class NoteNarratorPlugin extends Plugin {
 
 	private async refreshActionIcons(): Promise<void> {
 		for (const leaf of this.app.workspace.getLeavesOfType('markdown')) {
-			if (leaf.view instanceof MarkdownView) await this.refreshActionIcon(leaf.view);
+			if (!(leaf.view instanceof MarkdownView)) continue;
+			// One note failing (e.g. unreadable, or odd Note Narrator properties) mustn't stop the rest refreshing.
+			try {
+				await this.refreshActionIcon(leaf.view);
+			} catch (error) {
+				console.error('Note Narrator: failed to refresh the toolbar icon', error);
+			}
 		}
 	}
 
