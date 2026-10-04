@@ -958,14 +958,21 @@ export class Reader extends Events {
 
 	/** Deletes a note's linked audio file (if any) and removes the Note Narrator audio properties from its frontmatter. */
 	async clearReaderFiles(sourceFile: TFile): Promise<void> {
-		// A finished job's card stands for the note's audio, which is being cleared (its file may not even be
-		// the one deleted, e.g. with saving off or "Keep old versions"). A queued or generating job is left
-		// alone: clearing old audio shouldn't throw away a (paid) generation in progress, whose new audio is
-		// saved and linked when it finishes.
+		try {
+			await this.savedAudio.clearReaderFiles(sourceFile);
+		} catch (error) {
+			console.error('Note Narrator: failed to clear Note Narrator files', error);
+			new Notice(`Failed to clear Note Narrator files: ${error instanceof Error ? error.message : String(error)}`);
+			return;
+		}
+		// Only once the files are actually cleared: a finished job's card stands for the note's audio, which
+		// is now gone (its file may not even be the one deleted, e.g. with saving off or "Keep old versions").
+		// A queued or generating job is left alone: clearing old audio shouldn't throw away a (paid)
+		// generation in progress, whose new audio is saved and linked when it finishes.
 		const finished = this.backgroundJobs.find((j) => j.file?.path === sourceFile.path && j.backgroundStatus === 'done');
 		if (finished) this.discardBackgroundJob(finished.id);
-		await this.savedAudio.clearReaderFiles(sourceFile);
 	}
+
 
 	/** Plays a previously saved audio file directly, without generating anything. */
 	async playSavedFile(audioFile: TFile, sourceFile: TFile | null = null): Promise<void> {

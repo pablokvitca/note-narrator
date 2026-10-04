@@ -21,6 +21,8 @@ interface SynthCall {
 
 const fakes = vi.hoisted(() => ({
 	synthCalls: [] as SynthCall[],
+	/** When true, SavedAudio.clearReaderFiles() fails. */
+	clearFails: false,
 	/** What SavedAudio.getAudioInfo() reports for any note: its linked audio's status and the voice it was made with. */
 	audioInfo: null as { status: 'up-to-date' | 'outdated'; savedVoice: string | undefined } | null,
 	/** When set, getAudioInfo() waits for it -- to hold Reader inside its saved-audio check. */
@@ -91,7 +93,7 @@ vi.mock('../../src/engine/saved-audio', () => ({
 			return Promise.resolve(note ? { path: `audio/${note.basename}.mp3` } : null);
 		}
 		clearReaderFiles() {
-			return Promise.resolve();
+			return fakes.clearFails ? Promise.reject(new Error('cannot trash')) : Promise.resolve();
 		}
 		getAudioStatus() {
 			return Promise.resolve('none');
@@ -210,6 +212,7 @@ beforeEach(() => {
 	});
 	vi.stubGlobal('Audio', FakeAudio);
 	fakes.synthCalls.length = 0;
+	fakes.clearFails = false;
 	fakes.audioInfo = null;
 	fakes.audioInfoGate = null;
 	fakes.narrator = { ...fakes.narrator, fingerprint: 'f' };
@@ -1045,6 +1048,17 @@ describe('Reader when a background job\'s files are deleted', () => {
 		reader.handleFileRenamed('Archive/A.md', 'A.md');
 
 		expect(reader.getState().backgroundJobs).toHaveLength(1);
+	});
+
+	it('keeps the finished card, and says so, when clearing the note\'s files fails', async () => {
+		const reader = makeReader({ saveAudioFile: true });
+		await finishedJobWithSavedAudio(reader, 'A');
+		fakes.clearFails = true;
+
+		await reader.clearReaderFiles(makeFile('A'));
+
+		expect(reader.getState().backgroundJobs.map((job) => job.status)).toEqual(['done']);
+		expect(Notice.messages).toContain('Failed to clear Note Narrator files: cannot trash');
 	});
 
 	it('keeps a job that is still generating when the note\'s Note Narrator files are cleared', async () => {
