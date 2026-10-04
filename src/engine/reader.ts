@@ -393,9 +393,10 @@ export class Reader extends Events {
 
 	resume(): void {
 		if (this.pauseWhenChunkArrives) {
-			// Resumed before the chunk arrived: just let it play when it does.
+			// Resumed before the chunk arrived (a pending pause only exists while no chunk is loaded): just let
+			// it play when it does.
 			this.pauseWhenChunkArrives = false;
-			if (!this.audio) this.setState({ status: 'generating' });
+			this.setState({ status: 'generating' });
 			return;
 		}
 		if (this.audio && this.audio.paused && this.state.status === 'paused') {

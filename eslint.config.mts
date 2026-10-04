@@ -32,6 +32,11 @@ export default defineConfig(
 	},
 	...obsidianmd.configs.recommended,
 	{
+		// Test tooling runs under Node and is never bundled into the plugin, so Node built-ins are fine here.
+		files: ['vitest.config.ts', 'tests/**/*.ts'],
+		rules: { 'obsidianmd/no-nodejs-modules': 'off' },
+	},
+	{
 		rules: {
 			// obsidianmd/ui/sentence-case's brand list doesn't include ElevenLabs, so without this
 			// override the rule would suggest lowercasing it to "elevenlabs", misspelling the brand.

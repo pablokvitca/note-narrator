@@ -8,15 +8,16 @@ import { getProviderApiKey, resolveVoiceLabel } from '../tts/registry';
 import { extractFrontmatterYaml, hashText, stripFrontmatter } from '../text/text-utils';
 
 /**
- * A note's saved audio: writing the `.mp3` next to it, linking it in the note's frontmatter, deciding whether
- * it is up to date or outdated (by hashing the note), and clearing it. Everything here goes through the vault
- * and the note's frontmatter; playback and generation live in {@link Reader}.
- */
-/**
  * Marks staleness hashes computed by {@link SavedAudio.stalenessHash} (1.1+). Hashes stored by 1.0.0 have no
  * prefix and are checked with the 1.0.0 algorithm instead, so existing saved audio stays up to date.
  */
 const HASH_VERSION_PREFIX = 'v2:';
+
+/**
+ * A note's saved audio: writing the `.mp3` next to it, linking it in the note's frontmatter, deciding whether
+ * it is up to date or outdated (by hashing the note), and clearing it. Everything here goes through the vault
+ * and the note's frontmatter; playback and generation live in {@link Reader}.
+ */
 
 export class SavedAudio {
 	constructor(
