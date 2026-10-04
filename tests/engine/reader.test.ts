@@ -1147,6 +1147,21 @@ describe('Reader pausing while the chunk to play is still generating', () => {
 		expect(FakeAudio.instances[0]?.paused).toBe(false);
 	});
 
+	it('forgets a pending pause when the read fails, so Resume can\'t revive it', async () => {
+		const reader = makeReader();
+		void reader.readNote(makeView(makeFile('A'), ['A1', 'A2']));
+		await settle();
+		reader.pause();
+
+		callsFor('A')[0]?.reject(new Error('boom'));
+		await settle();
+		expect(reader.getState().status).toBe('idle');
+
+		reader.resume();
+
+		expect(reader.getState().status).toBe('idle');
+	});
+
 	it('forgets a pending pause once the read stops', async () => {
 		const reader = makeReader();
 		const view = makeView(makeFile('A'), ['A1']);
