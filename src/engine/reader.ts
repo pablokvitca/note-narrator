@@ -954,14 +954,15 @@ export class Reader extends Events {
 			new Notice(`Failed to clear Note Narrator files: ${error instanceof Error ? error.message : String(error)}`);
 			return;
 		}
-		// Only once the files are actually cleared: a finished job's card stands for the note's audio, which
-		// is now gone (its file may not even be the one deleted, e.g. with saving off or "Keep old versions").
-		// A queued or generating job is left alone: clearing old audio shouldn't throw away a (paid)
-		// generation in progress, whose new audio is saved and linked when it finishes.
+		// Once the files are cleared, a finished job's card stands for audio that's gone (its file may not even
+		// be the one deleted, e.g. with saving off or "Keep old versions"), so it goes too. If its own saved file
+		// was the one trashed, the vault's delete event has already dropped it (handleFileDeleted()), even if
+		// clearing then failed on the properties: that audio really is gone. A queued or generating job is
+		// left alone: clearing old audio shouldn't throw away a (paid) generation in progress, whose new audio
+		// is saved and linked when it finishes.
 		const job = this.findBackgroundJob(sourceFile);
 		if (job?.backgroundStatus === 'done') this.discardBackgroundJob(job.id);
 	}
-
 
 	/** Plays a previously saved audio file directly, without generating anything. */
 	async playSavedFile(audioFile: TFile, sourceFile: TFile | null = null): Promise<void> {
@@ -1007,6 +1008,8 @@ export class Reader extends Events {
 			this.savedPlaybackTimeline = null;
 			this.resetToIdle();
 		} catch (error) {
+			// Another read (or Play saved) has started since: this failure is about one that's already gone.
+			if (session !== this.sessionId) return;
 			console.error('Note Narrator: failed to play saved audio', error);
 			new Notice(`Failed to play saved audio: ${error instanceof Error ? error.message : String(error)}`);
 			this.savedPlaybackTimeline = null;
@@ -1027,7 +1030,6 @@ export class Reader extends Events {
 	}
 
 	/** `job` is null only for direct saved-file playback, which has no generation job and thus nothing to patch chunkDurations onto. */
-	/** `savedTimeline`, when given, is a saved-playback timeline for the whole (single, concatenated) `audioData` -- used to keep `state.chunkIndex` in sync with elapsed time on every tick, since there's no per-chunk audio element to drive it here the way a live read's chunk-by-chunk loop does. */
 	private playChunk(job: GenerationJob | null, audioData: ArrayBuffer, index: number, count: number): Promise<ChunkOutcome> {
 		return new Promise((resolve) => {
 			const blob = new Blob([audioData], { type: 'audio/mpeg' });
