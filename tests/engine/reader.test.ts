@@ -21,6 +21,8 @@ interface SynthCall {
 
 const fakes = vi.hoisted(() => ({
 	synthCalls: [] as SynthCall[],
+	/** Fails the pending vault.readBinary() call (Play saved reading its audio file). */
+	failReadBinary: null as ((error: Error) => void) | null,
 	/** When true, SavedAudio.clearReaderFiles() fails. */
 	clearFails: false,
 	/** The rate-limit callback Reader handed the most recently created provider (as the real one calls on a 429). */
@@ -166,7 +168,10 @@ function makeReader(settings: Partial<NoteNarratorSettings> = {}): Reader {
 	const app = fake<App>({
 		workspace: { getActiveViewOfType: () => null },
 		metadataCache: { getFileCache: () => ({}) },
-		vault: { cachedRead: () => Promise.resolve(fakes.diskContent) },
+		vault: {
+			cachedRead: () => Promise.resolve(fakes.diskContent),
+			readBinary: () => new Promise<ArrayBuffer>((_resolve, reject) => (fakes.failReadBinary = reject)),
+		},
 	});
 	return new Reader(app, {
 		playbackRate: 1,
@@ -1203,5 +1208,28 @@ describe('Reader deciding without the note\'s current text (no live editor)', ()
 
 		fakes.narrator = { ...fakes.narrator, fingerprint: 'another narrator' };
 		expect(reader.getGenerateInBackgroundAction(a)).toBe('generate');
+	});
+});
+
+describe('Reader when Play saved fails after another read has started', () => {
+	it('leaves the newer read alone', async () => {
+		const reader = makeReader();
+		void reader.playSavedFile(makeFile('A audio'), makeFile('A'));
+		await settle();
+
+		void reader.readNote(makeView(makeFile('B'), ['B1', 'B2']));
+		await settle();
+		reader.pause();
+		expect(reader.getState()).toMatchObject({ status: 'paused', activeFile: { basename: 'B' } });
+
+		// The saved file can't be read (e.g. deleted meanwhile), long after B started.
+		fakes.failReadBinary?.(new Error('missing'));
+		await settle();
+
+		expect(reader.getState()).toMatchObject({ status: 'paused', activeFile: { basename: 'B' } });
+		callsFor('B')[0]?.resolve();
+		await settle();
+		// B's pending pause survived, so its first chunk arrives paused.
+		expect(reader.getState().status).toBe('paused');
 	});
 });
