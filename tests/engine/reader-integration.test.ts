@@ -4,7 +4,7 @@ import { Notice, TFile as StubTFile, parseYaml, stringifyYaml } from '../stubs/o
 import { Reader } from '../../src/engine/reader';
 import { DEFAULT_SETTINGS, NoteNarratorSettings } from '../../src/settings/settings';
 import { migrateProfileSettings } from '../../src/settings/profiles';
-import { extractFrontmatterYaml } from '../../src/text/text-utils';
+import { extractFrontmatterYaml, stripFrontmatter } from '../../src/text/text-utils';
 
 /**
  * Reader with its real collaborators (NoteText, SavedAudio, profiles, text chunking) against an in-memory
@@ -148,7 +148,7 @@ class FakeVault {
 				processFrontMatter: (f: TFile, update: (frontmatter: Record<string, unknown>) => void) => {
 					const data = this.frontmatter(f.path) ?? {};
 					update(data);
-					const body = (this.text.get(f.path) ?? '').replace(/^---\n[\s\S]*?\n---(\n|$)/, '');
+					const body = stripFrontmatter(this.text.get(f.path) ?? '');
 					this.text.set(f.path, `---\n${stringifyYaml(data)}---\n${body}`);
 					queueMicrotask(() => this.refreshCache(f.path));
 					return Promise.resolve();

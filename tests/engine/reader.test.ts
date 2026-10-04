@@ -1161,3 +1161,47 @@ describe('Reader with a pending pause when the read ends another way', () => {
 		expect(reader.getState().status).toBe('playing');
 	});
 });
+
+describe('Reader replacing a stale job while another note is being read', () => {
+	it('keeps queue order: the next queued job starts, then the read moved aside', async () => {
+		const reader = makeReader({ autoBackgroundOnSwitch: true });
+		const linesA = ['A1', 'A2'];
+		const viewA = fake<MarkdownView>({ file: makeFile('A'), editor: { getValue: () => linesA.join('\n'), getSelection: () => '' } });
+		reader.generateNoteInBackground(viewA);
+		reader.generateNoteInBackground(makeView(makeFile('K'), ['K1', 'K2']));
+		void reader.readNote(makeView(makeFile('B'), ['B1', 'B2', 'B3']));
+		await settle();
+		const staleCall = callsFor('A')[0];
+
+		// A's background job (generating) goes stale, then Read on A replaces it while B is being read.
+		linesA.push('A3');
+		void reader.readNote(viewA);
+		await settle();
+
+		expect(staleCall?.isCancelled()).toBe(true);
+		expect(reader.getState().activeFile?.basename).toBe('A');
+		expect(reader.getState().chunkCount).toBe(3);
+		expect(reader.getState().backgroundJobs.map((job) => [job.file?.basename, job.status])).toEqual([
+			['K', 'generating'],
+			['B', 'queued'],
+		]);
+	});
+});
+
+describe('Reader deciding without the note\'s current text (no live editor)', () => {
+	it('can only tell a job is stale from a narrator change, not from edits', async () => {
+		const reader = makeReader();
+		const a = makeFile('A');
+		const lines = ['A1', 'A2'];
+		reader.generateNoteInBackground(fake<MarkdownView>({ file: a, editor: { getValue: () => lines.join('\n'), getSelection: () => '' } }));
+		await settle();
+		await finishGenerating('A');
+
+		lines.push('A3');
+		expect(reader.getGenerateInBackgroundAction(a)).toBe('ready-in-background');
+		expect(reader.getGenerateInBackgroundAction(a, lines.join('\n'))).toBe('generate');
+
+		fakes.narrator = { ...fakes.narrator, fingerprint: 'another narrator' };
+		expect(reader.getGenerateInBackgroundAction(a)).toBe('generate');
+	});
+});

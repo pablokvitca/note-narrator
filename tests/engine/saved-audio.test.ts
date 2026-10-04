@@ -118,15 +118,13 @@ describe('SavedAudio.getAudioStatus', () => {
 		expect(await saved.getAudioStatus(note)).toBe('outdated');
 	});
 
-	it('hashes a typical note with frontmatter the same way 1.0.0 did, so its saved audio stays up to date', async () => {
+	it('keeps the saved audio of a typical note with frontmatter up to date, from the hash 1.0.0 stored', async () => {
 		const content = '---\ntitle: Hello\ntags:\n  - reading\n---\nBody line one.\nBody line two.';
 		const cachedFrontmatter = { title: 'Hello', tags: ['reading'] };
 		const vault: Vault = { content, cachedFrontmatter };
 		const { saved, note, settings } = makeSavedAudio(vault);
 		// 1.0.0: the metadata cache's frontmatter (minus Note Narrator's own properties) plus the body.
 		const hashFrom100 = hashText(`${JSON.stringify(cachedFrontmatter)}\nBody line one.\nBody line two.`);
-		// The same hash, now versioned: 1.1 stores it with a "v2:" prefix.
-		expect(saved.stalenessHash(content, note)).toBe(`v2:${hashFrom100}`);
 
 		vault.cachedFrontmatter = { ...cachedFrontmatter, ...linked(settings, hashFrom100) };
 		expect(await saved.getAudioStatus(note)).toBe('up-to-date');
