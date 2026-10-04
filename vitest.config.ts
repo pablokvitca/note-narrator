@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
@@ -10,6 +11,6 @@ export default defineConfig({
 	resolve: {
 		// The real `obsidian` package is types only (the app provides it at runtime), so tests that
 		// load modules importing it at runtime get a minimal stub instead.
-		alias: { obsidian: '/tests/stubs/obsidian.ts' },
+		alias: { obsidian: fileURLToPath(new URL('./tests/stubs/obsidian.ts', import.meta.url)) },
 	},
 });

@@ -1077,8 +1077,14 @@ describe('Reader pausing while the chunk to play is still generating', () => {
 		expect(reader.getState().status).toBe('idle');
 
 		reader.resume();
-
 		expect(reader.getState().status).toBe('idle');
+
+		// Nor does it carry into the next read.
+		void reader.readNote(makeView(makeFile('B'), ['B1']));
+		await settle();
+		callsFor('B')[0]?.resolve();
+		await settle();
+		expect(reader.getState().status).toBe('playing');
 	});
 
 	it('forgets a pending pause once the read stops', async () => {
@@ -1132,24 +1138,7 @@ describe('Reader with a rate-limited job changing hands', () => {
 	});
 });
 
-describe('Reader with a pending pause when the read ends another way', () => {
-	it('forgets the pending pause when generation fails', async () => {
-		const reader = makeReader();
-		void reader.readNote(makeView(makeFile('A'), ['A1', 'A2']));
-		await settle();
-		reader.pause();
-
-		callsFor('A')[0]?.reject(new Error('boom'));
-		await settle();
-		expect(reader.getState().status).toBe('idle');
-
-		void reader.readNote(makeView(makeFile('B'), ['B1']));
-		await settle();
-		callsFor('B')[0]?.resolve();
-		await settle();
-		expect(reader.getState().status).toBe('playing');
-	});
-
+describe('Reader with a pending pause when the read moves to the background', () => {
 	it('forgets the pending pause when the read moves to the background', async () => {
 		const reader = makeReader();
 		void reader.readNote(makeView(makeFile('A'), ['A1', 'A2']));
