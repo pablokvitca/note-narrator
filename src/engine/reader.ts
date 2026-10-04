@@ -82,6 +82,9 @@ export class Reader extends Events {
 
 	/** Resets playback to idle without disturbing the background jobs list (IDLE_STATE.backgroundJobs is always empty). */
 	private resetToIdle(): void {
+		// A pending pause belongs to the read that just ended (stopped, finished, failed or moved to the
+		// background); cleared here so no path to idle can leave it for Resume to revive.
+		this.pauseWhenChunkArrives = false;
 		this.setState({ ...IDLE_STATE, backgroundJobs: this.state.backgroundJobs });
 	}
 
@@ -147,7 +150,6 @@ export class Reader extends Events {
 	/** Fully stops playback and cancels the active job's generation. Use `continueGeneratingInBackground()` instead to keep generating without playing. */
 	stop(): void {
 		this.sessionId++;
-		this.pauseWhenChunkArrives = false;
 		this.savedPlaybackTimeline = null;
 		if (this.activeJob) {
 			this.activeJob.cancelled = true;
@@ -179,7 +181,6 @@ export class Reader extends Events {
 		if (!hasPendingGeneration(job.chunkReady)) return;
 
 		this.activeJob = null;
-		this.pauseWhenChunkArrives = false;
 		// Bumping the session stops the playback loop (playFromIndex) at its next check without touching
 		// `job` itself. Its generation is handed to the background queue below: enqueueBackgroundJob() retires
 		// the foreground worker pool (see GenerationJob.poolToken), and the queue starts a background one
