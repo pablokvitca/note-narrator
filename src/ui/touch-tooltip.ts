@@ -111,7 +111,6 @@ export function attachTooltip(el: HTMLElement, text: string): void {
 		const doc = el.ownerDocument;
 		bubble = doc.body.createDiv({ cls: 'tooltip note-narrator-touch-tooltip', text: el.getAttribute('aria-label') ?? text });
 		bubble.createDiv({ cls: 'tooltip-arrow' });
-		bubble.setCssStyles({ position: 'fixed' });
 
 		const anchorRect = el.getBoundingClientRect();
 		const bubbleRect = bubble.getBoundingClientRect();

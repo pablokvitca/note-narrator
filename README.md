@@ -64,7 +64,7 @@ Obsidian asks plugins to be clear about what they do with your data. For Note Na
 
 ## What to expect
 
-- It is an early version (0.x). Behaviour and settings can change between releases, and existing settings are migrated when they do.
+- Behaviour and settings can still change between releases, and existing settings are migrated when they do.
 - HTML comments (`<!-- like this -->`) are not skipped and are read as text. Obsidian comments (`%% like this %%`) can be skipped.
 - Editing a note marks its saved audio as outdated, even if the edit was outside the text that was read.
 - Highlighting needs the note open in Editing view and is approximate at chunk and section boundaries.
