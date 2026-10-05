@@ -780,6 +780,7 @@
  * -- too small/cramped to read comfortably while actually holding a finger on a touchscreen.
  */
 .note-narrator-touch-tooltip {
+	position: fixed;
 	font-size: var(--font-ui-medium);
 	padding: var(--size-4-2) var(--size-4-3);
 }
