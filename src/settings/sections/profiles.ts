@@ -248,7 +248,11 @@ export class ProfilesSection extends SettingsSection {
 		const effective = (): ReadingConfig => resolveReadingConfig(global(), overrides);
 
 		const onOff = (value: boolean) => (value ? 'on' : 'off');
-		const booleanRow = (key: 'readTitle' | 'readProperties' | 'stripMarkdownComments' | 'stripCommentDelimiters' | 'announceComments', name: string, disabled?: () => boolean) =>
+		const booleanRow = (
+			key: 'readTitle' | 'skipTitleWhenMatchingHeading' | 'readProperties' | 'stripMarkdownComments' | 'stripCommentDelimiters' | 'announceComments',
+			name: string,
+			disabled?: () => boolean,
+		) =>
 			this.dropdownRow(
 				name,
 				'',
@@ -264,6 +268,7 @@ export class ProfilesSection extends SettingsSection {
 
 		return [
 			booleanRow('readTitle', 'Read note title'),
+			booleanRow('skipTitleWhenMatchingHeading', 'Skip title when it repeats the first heading', () => !effective().readTitle),
 			booleanRow('readProperties', 'Read note properties'),
 			booleanRow('stripMarkdownComments', 'Skip Markdown comments'),
 			booleanRow("stripCommentDelimiters", "Don't read comment delimiter symbols", () => effective().stripMarkdownComments),

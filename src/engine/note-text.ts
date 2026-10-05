@@ -26,9 +26,13 @@ export class NoteText {
 		return resolveNarrator(this.settings);
 	}
 
-	buildPreamble(title: string | null, frontmatter: Parameters<typeof buildReadingPreamble>[1]): string {
+	buildPreamble(title: string | null, frontmatter: Parameters<typeof buildReadingPreamble>[1], body: string): string {
 		const reading = this.getReadingConfig();
-		return buildReadingPreamble(title, frontmatter, { readTitle: reading.readTitle, readProperties: reading.readProperties });
+		return buildReadingPreamble(title, frontmatter, body, {
+			readTitle: reading.readTitle,
+			readProperties: reading.readProperties,
+			skipTitleWhenMatchingHeading: reading.skipTitleWhenMatchingHeading,
+		});
 	}
 
 	getStripMarkdownOptions(): StripMarkdownOptions {
@@ -109,7 +113,7 @@ export class NoteText {
 		const rawText = await this.app.vault.cachedRead(file);
 		const body = stripFrontmatter(rawText);
 		const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
-		const preamble = this.buildPreamble(file.basename, frontmatter);
+		const preamble = this.buildPreamble(file.basename, frontmatter, body);
 		const textToRead = preamble ? `${preamble}\n\n${body}` : body;
 		if (!textToRead.trim()) return null;
 

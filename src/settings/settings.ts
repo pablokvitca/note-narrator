@@ -121,6 +121,7 @@ export const DEFAULT_SETTINGS: NoteNarratorSettings = {
 	chunkerStyle: 'markdown-aware',
 	maxHeadingDepth: 2,
 	readTitle: true,
+	skipTitleWhenMatchingHeading: true,
 	readProperties: false,
 	stripMarkdownComments: true,
 	stripCommentDelimiters: true,
@@ -148,6 +149,7 @@ export const DEFAULT_SETTINGS: NoteNarratorSettings = {
 export function getGlobalReadingConfig(settings: NoteNarratorSettings): ReadingConfig {
 	return {
 		readTitle: settings.readTitle,
+		skipTitleWhenMatchingHeading: settings.skipTitleWhenMatchingHeading,
 		readProperties: settings.readProperties,
 		stripMarkdownComments: settings.stripMarkdownComments,
 		stripCommentDelimiters: settings.stripCommentDelimiters,

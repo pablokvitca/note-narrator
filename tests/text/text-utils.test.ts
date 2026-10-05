@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { chunkNote, extractFrontmatterYaml, findHeadingPatternIssues, isHeadingSkipped, parseHeadingSkipPatterns, sectionHeadingText } from '../../src/text/text-utils';
+import {
+	buildReadingPreamble,
+	chunkNote,
+	extractFrontmatterYaml,
+	findHeadingPatternIssues,
+	firstHeadingText,
+	isHeadingSkipped,
+	parseHeadingSkipPatterns,
+	sectionHeadingText,
+} from '../../src/text/text-utils';
 
 describe('parseHeadingSkipPatterns', () => {
 	it('parses one case-insensitive regex per line, skipping blanks', () => {
@@ -95,5 +104,60 @@ describe('extractFrontmatterYaml', () => {
 
 	it('handles a note that is only frontmatter', () => {
 		expect(extractFrontmatterYaml('---\ntitle: Hi\n---')).toBe('title: Hi');
+	});
+});
+
+describe('firstHeadingText', () => {
+	it('returns the first heading anywhere in the body, any level', () => {
+		expect(firstHeadingText('Some text.\n\n## A Heading\n\nMore text.')).toBe('A Heading');
+		expect(firstHeadingText('# Top Level')).toBe('Top Level');
+		expect(firstHeadingText('###### Deep')).toBe('Deep');
+	});
+
+	it('strips inline Markdown from the heading text, same as the reader strips regular text', () => {
+		expect(firstHeadingText('# **My Note**')).toBe('My Note');
+		expect(firstHeadingText('# A [linked](https://example.com) heading')).toBe('A linked heading');
+	});
+
+	it('returns null when there is no heading', () => {
+		expect(firstHeadingText('Just a paragraph, no heading at all.')).toBeNull();
+		expect(firstHeadingText('')).toBeNull();
+	});
+
+	it('does not match a line with a # that is not a heading (no space, or mid-line)', () => {
+		expect(firstHeadingText('#not-a-heading\n\nSee #tag for more.')).toBeNull();
+	});
+});
+
+describe('buildReadingPreamble', () => {
+	const on = { readTitle: true, readProperties: false, skipTitleWhenMatchingHeading: true };
+
+	it('reads the title when there is no matching heading', () => {
+		expect(buildReadingPreamble('My Note', undefined, '# Something Else', on)).toBe('My Note');
+	});
+
+	it('skips the title when skipTitleWhenMatchingHeading is on and it matches the first heading exactly', () => {
+		expect(buildReadingPreamble('My Note', undefined, '# My Note\n\nBody.', on)).toBe('');
+	});
+
+	it('still reads the title when skipTitleWhenMatchingHeading is off, even with a matching heading', () => {
+		expect(buildReadingPreamble('My Note', undefined, '# My Note', { ...on, skipTitleWhenMatchingHeading: false })).toBe('My Note');
+	});
+
+	it('reads the title when the heading only partially matches (case, punctuation, extra words)', () => {
+		expect(buildReadingPreamble('My Note', undefined, '# my note', on)).toBe('My Note');
+		expect(buildReadingPreamble('My Note', undefined, '# My Note!', on)).toBe('My Note');
+		expect(buildReadingPreamble('My Note', undefined, '# My Note, Continued', on)).toBe('My Note');
+	});
+
+	it('matches after stripping inline Markdown from the heading', () => {
+		expect(buildReadingPreamble('My Note', undefined, '# **My Note**', on)).toBe('');
+	});
+
+	it('does not affect readProperties when the title is skipped', () => {
+		const result = buildReadingPreamble('My Note', { tag: 'x' }, '# My Note', { ...on, readProperties: true });
+		expect(result).toContain('Properties.');
+		expect(result).not.toContain('My Note ');
+		expect(result.startsWith('My Note')).toBe(false);
 	});
 });
