@@ -28,6 +28,7 @@ jobs:
                   cache: 'npm'
             - run: npm ci
             - run: npm run build
+            - run: npm test
 
             # Signs main.js and styles.css with GitHub's build-provenance attestation, same as the
             # stable release workflow -- see the comment there. The later manifest.json version

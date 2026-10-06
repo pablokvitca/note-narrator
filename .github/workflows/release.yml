@@ -21,6 +21,7 @@ jobs:
                   cache: 'npm'
             - run: npm ci
             - run: npm run build
+            - run: npm test
 
             # Signs main.js and styles.css with GitHub's build-provenance attestation, so anyone
             # (including Obsidian's own release checks) can verify they were built by this
