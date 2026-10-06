@@ -258,17 +258,42 @@ export class Reader extends Events {
 	 * Generates the whole note straight into the background queue without ever playing it, so a note can
 	 * be prepared ahead of time without clicking Read first. Never interrupts whatever's currently playing.
 	 * See {@link decideGenerateInBackground} for what happens when the note is already being read or
-	 * already has a background job. Always the full note, never a selection.
+	 * already has a background job. Always the full note, never a selection. Given a file instead of a
+	 * view (the panel's note, once its tab is closed), the note is read from the vault.
 	 */
-	generateNoteInBackground(view?: MarkdownView): void {
-		const target = view ?? this.app.workspace.getActiveViewOfType(MarkdownView);
-		const file = target?.file;
-		if (!target || !file) {
+	generateNoteInBackground(target?: MarkdownView | TFile): void {
+		if (target instanceof TFile) {
+			void this.generateFileInBackground(target);
+			return;
+		}
+		const view = target ?? this.app.workspace.getActiveViewOfType(MarkdownView);
+		const file = view?.file;
+		if (!view || !file) {
 			new Notice('Open a note to generate its audio.');
 			return;
 		}
+		this.enqueueNoteGeneration(file, view.editor.getValue());
+	}
 
-		const { fullValue, rawText, positionBase } = this.buildNoteInput(target);
+	private async generateFileInBackground(file: TFile): Promise<void> {
+		const fullValue = await this.readNoteFromVault(file);
+		if (fullValue !== null) this.enqueueNoteGeneration(file, fullValue);
+	}
+
+	/** A note's text as saved in the vault, for reading a note with no open editor. Null (after a notice) if it can't be read. */
+	private async readNoteFromVault(file: TFile): Promise<string | null> {
+		try {
+			return await this.app.vault.cachedRead(file);
+		} catch (error) {
+			console.error('Note Narrator: failed to read note', error);
+			new Notice(`Failed to read "${file.basename}".`);
+			return null;
+		}
+	}
+
+	/** The shared rest of {@link generateNoteInBackground}, given the note's full text. */
+	private enqueueNoteGeneration(file: TFile, fullValue: string): void {
+		const { rawText, positionBase } = this.buildNoteInput(file, fullValue);
 		// Up-to-date saved audio doesn't stop it: like Read, it regenerates (the panel labels the button
 		// "Regenerate in background" then), so the decision doesn't need the saved-audio status here.
 		const action = this.getGenerateInBackgroundAction(file, fullValue);
@@ -525,34 +550,45 @@ export class Reader extends Events {
 		}
 	}
 
-	async readNote(view?: MarkdownView): Promise<void> {
-		const target = view ?? this.app.workspace.getActiveViewOfType(MarkdownView);
-		if (!target) {
+	/**
+	 * Reads the note in `target` (or the active Markdown view), or just its selection. Given a file instead
+	 * of a view (the panel's note, once its tab is closed), reads the whole note as saved in the vault.
+	 */
+	async readNote(target?: MarkdownView | TFile): Promise<void> {
+		if (target instanceof TFile) {
+			const fullValue = await this.readNoteFromVault(target);
+			if (fullValue === null) return;
+			const { rawText, positionBase } = this.buildNoteInput(target, fullValue);
+			await this.readText(rawText, target, { kind: 'full', positionBase, sourceContent: fullValue });
+			return;
+		}
+
+		const view = target ?? this.app.workspace.getActiveViewOfType(MarkdownView);
+		if (!view) {
 			new Notice('Open a note to read it aloud.');
 			return;
 		}
 
-		const selection = target.editor.getSelection();
+		const selection = view.editor.getSelection();
 		if (this.settings.readSelectionIfPresent && selection.length > 0) {
 			// No reliable offset to rebase estimated spans onto (the selection could start anywhere in the
 			// document) -- selections just don't get highlighting/scroll-to-current.
-			await this.readText(selection, target.file, { kind: 'selection' });
+			await this.readText(selection, view.file, { kind: 'selection' });
 			return;
 		}
 
-		const { fullValue, rawText, positionBase } = this.buildNoteInput(target);
-		await this.readText(rawText, target.file, { kind: 'full', positionBase, sourceContent: fullValue });
+		const fullValue = view.editor.getValue();
+		const { rawText, positionBase } = this.buildNoteInput(view.file, fullValue);
+		await this.readText(rawText, view.file, { kind: 'full', positionBase, sourceContent: fullValue });
 	}
 
 	/** The full text a note is read from (spoken preamble plus body, frontmatter stripped), and where that body sits in the file for highlighting. */
-	private buildNoteInput(target: MarkdownView): { fullValue: string; rawText: string; positionBase: PositionBase } {
-		const fullValue = target.editor.getValue();
+	private buildNoteInput(file: TFile | null, fullValue: string): { rawText: string; positionBase: PositionBase } {
 		const body = stripFrontmatter(fullValue);
 		const fileOffset = fullValue.length - body.length;
-		const frontmatter = target.file ? this.app.metadataCache.getFileCache(target.file)?.frontmatter : undefined;
-		const preamble = this.noteText.buildPreamble(target.file?.basename ?? null, frontmatter, body);
+		const frontmatter = file ? this.app.metadataCache.getFileCache(file)?.frontmatter : undefined;
+		const preamble = this.noteText.buildPreamble(file?.basename ?? null, frontmatter, body);
 		return {
-			fullValue,
 			rawText: preamble ? `${preamble}\n\n${body}` : body,
 			positionBase: { rawTextOffset: preamble ? preamble.length + 2 : 0, fileOffset, length: body.length },
 		};

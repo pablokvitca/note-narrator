@@ -747,7 +747,7 @@ export class PlayerView extends ItemView {
 			active ? 'Reading' : 'Read',
 		);
 		readButton.disabled = active;
-		readButton.onclick = () => void this.plugin.reader.readNote(this.getActiveMarkdownView() ?? undefined);
+		readButton.onclick = () => void this.plugin.reader.readNote(this.getActiveMarkdownView() ?? this.getActiveFile() ?? undefined);
 
 		const { button: cancelButton } = this.createLabeledButton(actionsRow, 'note-narrator-cancel-button', 'octagon-x', 'Cancel');
 		cancelButton.disabled = !pendingGeneration;
@@ -781,7 +781,7 @@ export class PlayerView extends ItemView {
 				shown.onClick === 'move'
 					? () => this.plugin.reader.continueGeneratingInBackground()
 					: shown.onClick === 'generate'
-						? () => this.plugin.reader.generateNoteInBackground(this.getActiveMarkdownView() ?? undefined)
+						? () => this.plugin.reader.generateNoteInBackground(this.getActiveMarkdownView() ?? this.getActiveFile() ?? undefined)
 						: null;
 		};
 		showBackgroundButton(spec);

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { App, MarkdownView, TFile } from 'obsidian';
-import { Notice } from '../stubs/obsidian';
+import { Notice, TFile as StubTFile } from '../stubs/obsidian';
 import { Reader } from '../../src/engine/reader';
 import { NoteNarratorSettings } from '../../src/settings/settings';
 
@@ -307,6 +307,35 @@ describe('Reader.generateNoteInBackground', () => {
 		expect(state.status).toBe('generating');
 		expect(state.activeFile).toBe(a);
 		expect(state.backgroundJobs.map((job) => job.file?.basename)).toEqual(['B']);
+	});
+});
+
+describe('Reader given a note with no open editor', () => {
+	/** A real (stub) TFile, which is how Reader tells a closed note apart from a Markdown view. */
+	function closedNote(name: string): TFile {
+		return fake<TFile>(Object.assign(new StubTFile(), { path: `${name}.md`, basename: name }));
+	}
+
+	it('reads the note from the vault', async () => {
+		const reader = makeReader();
+		fakes.diskContent = 'A1\nA2';
+		void reader.readNote(closedNote('A'));
+		await settle();
+
+		expect(reader.getState().activeFile?.path).toBe('A.md');
+		expect(reader.getState().chunkCount).toBe(2);
+		expect(callsFor('A1')).toHaveLength(1);
+		expect(Notice.messages).not.toContain('Open a note to read it aloud.');
+	});
+
+	it('generates the note in the background from the vault', async () => {
+		const reader = makeReader();
+		fakes.diskContent = 'A1\nA2';
+		reader.generateNoteInBackground(closedNote('A'));
+		await settle();
+
+		expect(reader.getState().backgroundJobs.map((job) => [job.file?.path, job.status])).toEqual([['A.md', 'generating']]);
+		expect(Notice.messages).not.toContain('Open a note to generate its audio.');
 	});
 });
 
