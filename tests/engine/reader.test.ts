@@ -631,6 +631,30 @@ describe('Reader saving generated audio', () => {
 		expect(fakes.saveAudioFile[0]?.[4]).toBe('hash of A1\nA2');
 	});
 
+	it('does not save a read cancelled while its last chunk was still generating', async () => {
+		const reader = makeReader({ saveAudioFile: true });
+		void reader.readNote(makeView(makeFile('A'), ['A1', 'A2']));
+		await settle();
+		callsFor('A1')[0]?.resolve();
+		await settle();
+
+		reader.stop();
+		await finishGenerating('A');
+
+		expect(fakes.saveAudioFile).toHaveLength(0);
+	});
+
+	it('does not save a background job whose last chunk finishes after the plugin unloads', async () => {
+		const reader = makeReader({ saveAudioFile: true });
+		reader.generateNoteInBackground(makeView(makeFile('A'), ['A1']));
+		await settle();
+
+		reader.dispose();
+		await finishGenerating('A');
+
+		expect(fakes.saveAudioFile).toHaveLength(0);
+	});
+
 	it('never saves a selection read', async () => {
 		const reader = makeReader({ saveAudioFile: true });
 		void reader.readNote(makeView(makeFile('A'), ['A1'], 'selected'));

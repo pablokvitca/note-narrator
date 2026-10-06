@@ -833,9 +833,13 @@ export class Reader extends Events {
 		}
 	}
 
-	/** Saves (once) as soon as every chunk in a job has finished generating, regardless of playback progress. */
+	/**
+	 * Saves (once) as soon as every chunk in a job has finished generating, regardless of playback progress.
+	 * Never for a cancelled job: a request still in flight when the read was cancelled (or the plugin
+	 * unloaded) can complete the last chunk afterwards, and that read's audio isn't wanted any more.
+	 */
 	private maybeSaveOnGenerationComplete(job: GenerationJob): void {
-		if (job.savedForSession) return;
+		if (job.savedForSession || job.cancelled) return;
 		if (job.chunkReady.length === 0 || !job.chunkReady.every(Boolean)) return;
 		// A job that may be saved always has a contentHash (both are set only for a full-note read); checked
 		// because saveAudioFile() requires it.
