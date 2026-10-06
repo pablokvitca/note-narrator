@@ -91,7 +91,6 @@ export class ProfilesSection extends SettingsSection {
 			items: [
 				{
 					type: 'group',
-					heading: 'Profile',
 					items: [
 						this.textRow('Name', 'How this profile is listed in the panel and here.', () => profile.name, (value) => {
 							profile.name = value.trim() || profile.name;
