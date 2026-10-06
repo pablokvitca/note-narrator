@@ -125,7 +125,7 @@ export class PlayerView extends ItemView {
 		if (this.timeEl) {
 			const mode = this.plugin.settings.timeDisplayMode;
 			const showTime = mode === 'current' ? state.duration > 0 : state.chunkCount > 0;
-			this.timeEl.style.display = showTime ? '' : 'none';
+			this.timeEl.toggle(showTime);
 			if (showTime) {
 				const rate = this.plugin.reader.getPlaybackRate();
 				const times = computeFullReadTimes({

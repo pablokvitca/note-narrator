@@ -1,5 +1,28 @@
 export type TimeDisplayMode = 'full' | 'current' | 'both';
 
+function pad(n: number, width = 2): string {
+	return n.toString().padStart(width, '0');
+}
+
+/** e.g. "2026-09-27 143005" -- for a fallback saved-audio filename when the note has no title. Local time. */
+export function formatTimestampForFilename(date: Date): string {
+	return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
+}
+
+/**
+ * ISO 8601 with the local UTC offset kept (e.g. "2026-09-27T14:30:05.123-04:00"), not the `Z`-suffixed UTC
+ * form `Date.prototype.toISOString()` gives. Written to frontmatter as the generation timestamp, where local
+ * time is more useful to a reader than UTC. A small hand-rolled replacement for `moment().toISOString(true)`,
+ * to avoid depending on the `moment` package (bundled only for its Obsidian-re-exported types) for two calls.
+ */
+export function toLocalISOString(date: Date): string {
+	const offsetMinutes = -date.getTimezoneOffset();
+	const sign = offsetMinutes >= 0 ? '+' : '-';
+	const abs = Math.abs(offsetMinutes);
+	const offset = `${sign}${pad(Math.floor(abs / 60))}:${pad(abs % 60)}`;
+	return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}.${pad(date.getMilliseconds(), 3)}${offset}`;
+}
+
 export function formatTime(totalSeconds: number): string {
 	if (!Number.isFinite(totalSeconds) || totalSeconds < 0) totalSeconds = 0;
 	const minutes = Math.floor(totalSeconds / 60);

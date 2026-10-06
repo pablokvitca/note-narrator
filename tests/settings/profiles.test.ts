@@ -99,6 +99,7 @@ describe('voiceFingerprint / savedVoiceMatches', () => {
 describe('resolveReadingConfig', () => {
 	const global = {
 		readTitle: true,
+		skipTitleWhenMatchingHeading: true,
 		readProperties: false,
 		stripMarkdownComments: true,
 		stripCommentDelimiters: true,
