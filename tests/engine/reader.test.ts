@@ -679,6 +679,61 @@ describe('Reader auto-generating on open', () => {
 		expect(fakes.saveAudioFile).toHaveLength(1);
 		expect(fakes.saveAudioFile[0]?.[4]).toBe('hash of A1\nA2');
 	});
+
+	const autoGenerateSettings = { saveAudioFile: true, linkAudioInNote: true, autoGenerateOnOpen: true };
+
+	it('skips a note that is being read', async () => {
+		const reader = makeReader(autoGenerateSettings);
+		fakes.diskContent = 'A1\nA2';
+		void reader.readNote(makeView(makeFile('A'), ['A1', 'A2']));
+		await settle();
+		const readCalls = fakes.synthCalls.length;
+
+		await reader.autoGenerateIfNeeded(makeFile('A'));
+
+		expect(fakes.synthCalls).toHaveLength(readCalls);
+	});
+
+	it('still generates a note while only a selection of it is being read', async () => {
+		const reader = makeReader(autoGenerateSettings);
+		fakes.diskContent = 'A1\nA2';
+		void reader.readNote(makeView(makeFile('A'), ['A1', 'A2'], 'selected'));
+		await settle();
+
+		void reader.autoGenerateIfNeeded(makeFile('A'));
+		await settle();
+
+		expect(callsFor('A1')).toHaveLength(1);
+	});
+
+	it('skips a note with a background job', async () => {
+		const reader = makeReader(autoGenerateSettings);
+		fakes.diskContent = 'A1';
+		reader.generateNoteInBackground(makeView(makeFile('A'), ['A1']));
+		await settle();
+		await finishGenerating('A');
+		expect(reader.getState().backgroundJobs.map((job) => job.status)).toEqual(['done']);
+		const saves = fakes.saveAudioFile.length;
+
+		await reader.autoGenerateIfNeeded(makeFile('A'));
+
+		expect(callsFor('A')).toHaveLength(1);
+		expect(fakes.saveAudioFile).toHaveLength(saves);
+	});
+
+	it('does not start again when the note is reopened while it is still generating', async () => {
+		const reader = makeReader(autoGenerateSettings);
+		fakes.diskContent = 'A1';
+		const first = reader.autoGenerateIfNeeded(makeFile('A'));
+		await settle();
+
+		await reader.autoGenerateIfNeeded(makeFile('A'));
+		expect(callsFor('A')).toHaveLength(1);
+
+		await finishGenerating('A');
+		await first;
+		expect(fakes.saveAudioFile).toHaveLength(1);
+	});
 });
 
 describe('Reader playing a background job while another note is being read', () => {

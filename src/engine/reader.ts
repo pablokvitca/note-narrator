@@ -62,6 +62,8 @@ export class Reader extends Events {
 
 	/** Set while a saved file plays directly (no generation job), so `getSpan()` can still map elapsed playback time back to a chunk/section. Null whenever there's no such timeline (e.g. the note's since changed, or no chunk-durations property was saved). */
 	private savedPlaybackTimeline: SavedPlaybackTimeline | null = null;
+	/** Paths of the notes "Auto-generate on open" is generating right now, so reopening one doesn't start it again. */
+	private readonly autoGenerating = new Set<string>();
 
 	private readonly savedAudio: SavedAudio;
 	private readonly noteText: NoteText;
@@ -902,6 +904,8 @@ export class Reader extends Events {
 			if (!apiKey) return;
 
 			const rawText = await this.app.vault.cachedRead(file);
+			// Checked after the last wait before generating starts, so nothing can begin generating the note in between.
+			if (this.isNoteBeingGenerated(file)) return;
 			// Taken now, from the text being generated, so edits made while it generates show as outdated.
 			const contentHash = this.savedAudio.stalenessHash(rawText, file);
 			const body = stripFrontmatter(rawText);
@@ -922,18 +926,34 @@ export class Reader extends Events {
 
 			const provider = createTTSProvider(narrator.provider, narrator.voice, apiKey);
 
-			const buffers: ArrayBuffer[] = [];
-			const chunkDurations: number[] = [];
-			for (const chunk of chunks) {
-				const buffer = await provider.synthesize(chunk);
-				buffers.push(buffer);
-				chunkDurations.push(await decodeAudioDuration(buffer));
-			}
+			this.autoGenerating.add(file.path);
+			try {
+				const buffers: ArrayBuffer[] = [];
+				const chunkDurations: number[] = [];
+				for (const chunk of chunks) {
+					const buffer = await provider.synthesize(chunk);
+					buffers.push(buffer);
+					chunkDurations.push(await decodeAudioDuration(buffer));
+				}
 
-			await this.savedAudio.saveAudioFile(buffers, file, chunkDurations, narrator, contentHash);
+				await this.savedAudio.saveAudioFile(buffers, file, chunkDurations, narrator, contentHash);
+			} finally {
+				this.autoGenerating.delete(file.path);
+			}
 		} catch (error) {
 			console.error('Note Narrator: auto-generate on open failed', error);
 		}
+	}
+
+	/**
+	 * Whether the note's full audio is already being generated, or has been generated and not yet saved:
+	 * by its active read, a background job (queued, generating or done), or "Auto-generate on open" itself.
+	 * Auto-generating it as well would pay for the same audio twice and race the two saves.
+	 */
+	private isNoteBeingGenerated(file: TFile): boolean {
+		const active = this.activeJob;
+		if (active && !active.isSelection && active.file?.path === file.path) return true;
+		return this.findBackgroundJob(file) !== undefined || this.autoGenerating.has(file.path);
 	}
 
 	/** The active narrator profile resolved with its provider, or null when none is usable. */
