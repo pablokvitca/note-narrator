@@ -966,6 +966,49 @@ describe('Reader when a background job\'s files are deleted', () => {
 		expect(reader.getState().backgroundJobs).toHaveLength(0);
 	});
 
+	it('never moves the read of a deleted note to the background or saves it', async () => {
+		const reader = makeReader({ saveAudioFile: true });
+		void reader.readNote(makeView(makeFile('A'), ['A1', 'A2']));
+		await settle();
+
+		reader.handleFileDeleted('A.md');
+		void reader.readNote(makeView(makeFile('B'), ['B1']));
+		await settle();
+		await finishGenerating('A');
+
+		expect(reader.getState().backgroundJobs).toHaveLength(0);
+		expect(reader.getState().activeFile?.path).toBe('B.md');
+		expect(callsFor('A')[0]?.isCancelled()).toBe(true);
+		expect(fakes.saveAudioFile).toHaveLength(0);
+	});
+
+	it('does not save the read of a deleted note once it finishes generating', async () => {
+		const reader = makeReader({ saveAudioFile: true });
+		void reader.readNote(makeView(makeFile('A'), ['A1', 'A2']));
+		await settle();
+
+		reader.handleFileDeleted('A.md');
+		await finishGenerating('A');
+
+		expect(callsFor('A')[0]?.isCancelled()).toBe(false);
+		expect(fakes.saveAudioFile).toHaveLength(0);
+	});
+
+	it('does not move an adopted job of a deleted note back to the background', async () => {
+		const reader = makeReader({ saveAudioFile: true });
+		reader.generateNoteInBackground(makeView(makeFile('A'), ['A1', 'A2']));
+		await settle();
+		const jobId = reader.getState().backgroundJobs[0]?.id ?? -1;
+		reader.playBackgroundJob(jobId);
+		await settle();
+
+		reader.handleFileDeleted('A.md');
+		reader.continueGeneratingInBackground();
+
+		expect(reader.getState().backgroundJobs).toHaveLength(0);
+		expect(reader.getState().activeFile?.path).toBe('A.md');
+	});
+
 	it('keeps jobs when an unrelated file is deleted', async () => {
 		const reader = makeReader({ saveAudioFile: true });
 		await finishedJobWithSavedAudio(reader, 'A');

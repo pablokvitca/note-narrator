@@ -186,7 +186,7 @@ export class Reader extends Events {
 	 */
 	continueGeneratingInBackground(): void {
 		const job = this.activeJob;
-		if (!job || job.isSelection) return;
+		if (!job || job.isSelection || job.noteDeleted) return;
 		if (!hasPendingGeneration(job.chunkReady)) return;
 
 		this.activeJob = null;
@@ -601,6 +601,7 @@ export class Reader extends Events {
 			sourceFileForSave: kind === 'full' ? sourceFile : null,
 			contentHash: kind === 'full' && sourceFile && sourceContent !== undefined ? this.savedAudio.stalenessHash(sourceContent, sourceFile) : null,
 			isSelection: kind === 'selection',
+			noteDeleted: false,
 			savedForSession: false,
 			savedAudioPath: null,
 			rateLimited: false,
@@ -839,7 +840,7 @@ export class Reader extends Events {
 	 * unloaded) can complete the last chunk afterwards, and that read's audio isn't wanted any more.
 	 */
 	private maybeSaveOnGenerationComplete(job: GenerationJob): void {
-		if (job.savedForSession || job.cancelled) return;
+		if (job.savedForSession || job.cancelled || job.noteDeleted) return;
 		if (job.chunkReady.length === 0 || !job.chunkReady.every(Boolean)) return;
 		// A job that may be saved always has a contentHash (both are set only for a full-note read); checked
 		// because saveAudioFile() requires it.
@@ -859,8 +860,13 @@ export class Reader extends Events {
 	 * Drops background jobs for a file that was just deleted: either the job's note, or the audio file it
 	 * saved. A finished job's card would otherwise keep showing "Ready in background" (blocking generating
 	 * the note again) for audio that's gone from the vault, or for a note that no longer exists.
+	 *
+	 * The active read of a deleted note keeps playing, but is marked so it's never saved (that would leave
+	 * an orphan audio file, then fail to link it from the missing note) or moved to the background (where it
+	 * would show as a card for a note that no longer exists).
 	 */
 	handleFileDeleted(path: string): void {
+		if (this.activeJob?.file?.path === path) this.activeJob.noteDeleted = true;
 		for (const job of this.backgroundJobs.filter((j) => j.file?.path === path || j.savedAudioPath === path)) {
 			this.discardBackgroundJob(job.id);
 		}

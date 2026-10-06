@@ -104,6 +104,8 @@ export interface GenerationJob {
 	contentHash: string | null;
 	/** A read of selected text rather than the whole note. Never moved to the background: its chunks wouldn't match the note's, so it could neither be saved nor stand in for the full note later. */
 	isSelection: boolean;
+	/** Set when the job's note is deleted while it's the active read: it may finish playing, but it's never saved or moved to the background (see `Reader.handleFileDeleted()`). */
+	noteDeleted: boolean;
 	/** Whether this job's audio has already been saved (triggered once every chunk finishes generating). */
 	savedForSession: boolean;
 	/** Where its audio was saved, once that finishes -- so deleting that file can drop the job too. */
