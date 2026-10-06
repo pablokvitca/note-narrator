@@ -1,4 +1,4 @@
-import { ChunkerStyle, StripMarkdownOptions, chunkBySentence, isHeadingSkipped, stripMarkdown } from './text-utils';
+import { ChunkerStyle, StripMarkdownOptions, chunkBySentence, isHeadingSkipped, isPreambleOnlySection, stripMarkdown } from './text-utils';
 
 /** A half-open character range `[start, end)` into some raw text. */
 export interface RawSpan {
@@ -10,6 +10,8 @@ interface TrackedSection {
 	text: string;
 	start: number;
 	end: number;
+	/** Set on a preamble merged into the section after it: that section's heading line, since the merged text starts with the preamble instead. */
+	headingSpan?: RawSpan | null;
 }
 
 /** Same partitioning `chunkNote`'s markdown-aware style uses, but keeping each section's raw character range in `rawText` instead of discarding it. */
@@ -99,6 +101,7 @@ function proportionalSplit(span: RawSpan, pieceLengths: number[]): RawSpan[] {
  * its section's raw span, by its share of the section's stripped-text length -- exact enough to scroll to
  * and highlight without a position-preserving rewrite of every `stripMarkdown()` rule. For the same reason
  * as `chunkMarkdownAware()`, a comment that spans a heading boundary can shift a section's raw span.
+ * `preambleLength` is as for `chunkNote()`.
  */
 export function computeChunkPositions(
 	rawText: string,
@@ -107,11 +110,28 @@ export function computeChunkPositions(
 	maxHeadingDepth: number,
 	stripOptions: StripMarkdownOptions,
 	skipHeadingPatterns: RegExp[],
+	preambleLength = 0,
 ): { chunks: string[]; positions: ChunkPosition[] } {
 	const sections: TrackedSection[] =
 		style === 'markdown-aware'
 			? splitIntoSectionsTracked(rawText, maxHeadingDepth)
 			: [{ text: rawText, start: 0, end: rawText.length }];
+
+	// Same merge as chunkNote()'s: a preamble-only first section is read with the section after it.
+	const [first, second] = sections;
+	if (
+		style === 'markdown-aware' &&
+		first !== undefined &&
+		second !== undefined &&
+		isPreambleOnlySection(first.text, second.text, preambleLength, maxHeadingDepth, skipHeadingPatterns)
+	) {
+		sections.splice(0, 2, {
+			text: rawText.slice(first.start, second.end),
+			start: first.start,
+			end: second.end,
+			headingSpan: headingSpan(second, maxHeadingDepth),
+		});
+	}
 
 	const chunks: string[] = [];
 	const positions: ChunkPosition[] = [];
@@ -124,7 +144,7 @@ export function computeChunkPositions(
 
 		const sectionChunks = chunkBySentence(stripped, maxLength);
 		const sectionSpan: RawSpan = { start: section.start, end: section.end };
-		const sectionHeadingSpan = headingSpan(section, maxHeadingDepth);
+		const sectionHeadingSpan = section.headingSpan !== undefined ? section.headingSpan : headingSpan(section, maxHeadingDepth);
 		const chunkSpans = proportionalSplit(sectionSpan, sectionChunks.map((chunk) => chunk.length));
 
 		for (let i = 0; i < sectionChunks.length; i++) {

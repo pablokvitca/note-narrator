@@ -76,6 +76,8 @@ export class NoteText {
 			this.getReadingConfig().maxHeadingDepth,
 			this.getStripMarkdownOptions(),
 			this.getSkipHeadingPatterns(),
+			// The preamble (with its separator) is exactly what comes before the note body.
+			positionBase?.rawTextOffset ?? 0,
 		);
 		let chunks = built.chunks;
 		let positions = positionBase
@@ -125,6 +127,7 @@ export class NoteText {
 			this.getReadingConfig().maxHeadingDepth,
 			this.getStripMarkdownOptions(),
 			this.getSkipHeadingPatterns(),
+			preamble ? preamble.length + 2 : 0,
 		);
 		if (chunks.length === 0) return null;
 

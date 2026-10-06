@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_STRIP_MARKDOWN_OPTIONS } from '../../src/text/text-utils';
+import { DEFAULT_STRIP_MARKDOWN_OPTIONS, chunkByWordCount, chunkNote } from '../../src/text/text-utils';
 import { computeChunkPositions, rebaseSpan, splitChunkPosition } from '../../src/text/text-position';
 
 const STRIP_OPTIONS = DEFAULT_STRIP_MARKDOWN_OPTIONS;
@@ -44,6 +44,54 @@ describe('computeChunkPositions', () => {
 		const { positions } = computeChunkPositions(note, 5000, 'sentence', 2, STRIP_OPTIONS, []);
 		expect(positions[0]?.sectionSpan).toEqual({ start: 0, end: note.length });
 		expect(positions[0]?.sectionHeadingSpan).toBeNull();
+	});
+});
+
+describe('computeChunkPositions with a spoken preamble', () => {
+	const preamble = 'My note';
+	const body = '## Overview\nThe first sentence of the note. The second sentence of the note.\n\n## Details\nMore text.';
+	const note = `${preamble}\n\n${body}`;
+	const preambleLength = preamble.length + 2;
+
+	it('reads the title as part of the first section when the note starts with a heading', () => {
+		const { chunks, positions } = computeChunkPositions(note, 5000, 'markdown-aware', 2, STRIP_OPTIONS, [], preambleLength);
+
+		expect(chunks).toHaveLength(2);
+		expect(chunks[0]).toMatch(/^My note\s+Overview\s+The first sentence/);
+		// The heading span is still the note's own heading, not the preamble's first line.
+		const heading = positions[0]?.sectionHeadingSpan;
+		expect(note.slice(heading!.start, heading!.end)).toBe('## Overview');
+	});
+
+	it('gives quick start a first piece with the title and the start of the note', () => {
+		const { chunks } = computeChunkPositions(note, 5000, 'markdown-aware', 2, STRIP_OPTIONS, [], preambleLength);
+		const [lead] = chunkByWordCount(chunks[0] ?? '', 6);
+
+		expect(lead).toMatch(/^My note\s+Overview\s+The first sentence/);
+		expect(lead!.split(/\s+/).length).toBeLessThanOrEqual(6 + 3);
+	});
+
+	it('counts the title toward the first chunk\'s length limit', () => {
+		const { chunks } = computeChunkPositions(note, 40, 'markdown-aware', 2, STRIP_OPTIONS, [], preambleLength);
+		expect(chunks[0]).toContain('My note');
+		for (const chunk of chunks) expect(chunk.length).toBeLessThanOrEqual(40);
+	});
+
+	it('keeps the title on its own when the first section is skipped by heading', () => {
+		const { chunks } = computeChunkPositions(note, 5000, 'markdown-aware', 2, STRIP_OPTIONS, [/overview/i], preambleLength);
+		expect(chunks[0]).toBe('My note');
+		expect(chunks.join(' ')).not.toContain('first sentence');
+	});
+
+	it('leaves a note that starts with text alone', () => {
+		const withIntro = `${preamble}\n\nAn intro line.\n\n${body}`;
+		const { chunks } = computeChunkPositions(withIntro, 5000, 'markdown-aware', 2, STRIP_OPTIONS, [], preambleLength);
+		expect(chunks[0]).toMatch(/^My note\s+An intro line\.$/);
+	});
+
+	it('chunks the same way as chunkNote()', () => {
+		const { chunks } = computeChunkPositions(note, 40, 'markdown-aware', 2, STRIP_OPTIONS, [], preambleLength);
+		expect(chunks).toEqual(chunkNote(note, 40, 'markdown-aware', 2, STRIP_OPTIONS, [], preambleLength));
 	});
 });
 

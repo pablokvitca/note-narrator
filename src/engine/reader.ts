@@ -957,6 +957,7 @@ export class Reader extends Events {
 				this.noteText.getReadingConfig().maxHeadingDepth,
 				this.noteText.getStripMarkdownOptions(),
 				this.noteText.getSkipHeadingPatterns(),
+				preamble ? preamble.length + 2 : 0,
 			);
 			if (chunks.length === 0) return;
 

@@ -262,6 +262,19 @@ export function isHeadingSkipped(sectionText: string, maxHeadingDepth: number, p
 	return heading !== null && patterns.some((pattern) => pattern.test(heading));
 }
 
+/**
+ * Whether a note's first two sections should be read as one: the first holds nothing but the spoken
+ * preamble (title and properties, `preambleLength` characters at the very start of the text, including the
+ * blank line after it), because the note itself starts with a heading. Read on its own, the preamble would
+ * be a tiny first chunk followed by a long silent gap while the full-size second chunk generates. Not when
+ * the second section is skipped by heading, which would otherwise be read after all.
+ */
+export function isPreambleOnlySection(first: string, second: string, preambleLength: number, maxHeadingDepth: number, skipHeadingPatterns: RegExp[]): boolean {
+	if (preambleLength <= 0 || first.trim().length > preambleLength) return false;
+	if (sectionHeadingText(first, maxHeadingDepth) !== null) return false;
+	return !isHeadingSkipped(second, maxHeadingDepth, skipHeadingPatterns);
+}
+
 /** Splits raw markdown by section (heading-delimited, up to maxHeadingDepth), then by sentence within each section. */
 function chunkMarkdownAware(
 	markdown: string,
@@ -269,8 +282,13 @@ function chunkMarkdownAware(
 	maxHeadingDepth: number,
 	stripOptions: StripMarkdownOptions,
 	skipHeadingPatterns: RegExp[],
+	preambleLength: number,
 ): string[] {
 	const sections = splitIntoSections(stripComments(stripFrontmatter(markdown), stripOptions), maxHeadingDepth);
+	const [first, second] = sections;
+	if (first !== undefined && second !== undefined && isPreambleOnlySection(first, second, preambleLength, maxHeadingDepth, skipHeadingPatterns)) {
+		sections.splice(0, 2, `${first}\n${second}`);
+	}
 	const chunks: string[] = [];
 
 	for (const section of sections) {
@@ -283,7 +301,11 @@ function chunkMarkdownAware(
 	return chunks;
 }
 
-/** Splits raw markdown/text into TTS-request-sized chunks per the given style. `skipHeadingPatterns` only applies to the markdown-aware style. */
+/**
+ * Splits raw markdown/text into TTS-request-sized chunks per the given style. `skipHeadingPatterns` only
+ * applies to the markdown-aware style. `preambleLength` is the length of the spoken preamble at the start of
+ * `rawText` (with its separator), which is read as part of the first section (see {@link isPreambleOnlySection}).
+ */
 export function chunkNote(
 	rawText: string,
 	maxLength: number,
@@ -291,9 +313,10 @@ export function chunkNote(
 	maxHeadingDepth: number,
 	stripOptions: StripMarkdownOptions = DEFAULT_STRIP_MARKDOWN_OPTIONS,
 	skipHeadingPatterns: RegExp[] = [],
+	preambleLength = 0,
 ): string[] {
 	if (style === 'markdown-aware') {
-		return chunkMarkdownAware(rawText, maxLength, maxHeadingDepth, stripOptions, skipHeadingPatterns);
+		return chunkMarkdownAware(rawText, maxLength, maxHeadingDepth, stripOptions, skipHeadingPatterns, preambleLength);
 	}
 	return chunkBySentence(stripMarkdown(rawText, stripOptions).trim(), maxLength);
 }
