@@ -1,5 +1,6 @@
-import { App, Notice, TFile, moment, normalizePath, parseYaml } from 'obsidian';
+import { App, Notice, TFile, normalizePath, parseYaml } from 'obsidian';
 import { AudioLinkStatus } from './reader-types';
+import { formatTimestampForFilename, toLocalISOString } from './time-utils';
 import { cleanVaultFolderPath } from './vault-path';
 import { DEFAULT_SETTINGS, NoteNarratorSettings } from '../settings/settings';
 import { ResolvedNarrator, VoiceConfig } from '../settings/profiles';
@@ -59,7 +60,7 @@ export class SavedAudio {
 			} else {
 				const folderPath = this.resolveSaveFolder(sourceFile);
 				await this.ensureFolder(folderPath);
-				const noteName = sourceFile?.basename ?? `Reading ${moment().format('YYYY-MM-DD HHmmss')}`;
+				const noteName = sourceFile?.basename ?? `Reading ${formatTimestampForFilename(new Date())}`;
 				const baseName = sanitizeFilenameComponent(`${noteName} (${voiceName})`);
 				const path = await this.uniquePath(folderPath, baseName, 'mp3');
 				audioFile = await this.app.vault.createBinary(path, data);
@@ -185,7 +186,7 @@ export class SavedAudio {
 			frontmatter[this.settings.audioLinkProperty] = link;
 			frontmatter[this.settings.audioHashProperty] = contentHash;
 			frontmatter[this.settings.audioPathProperty] = audioFile.path;
-			frontmatter[this.settings.audioTimestampProperty] = moment().toISOString(true);
+			frontmatter[this.settings.audioTimestampProperty] = toLocalISOString(new Date());
 			// A fingerprint of the narrator's voice settings, not its name or provider account, so renaming a profile doesn't look like a new narrator.
 			frontmatter[this.settings.audioVoiceProperty] = narrator.fingerprint;
 			// [duration, byteLength] pairs -- one property instead of two. Byte lengths let a saved file be

@@ -509,7 +509,7 @@ export class Reader extends Events {
 			const fullValue = await this.app.vault.cachedRead(sourceFile);
 			const body = stripFrontmatter(fullValue);
 			const fileOffset = fullValue.length - body.length;
-			const preamble = this.noteText.buildPreamble(sourceFile.basename, frontmatter);
+			const preamble = this.noteText.buildPreamble(sourceFile.basename, frontmatter, body);
 			const rawText = preamble ? `${preamble}\n\n${body}` : body;
 			const positionBase: PositionBase = { rawTextOffset: preamble ? preamble.length + 2 : 0, fileOffset, length: body.length };
 
@@ -548,7 +548,7 @@ export class Reader extends Events {
 		const body = stripFrontmatter(fullValue);
 		const fileOffset = fullValue.length - body.length;
 		const frontmatter = target.file ? this.app.metadataCache.getFileCache(target.file)?.frontmatter : undefined;
-		const preamble = this.noteText.buildPreamble(target.file?.basename ?? null, frontmatter);
+		const preamble = this.noteText.buildPreamble(target.file?.basename ?? null, frontmatter, body);
 		return {
 			fullValue,
 			rawText: preamble ? `${preamble}\n\n${body}` : body,
@@ -896,7 +896,7 @@ export class Reader extends Events {
 			const contentHash = this.savedAudio.stalenessHash(rawText, file);
 			const body = stripFrontmatter(rawText);
 			const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
-			const preamble = this.noteText.buildPreamble(file.basename, frontmatter);
+			const preamble = this.noteText.buildPreamble(file.basename, frontmatter, body);
 			const textToRead = preamble ? `${preamble}\n\n${body}` : body;
 
 			const charLimit = this.noteText.getCharLimit();

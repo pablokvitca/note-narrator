@@ -29,6 +29,16 @@ export class GeneralSection extends SettingsSection {
 						control: { type: 'toggle', key: 'readTitle', defaultValue: DEFAULT_SETTINGS.readTitle },
 					},
 					{
+						name: 'Skip title when it repeats the first heading',
+						desc: 'With Read note title on, skip the title anyway when it exactly matches the note\'s first heading -- e.g. a note titled "My Note" starting with "# My Note" -- so it is not spoken twice. The heading is still read as part of the body.',
+						control: {
+							type: 'toggle',
+							key: 'skipTitleWhenMatchingHeading',
+							defaultValue: DEFAULT_SETTINGS.skipTitleWhenMatchingHeading,
+							disabled: () => !settings.readTitle,
+						},
+					},
+					{
 						name: 'Read note properties',
 						desc: 'Speak "properties", each frontmatter property and value, then "content", before the note\'s content. Does not apply when reading a selection.',
 						control: { type: 'toggle', key: 'readProperties', defaultValue: DEFAULT_SETTINGS.readProperties },

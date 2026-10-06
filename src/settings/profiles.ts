@@ -49,6 +49,8 @@ export type VoiceConfig = ElevenLabsVoiceConfig;
 /** The reading settings a narrator profile may override; the global values are the defaults. */
 export interface ReadingConfig {
 	readTitle: boolean;
+	/** With readTitle on, skip the title anyway when it exactly matches the note's first heading, so it isn't spoken twice (the heading is still read as part of the body). */
+	skipTitleWhenMatchingHeading: boolean;
 	readProperties: boolean;
 	stripMarkdownComments: boolean;
 	stripCommentDelimiters: boolean;
@@ -60,6 +62,7 @@ export interface ReadingConfig {
 
 export const READING_CONFIG_KEYS: (keyof ReadingConfig)[] = [
 	'readTitle',
+	'skipTitleWhenMatchingHeading',
 	'readProperties',
 	'stripMarkdownComments',
 	'stripCommentDelimiters',
