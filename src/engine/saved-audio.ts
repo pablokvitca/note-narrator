@@ -36,7 +36,12 @@ export class SavedAudio {
 	 * `isCancelled` is checked just before the audio is written: getting there takes a network request (the
 	 * voice name) and file system checks, and the note can be deleted (or the plugin unloaded) meanwhile.
 	 *
-	 * Resolves to the saved audio file, or null if saving failed (already reported with a notice) or was cancelled.
+	 * Once the write has started it isn't cancelled any more: finished audio for a note that still exists is
+	 * linked, as usual. Only the note itself being deleted during the write stops it: the note isn't linked
+	 * then, and a file this save just created is trashed rather than left behind without a note.
+	 *
+	 * Resolves to the saved audio file, or null if saving failed (already reported with a notice), was cancelled,
+	 * or the note was deleted while the audio was written.
 	 */
 	async saveAudioFile(
 		chunks: ArrayBuffer[],
@@ -60,6 +65,8 @@ export class SavedAudio {
 			if (existingAudioFile) {
 				if (isCancelled()) return null;
 				await this.app.vault.modifyBinary(existingAudioFile, data);
+				// The old audio is already overwritten; all that's left to skip is linking the deleted note.
+				if (this.wasDeleted(sourceFile)) return null;
 				audioFile = existingAudioFile;
 				new Notice(`Updated audio at ${audioFile.path}`);
 			} else {
@@ -70,6 +77,10 @@ export class SavedAudio {
 				const path = await this.uniquePath(folderPath, baseName, 'mp3');
 				if (isCancelled()) return null;
 				audioFile = await this.app.vault.createBinary(path, data);
+				if (this.wasDeleted(sourceFile)) {
+					await this.trashOrphanedAudio(audioFile);
+					return null;
+				}
 				new Notice(`Saved audio to ${path}`);
 			}
 
@@ -82,6 +93,20 @@ export class SavedAudio {
 			console.error('Note Narrator: failed to save audio file', error);
 			new Notice(`Failed to save audio file: ${error instanceof Error ? error.message : String(error)}`);
 			return null;
+		}
+	}
+
+	/** Whether the note was deleted (Obsidian keeps one TFile per path, so a note made again at its path is another file). */
+	private wasDeleted(sourceFile: TFile | null): boolean {
+		return sourceFile !== null && this.app.vault.getAbstractFileByPath(sourceFile.path) !== sourceFile;
+	}
+
+	/** The audio was saved, but for nothing: failing to remove it is logged, not reported as a failed save. */
+	private async trashOrphanedAudio(audioFile: TFile): Promise<void> {
+		try {
+			await this.app.fileManager.trashFile(audioFile);
+		} catch (error) {
+			console.error(`Note Narrator: failed to remove ${audioFile.path}, saved for a note deleted meanwhile`, error);
 		}
 	}
 

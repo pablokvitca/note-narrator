@@ -78,6 +78,22 @@ class FakeVault {
 	private readonly deleteHandlers = new Set<(file: TFile) => void>();
 	/** Like Obsidian, one TFile instance per path. */
 	private readonly files = new Map<string, TFile>();
+	/** When true, audio writes (createBinary, modifyBinary) stay pending until the test calls releaseWrites(). */
+	holdWrites = false;
+	private readonly heldWrites: (() => void)[] = [];
+
+	/** Finishes the audio writes held by holdWrites, in order. Returns how many there were. */
+	releaseWrites(): number {
+		const held = this.heldWrites.splice(0);
+		for (const write of held) write();
+		return held.length;
+	}
+
+	/** Runs an audio write now, or holds it until releaseWrites() when holdWrites is set. */
+	private writeBinary<T>(write: () => T): Promise<T> {
+		if (!this.holdWrites) return Promise.resolve(write());
+		return new Promise<T>((resolve) => this.heldWrites.push(() => resolve(write())));
+	}
 
 	/** Subscribes to the vault's 'delete' event (what main.ts wires to Reader.handleFileDeleted()). */
 	onDelete(handler: (file: TFile) => void): void {
@@ -124,14 +140,15 @@ class FakeVault {
 				configDir: 'vault-config',
 				cachedRead: (f: TFile) => Promise.resolve(this.text.get(f.path) ?? ''),
 				readBinary: (f: TFile) => Promise.resolve(this.binary.get(f.path) ?? new ArrayBuffer(0)),
-				createBinary: (path: string, data: ArrayBuffer) => {
-					this.binary.set(path, data);
-					return Promise.resolve(this.file(path));
-				},
-				modifyBinary: (f: TFile, data: ArrayBuffer) => {
-					this.binary.set(f.path, data);
-					return Promise.resolve();
-				},
+				createBinary: (path: string, data: ArrayBuffer) =>
+					this.writeBinary(() => {
+						this.binary.set(path, data);
+						return this.file(path);
+					}),
+				modifyBinary: (f: TFile, data: ArrayBuffer) =>
+					this.writeBinary(() => {
+						this.binary.set(f.path, data);
+					}),
 				createFolder: () => Promise.resolve(),
 				getAbstractFileByPath: (path: string) => (this.text.has(path) || this.binary.has(path) ? this.file(path) : null),
 			},
@@ -452,6 +469,114 @@ describe('Reader end to end: a note deleted while its existing audio is being re
 		expect([...vault.binary.keys()]).toEqual([audioPath]);
 		expect(vault.binary.get(audioPath)).toBe(oldAudio);
 		expect(Notice.messages.filter((message) => message.startsWith('Failed'))).toEqual([]);
+	});
+});
+
+describe('Reader end to end: a note deleted while its audio file is being written', () => {
+	async function deleteDuringWrite(start: () => void): Promise<void> {
+		vault.holdWrites = true;
+		start();
+		await settle();
+		await finishGenerating();
+		vault.trash('Note.md');
+		expect(vault.releaseWrites()).toBe(1);
+		await settle();
+	}
+
+	it('trashes the file Auto-generate on open just wrote', async () => {
+		reader = new Reader(vault.app(), { ...DEFAULT_SETTINGS, ...migrateProfileSettings({}), saveAudioFile: true, linkAudioInNote: true, autoGenerateOnOpen: true });
+		vault.onDelete((file) => reader.handleFileDeleted(file.path));
+
+		await deleteDuringWrite(() => void reader.autoGenerateIfNeeded(vault.file('Note.md')));
+
+		expect(vault.binary.size).toBe(0);
+		expect(Notice.messages.filter((message) => message.startsWith('Failed') || message.startsWith('Saved'))).toEqual([]);
+	});
+
+	it('trashes the file a read just wrote', async () => {
+		await deleteDuringWrite(() => void reader.readNote(vault.view('Note.md')));
+
+		expect(vault.binary.size).toBe(0);
+		expect(Notice.messages.filter((message) => message.startsWith('Failed') || message.startsWith('Saved'))).toEqual([]);
+	});
+
+	it('trashes the file a background job just wrote, and leaves no card', async () => {
+		await deleteDuringWrite(() => reader.generateNoteInBackground(vault.view('Note.md')));
+
+		expect(vault.binary.size).toBe(0);
+		expect(reader.getState().backgroundJobs).toHaveLength(0);
+		expect(Notice.messages.filter((message) => message.startsWith('Failed') || message.startsWith('Saved'))).toEqual([]);
+	});
+
+	it('keeps the replaced audio file, without linking the deleted note or reporting a failure', async () => {
+		reader.generateNoteInBackground(vault.view('Note.md'));
+		await settle();
+		await finishGenerating();
+		const [audioPath] = [...vault.binary.keys()];
+		reader.discardBackgroundJob(reader.getState().backgroundJobs[0]!.id);
+		vault.write('Note.md', `${vault.text.get('Note.md') ?? ''}\n\nAn added line.`);
+		Notice.messages = [];
+
+		await deleteDuringWrite(() => reader.generateNoteInBackground(vault.view('Note.md')));
+
+		expect([...vault.binary.keys()]).toEqual([audioPath]);
+		expect(Notice.messages.filter((message) => message.startsWith('Failed') || message.startsWith('Updated'))).toEqual([]);
+	});
+});
+
+describe('Reader end to end: the plugin unloading while an audio file is being written', () => {
+	const linkedAudio = (): unknown => vault.frontmatter('Note.md')?.[DEFAULT_SETTINGS.audioPathProperty];
+
+	it('keeps and links a new file once the write finishes, since the note still exists', async () => {
+		vault.holdWrites = true;
+		reader.generateNoteInBackground(vault.view('Note.md'));
+		await settle();
+		await finishGenerating();
+
+		reader.dispose();
+		expect(vault.releaseWrites()).toBe(1);
+		await settle();
+
+		expect(vault.binary.size).toBe(1);
+		expect(linkedAudio()).toBeTruthy();
+		expect(await reader.getAudioStatus(vault.file('Note.md'))).toBe('up-to-date');
+	});
+
+	it('keeps and links the file Auto-generate on open was writing when Read takes over the note', async () => {
+		reader = new Reader(vault.app(), { ...DEFAULT_SETTINGS, ...migrateProfileSettings({}), saveAudioFile: true, linkAudioInNote: true, autoGenerateOnOpen: true });
+		vault.holdWrites = true;
+		void reader.autoGenerateIfNeeded(vault.file('Note.md'));
+		await settle();
+		await finishGenerating();
+
+		void reader.readNote(vault.view('Note.md'));
+		await settle();
+		vault.holdWrites = false;
+		expect(vault.releaseWrites()).toBe(1);
+		await settle();
+
+		expect(vault.binary.size).toBe(1);
+		expect(linkedAudio()).toBeTruthy();
+	});
+
+	it('links a replaced file once the write finishes, so its new audio counts as current', async () => {
+		reader.generateNoteInBackground(vault.view('Note.md'));
+		await settle();
+		await finishGenerating();
+		reader.discardBackgroundJob(reader.getState().backgroundJobs[0]!.id);
+		vault.write('Note.md', `${vault.text.get('Note.md') ?? ''}\n\nAn added line.`);
+		expect(await reader.getAudioStatus(vault.file('Note.md'))).toBe('outdated');
+
+		vault.holdWrites = true;
+		reader.generateNoteInBackground(vault.view('Note.md'));
+		await settle();
+		await finishGenerating();
+		reader.dispose();
+		expect(vault.releaseWrites()).toBe(1);
+		await settle();
+
+		expect(vault.binary.size).toBe(1);
+		expect(await reader.getAudioStatus(vault.file('Note.md'))).toBe('up-to-date');
 	});
 });
 
