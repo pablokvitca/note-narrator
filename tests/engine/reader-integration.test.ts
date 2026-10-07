@@ -76,6 +76,7 @@ class FakeVault {
 	private readonly cache = new Map<string, Record<string, unknown> | undefined>();
 	private readonly changedHandlers = new Set<(file: TFile) => void>();
 	private readonly deleteHandlers = new Set<(file: TFile) => void>();
+	private readonly renameHandlers = new Set<(file: TFile, oldPath: string) => void>();
 	/** Like Obsidian, one TFile instance per path. */
 	private readonly files = new Map<string, TFile>();
 	/** When true, audio writes (createBinary, modifyBinary) stay pending until the test calls releaseWrites(). */
@@ -108,6 +109,51 @@ class FakeVault {
 		for (const handler of this.deleteHandlers) handler(file);
 	}
 
+	/** Subscribes to the vault's 'rename' event (what main.ts wires to Reader.handleFileRenamed()). */
+	onRename(handler: (file: TFile, oldPath: string) => void): void {
+		this.renameHandlers.add(handler);
+	}
+
+	/** Every file path under a folder, at any depth. */
+	private pathsUnder(folder: string): string[] {
+		return [...this.text.keys(), ...this.binary.keys()].filter((path) => path.startsWith(`${folder}/`));
+	}
+
+	/**
+	 * Trashes a whole folder the way Obsidian does (recorded in Obsidian 1.13 for both its own trash and a
+	 * folder deleted outside it): one 'delete' per contained file first, then one for the folder itself.
+	 * Obsidian also fires one per subfolder, in depth-first order; those are left out here, since Reader only
+	 * acts on the paths of notes and audio files.
+	 */
+	trashFolder(folder: string): void {
+		for (const path of this.pathsUnder(folder)) this.trash(path);
+		const folderEntry = fake<TFile>({ path: folder });
+		for (const handler of this.deleteHandlers) handler(folderEntry);
+	}
+
+	/**
+	 * Renames or moves a whole folder the way Obsidian does (recorded in Obsidian 1.13): one 'rename' for the
+	 * folder itself first, then one per contained file, each TFile keeping its identity with its path updated.
+	 * Unlike Obsidian with "Automatically update internal links" on, a note's link to moved audio isn't rewritten.
+	 */
+	renameFolder(folder: string, newFolder: string): void {
+		const folderEntry = fake<TFile>({ path: newFolder });
+		for (const handler of this.renameHandlers) handler(folderEntry, folder);
+		for (const oldPath of this.pathsUnder(folder)) {
+			const newPath = `${newFolder}${oldPath.slice(folder.length)}`;
+			const file = this.file(oldPath);
+			for (const map of [this.text, this.binary, this.cache] as Map<string, unknown>[]) {
+				if (!map.has(oldPath)) continue;
+				map.set(newPath, map.get(oldPath));
+				map.delete(oldPath);
+			}
+			this.files.delete(oldPath);
+			this.files.set(newPath, file);
+			file.path = newPath;
+			for (const handler of this.renameHandlers) handler(file, oldPath);
+		}
+	}
+
 	/** Sets a note's text, as an edit in the editor would; the metadata cache lags until refreshCache(). */
 	write(path: string, content: string): void {
 		this.text.set(path, content);
@@ -123,6 +169,8 @@ class FakeVault {
 		let file = this.files.get(path);
 		if (!file) {
 			file = fake<TFile>(Object.assign(new StubTFile(), { path, basename: path.replace(/^.*\//, '').replace(/\.[^.]+$/, ''), extension: path.split('.').pop() }));
+			// Like Obsidian's, the parent folder follows the file's path (so it moves with a renamed folder).
+			Object.defineProperty(file, 'parent', { get: (): { path: string } => ({ path: file!.path.includes('/') ? file!.path.slice(0, file!.path.lastIndexOf('/')) : '/' }) });
 			this.files.set(path, file);
 		}
 		return file;
@@ -226,6 +274,7 @@ beforeEach(() => {
 	reader = new Reader(vault.app(), settings);
 	// As main.ts wires it.
 	vault.onDelete((file) => reader.handleFileDeleted(file.path));
+	vault.onRename((file, oldPath) => reader.handleFileRenamed(file.path, oldPath));
 });
 
 afterEach(() => {
@@ -405,6 +454,90 @@ describe('Reader end to end: deleting and clearing saved audio', () => {
 
 		expect(reader.getState().backgroundJobs.map((job) => job.status)).toEqual(['done']);
 		expect(await reader.getAudioStatus(vault.file('Note.md'))).toBe('up-to-date');
+	});
+});
+
+describe('Reader end to end: folders deleted or moved', () => {
+	// Audio goes to its own folder, apart from the note's, so each test moves or deletes just one of them.
+	beforeEach(() => {
+		vault.write('Notes/Note.md', NOTE);
+		vault.refreshCache('Notes/Note.md');
+		const settings = { ...DEFAULT_SETTINGS, ...migrateProfileSettings({}), saveAudioFile: true, linkAudioInNote: true, saveAudioLocation: 'custom-folder', saveAudioFolderPath: 'Audio' } as NoteNarratorSettings;
+		// The vault events wired above call whichever reader is current.
+		reader = new Reader(vault.app(), settings);
+	});
+
+	async function finishedJobWithAudio(): Promise<string> {
+		reader.generateNoteInBackground(vault.view('Notes/Note.md'));
+		await settle();
+		await finishGenerating();
+		const info = await reader.getAudioInfo(vault.file('Notes/Note.md'));
+		if (!info) throw new Error('expected saved audio');
+		expect(info.audioFile.path.startsWith('Audio/')).toBe(true);
+		expect(reader.getState().backgroundJobs.map((job) => job.status)).toEqual(['done']);
+		return info.audioFile.path;
+	}
+
+	it('drops the finished card when the folder holding its saved audio is deleted', async () => {
+		await finishedJobWithAudio();
+
+		vault.trashFolder('Audio');
+
+		expect(vault.binary.size).toBe(0);
+		expect(vault.text.has('Notes/Note.md')).toBe(true);
+		expect(reader.getState().backgroundJobs).toHaveLength(0);
+	});
+
+	it('drops a job in progress, without saving, when the folder holding its note is deleted', async () => {
+		reader.generateNoteInBackground(vault.view('Notes/Note.md'));
+		await settle();
+		expect(reader.getState().backgroundJobs).toHaveLength(1);
+
+		vault.trashFolder('Notes');
+		await finishGenerating();
+
+		expect(reader.getState().backgroundJobs).toHaveLength(0);
+		expect(vault.binary.size).toBe(0);
+		expect(Notice.messages.filter((message) => message.startsWith('Failed'))).toEqual([]);
+	});
+
+	it('follows saved audio moved with its folder, so deleting it from there still drops the card', async () => {
+		const audioPath = await finishedJobWithAudio();
+
+		vault.renameFolder('Audio', 'Archive/Audio');
+		expect(vault.binary.has(`Archive/${audioPath}`)).toBe(true);
+		expect(reader.getState().backgroundJobs).toHaveLength(1);
+
+		vault.trashFolder('Archive/Audio');
+		expect(vault.text.has('Notes/Note.md')).toBe(true);
+		expect(reader.getState().backgroundJobs).toHaveLength(0);
+	});
+
+	it('saves audio next to the note at its new place when its folder is moved during generation', async () => {
+		// The default location: the note's own folder, read from the note when the save happens.
+		reader = new Reader(vault.app(), { ...DEFAULT_SETTINGS, ...migrateProfileSettings({}), saveAudioFile: true, linkAudioInNote: true });
+		reader.generateNoteInBackground(vault.view('Notes/Note.md'));
+		await settle();
+
+		vault.renameFolder('Notes', 'Archive/Notes');
+		await finishGenerating();
+
+		const info = await reader.getAudioInfo(vault.file('Archive/Notes/Note.md'));
+		expect(info?.audioFile.path.startsWith('Archive/Notes/')).toBe(true);
+		expect(info?.status).toBe('up-to-date');
+	});
+
+	it('keeps a job in progress when its note\'s folder is moved, and saves and links its audio', async () => {
+		reader.generateNoteInBackground(vault.view('Notes/Note.md'));
+		await settle();
+
+		vault.renameFolder('Notes', 'Archive/Notes');
+		await finishGenerating();
+
+		expect(reader.getState().backgroundJobs.map((job) => job.status)).toEqual(['done']);
+		const info = await reader.getAudioInfo(vault.file('Archive/Notes/Note.md'));
+		expect(info?.status).toBe('up-to-date');
+		expect(Notice.messages.filter((message) => message.startsWith('Failed'))).toEqual([]);
 	});
 });
 
