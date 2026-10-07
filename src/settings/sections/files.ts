@@ -109,8 +109,8 @@ export class FilesSection extends SettingsSection {
 				visible,
 				items: [
 					{
-						name: 'Show "clear Note Narrator files" menu item and delete button',
-						desc: 'Enable the "clear Note Narrator files" item in the player view\'s ⋮ menu (top-right) and the small delete button on the saved-audio status line, both of which delete a note\'s linked audio file and remove the properties above, after confirming.',
+						name: 'Show "Clear Note Narrator files" menu item and delete button',
+						desc: 'Enable the "Clear Note Narrator files" item in the player view\'s ⋮ menu (top-right) and the small delete button on the saved-audio status line, both of which delete a note\'s linked audio file and remove the properties above, after confirming.',
 						control: { type: 'toggle', key: 'showClearFilesButton', defaultValue: DEFAULT_SETTINGS.showClearFilesButton, disabled: linkingOff },
 					},
 					{
