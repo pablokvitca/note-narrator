@@ -318,6 +318,7 @@ export class Reader extends Events {
 		if (!prepared) return;
 
 		this.discardStaleBackgroundJob(file, fullValue);
+		this.cancelAutoGeneration(file.path);
 		this.enqueueBackgroundJob(this.createJob(file, prepared, 'full', fullValue));
 	}
 
@@ -684,6 +685,9 @@ export class Reader extends Events {
 
 		// A selection read leaves the note's background job (if any) alone: it's for the whole note, so it
 		// doesn't conflict with reading just part of it, and discarding it would throw away paid generation.
+		// A selection read leaves an "Auto-generate on open" of the note running too; a full read takes it
+		// over (cancels it), as it generates the whole note itself.
+		if (sourceFile && options.kind === 'full') this.cancelAutoGeneration(sourceFile.path);
 		this.backgroundActiveJobForOtherNote(sourceFile);
 		this.stop();
 
@@ -920,8 +924,7 @@ export class Reader extends Events {
 		for (const job of this.backgroundJobs) {
 			if (job.file?.path === path) job.noteDeleted = true;
 		}
-		const autoGeneration = this.autoGenerations.get(path);
-		if (autoGeneration) autoGeneration.cancelled = true;
+		this.cancelAutoGeneration(path);
 		for (const job of this.backgroundJobs.filter((j) => j.file?.path === path || j.savedAudioPath === path)) {
 			this.discardBackgroundJob(job.id);
 		}
@@ -1009,6 +1012,18 @@ export class Reader extends Events {
 			// Another run of the note may have started since this one was cancelled; leave that one tracked.
 			if (this.autoGenerations.get(file.path) === run) this.autoGenerations.delete(file.path);
 		}
+	}
+
+	/**
+	 * Stops a running "Auto-generate on open" of the note at `path`, without saving: before its next chunk
+	 * (a request in flight finishes or gives up on its own) and before it saves. Used when the note is
+	 * deleted, and when Read or Background starts generating the note itself, so the same audio isn't paid
+	 * for twice and two saves don't race. Chunks it already generated are dropped: the new generation
+	 * starts from the beginning.
+	 */
+	private cancelAutoGeneration(path: string): void {
+		const run = this.autoGenerations.get(path);
+		if (run) run.cancelled = true;
 	}
 
 	/**

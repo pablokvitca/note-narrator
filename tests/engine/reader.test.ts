@@ -908,6 +908,104 @@ describe('Reader auto-generating on open', () => {
 		expect(fakes.saveAudioFile).toHaveLength(0);
 	});
 
+	it('hands the note over to Read: the auto-generation stops, and only the read is saved', async () => {
+		const reader = makeReader(autoGenerateSettings);
+		fakes.diskContent = 'A1\nA2';
+		const file = makeFile('A');
+		const auto = reader.autoGenerateIfNeeded(file);
+		await settle();
+		const autoCall = callsFor('A1')[0];
+
+		// The editor has an edit the auto-generation (which read the note from disk) doesn't.
+		void reader.readNote(makeView(file, ['A1', 'A2', 'A3']));
+		await settle();
+		expect(autoCall?.isCancelled()).toBe(true);
+
+		await finishGenerating('A');
+		await auto;
+		// The auto-generation's first chunk, then the read's three: the auto-generation asked for nothing more.
+		expect(callsFor('A')).toHaveLength(4);
+		expect(fakes.saveAudioFile).toHaveLength(1);
+		expect(fakes.saveAudioFile[0]?.[4]).toBe('hash of A1\nA2\nA3');
+	});
+
+	it('hands the note over to Background: the auto-generation stops, and only the background job is saved', async () => {
+		const reader = makeReader(autoGenerateSettings);
+		fakes.diskContent = 'A1\nA2';
+		const file = makeFile('A');
+		const auto = reader.autoGenerateIfNeeded(file);
+		await settle();
+		const autoCall = callsFor('A1')[0];
+
+		reader.generateNoteInBackground(makeView(file, ['A1', 'A2']));
+		await settle();
+		expect(autoCall?.isCancelled()).toBe(true);
+
+		await finishGenerating('A');
+		await auto;
+		expect(callsFor('A')).toHaveLength(3);
+		expect(reader.getState().backgroundJobs.map((job) => job.status)).toEqual(['done']);
+		expect(fakes.saveAudioFile).toHaveLength(1);
+	});
+
+	it('cancels the auto-generation\'s save too when Read or Background takes over while it is saving', async () => {
+		for (const takeOver of [
+			(reader: Reader, file: TFile) => void reader.readNote(makeView(file, ['A1'])),
+			(reader: Reader, file: TFile) => reader.generateNoteInBackground(makeView(file, ['A1'])),
+		]) {
+			fakes.saveAudioFile.length = 0;
+			fakes.holdSaves = true;
+			const reader = makeReader(autoGenerateSettings);
+			fakes.diskContent = 'A1';
+			const file = makeFile('A');
+			const auto = reader.autoGenerateIfNeeded(file);
+			await settle();
+			callsFor('A1').at(-1)?.resolve();
+			await settle();
+
+			const isSaveCancelled = fakes.saveAudioFile[0]?.[5] as () => boolean;
+			expect(isSaveCancelled()).toBe(false);
+			takeOver(reader, file);
+			await settle();
+			expect(isSaveCancelled()).toBe(true);
+
+			for (const release of fakes.heldSaves.splice(0)) release();
+			await auto;
+			reader.dispose();
+		}
+	});
+
+	it('keeps auto-generating a note while only a selection of it is read', async () => {
+		const reader = makeReader(autoGenerateSettings);
+		fakes.diskContent = 'A1\nA2';
+		const file = makeFile('A');
+		const auto = reader.autoGenerateIfNeeded(file);
+		await settle();
+
+		void reader.readNote(makeView(file, ['A1', 'A2'], 'A selected'));
+		await settle();
+		expect(callsFor('A1')[0]?.isCancelled()).toBe(false);
+
+		await finishGenerating('A');
+		await auto;
+		expect(fakes.saveAudioFile).toHaveLength(1);
+	});
+
+	it('keeps auto-generating a note while a different note is read', async () => {
+		const reader = makeReader(autoGenerateSettings);
+		fakes.diskContent = 'A1\nA2';
+		const auto = reader.autoGenerateIfNeeded(makeFile('A'));
+		await settle();
+
+		void reader.readNote(makeView(makeFile('B'), ['B1']));
+		await settle();
+
+		await finishGenerating('A');
+		await auto;
+		expect(callsFor('A')).toHaveLength(2);
+		expect(fakes.saveAudioFile).toHaveLength(1);
+	});
+
 	it('can generate the note again once a deleted note with the same path is recreated', async () => {
 		const reader = makeReader(autoGenerateSettings);
 		fakes.diskContent = 'A1';
