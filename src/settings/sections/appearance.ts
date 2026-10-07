@@ -30,7 +30,7 @@ export class AppearanceSection extends SettingsSection {
 					},
 					{
 						name: 'Time display',
-						desc: 'What the player view\'s time readout shows. "Full" totals the whole read across every generated chunk (marking any not-yet-generated parts as "+N parts" rather than guessing their length). "Current part" is the per-chunk-only readout. "Both" shows full totals with the current part\'s times alongside in parentheses.',
+						desc: 'What the player view\'s time readout shows. "Show full times" totals the whole read across every generated chunk (marking any not-yet-generated parts as "+N parts" rather than guessing their length). "Show current part times" is the per-chunk-only readout. "Show full times + current part times" shows full totals with the current part\'s times alongside in parentheses.',
 						control: {
 							type: 'dropdown',
 							key: 'timeDisplayMode',
@@ -40,7 +40,7 @@ export class AppearanceSection extends SettingsSection {
 					},
 					{
 						name: 'Background job display',
-						desc: 'How the panel shows notes queued/generating/finished in the background. "Full" shows a callout with text buttons per note. "Compact" is a slim row with icon buttons. "Minimal" is a small card with icon buttons only. All three play a note when you click anywhere on it besides its buttons.',
+						desc: 'How the panel shows notes queued/generating/finished in the background. "Full callout" shows a callout with text buttons per note. "Compact row" is a slim row with icon buttons. "Minimal card" is a small card with icon buttons only. All three play a note when you click anywhere on it besides its buttons.',
 						control: {
 							type: 'dropdown',
 							key: 'backgroundJobDisplayStyle',
@@ -85,7 +85,7 @@ export class AppearanceSection extends SettingsSection {
 					},
 					{
 						name: 'Highlight style',
-						desc: "How the active text is marked. Margin marker leaves the text untouched and shows a small speaker icon in the editor's left gutter next to it (same place line numbers show). Background/Underline mark the text itself.",
+						desc: "How the active text is marked. Margin marker leaves the text untouched and shows a small speaker icon in the editor's left gutter next to it (same place line numbers show). Background wash and Underline mark the text itself.",
 						control: {
 							type: 'dropdown',
 							key: 'highlightStyle',
