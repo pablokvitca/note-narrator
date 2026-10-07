@@ -30,14 +30,12 @@ describe('backgroundButtonSpec', () => {
 		expect(backgroundButtonSpec('ready-in-background')).toMatchObject({ label: 'Ready in background', icon: 'check' });
 	});
 
-	it('says "Regenerate in background" when the note\'s saved audio is up to date, like Read', () => {
-		expect(backgroundButtonSpec('regenerate').label).toBe('Regenerate in background');
-	});
-
-	it('says "Generate in background" otherwise', () => {
-		for (const action of ['playing-saved', 'already-queued', 'generate'] as const) {
-			expect(backgroundButtonSpec(action).label).toBe('Generate in background');
+	it('says just "Background" when it (re)generates, with the full action in its tooltip', () => {
+		for (const action of ['playing-saved', 'already-queued', 'generate', 'regenerate'] as const) {
+			expect(backgroundButtonSpec(action).label).toBe('Background');
 		}
+		expect(backgroundButtonSpec('generate').tooltip).toMatch(/^Generate in background: /);
+		expect(backgroundButtonSpec('regenerate').tooltip).toMatch(/^Regenerate in background: /);
 	});
 
 	it('explains every disabled state in its own tooltip, never with the clickable states\' text', () => {
@@ -50,7 +48,7 @@ describe('backgroundButtonSpec', () => {
 		}
 	});
 
-	it('is a disabled "Generate in background" when no note is selected', () => {
-		expect(backgroundButtonSpec(null)).toMatchObject({ label: 'Generate in background', onClick: null });
+	it('is a disabled "Background" when no note is selected', () => {
+		expect(backgroundButtonSpec(null)).toMatchObject({ label: 'Background', onClick: null });
 	});
 });

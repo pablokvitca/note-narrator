@@ -62,7 +62,7 @@ export type ActiveReadKind = 'none' | 'full' | 'selection' | 'saved';
  * - 'ready-in-background': its background job has finished (play it from its card, or clear it from the
  *   list to generate again).
  * - 'regenerate': its saved audio is up to date (same text, same narrator). Like Read, it can still be
- *   generated again on purpose; the panel then labels the button "Regenerate in background".
+ *   generated again on purpose; the panel's button tooltip then says "Regenerate in background".
  * - 'generate': starts a new background job.
  * A selection read of the note is never moved (selection reads can't go to the background); the full note
  * is generated alongside it instead.

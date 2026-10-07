@@ -13,7 +13,7 @@ Note Narrator is an Obsidian plugin that **reads your notes aloud** using text t
 - Reads the whole note, or just your text selection, from a sidebar panel or the **Read note aloud** command (**Stop reading** stops it).
 - **Narrator profiles**: a provider, a voice and its settings, and optional per-profile reading options. Switch profiles from the panel.
 - Plays as soon as the first chunk is ready, and generates long notes in the background while you listen.
-- **Background generation**: move a read to the background, or generate a note's audio there without playing it (**Generate in background** in the panel, or the **Generate note audio in background** command). Background notes generate one at a time, and you can play them from the panel when they're ready.
+- **Background generation**: move a read to the background, or generate a note's audio there without playing it (the **Background** button in the panel, or the **Generate note audio in background** command). Background notes generate one at a time, and you can play them from the panel when they're ready.
 - Optionally **saves the audio** to your vault, links it from the note, and tells you when it is outdated.
 - Optionally **highlights** the text being read and scrolls the note to it.
 - Works on desktop and mobile.

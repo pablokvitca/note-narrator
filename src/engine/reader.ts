@@ -295,7 +295,7 @@ export class Reader extends Events {
 	private enqueueNoteGeneration(file: TFile, fullValue: string): void {
 		const { rawText, positionBase } = this.buildNoteInput(file, fullValue);
 		// Up-to-date saved audio doesn't stop it: like Read, it regenerates (the panel labels the button
-		// "Regenerate in background" then), so the decision doesn't need the saved-audio status here.
+		// tooltip says "Regenerate in background" then), so the decision doesn't need the saved-audio status here.
 		const action = this.getGenerateInBackgroundAction(file, fullValue);
 		if (action === 'move-active') {
 			this.continueGeneratingInBackground();

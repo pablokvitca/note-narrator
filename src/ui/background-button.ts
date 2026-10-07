@@ -14,10 +14,12 @@ const MOVE_TO_BACKGROUND: Omit<BackgroundButtonSpec, 'onClick'> = {
 	tooltip: 'Stop playback but keep generating the rest of this note in the background, so you can jump back into it later.',
 };
 
+// Labelled just "Background": whether it generates or regenerates is clear from the rest of the panel (Read
+// says "Regenerate" too), and the tooltip spells it out.
 const GENERATE_IN_BACKGROUND: Omit<BackgroundButtonSpec, 'onClick'> = {
-	label: 'Generate in background',
+	label: 'Background',
 	icon: 'layers',
-	tooltip: 'Generate this note in the background without playing it, so you can listen to it later.',
+	tooltip: 'Generate in background: generate this note without playing it, so you can listen to it later.',
 };
 
 const BACKGROUND_BUTTONS: Record<GenerateInBackgroundAction, BackgroundButtonSpec> = {
@@ -33,14 +35,13 @@ const BACKGROUND_BUTTONS: Record<GenerateInBackgroundAction, BackgroundButtonSpe
 	},
 	regenerate: {
 		...GENERATE_IN_BACKGROUND,
-		label: 'Regenerate in background',
-		tooltip: 'This note\'s saved audio is up to date. Generate it again in the background without playing it.',
+		tooltip: 'Regenerate in background: this note\'s saved audio is up to date. Generate it again without playing it.',
 		onClick: 'generate',
 	},
 	generate: { ...GENERATE_IN_BACKGROUND, onClick: 'generate' },
 };
 
-/** The background button for a decision, or for no selected note at all (a disabled "Generate in background"). Pure, so it's unit-testable without the panel. */
+/** The background button for a decision, or for no selected note at all (a disabled "Background"). Pure, so it's unit-testable without the panel. */
 export function backgroundButtonSpec(action: GenerateInBackgroundAction | null): BackgroundButtonSpec {
 	return action ? BACKGROUND_BUTTONS[action] : { ...GENERATE_IN_BACKGROUND, onClick: null };
 }

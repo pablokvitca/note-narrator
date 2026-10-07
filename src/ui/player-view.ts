@@ -809,7 +809,7 @@ export class PlayerView extends ItemView {
 					}
 
 					// Now that the saved audio's status is known, decide again with it: up to date with this
-					// narrator turns "Generate in background" into "Regenerate in background", the same way Read
+					// narrator makes the background button regenerate (its tooltip says so), the same way Read
 					// is the button that regenerates.
 					const savedAudioUpToDate = info.status === 'up-to-date' && !voiceMismatch;
 					const decided = this.plugin.reader.getGenerateInBackgroundAction(activeFile, currentContent, savedAudioUpToDate);
