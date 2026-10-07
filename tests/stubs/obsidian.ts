@@ -31,6 +31,72 @@ export class Notice {
 
 export class MarkdownView {}
 
+/** A plugin command as registered with addCommand (only the fields the plugin uses). */
+export interface StubCommand {
+	id: string;
+	name: string;
+	callback?: () => unknown;
+	checkCallback?: (checking: boolean) => boolean | void;
+}
+
+/**
+ * Runs a plugin's lifecycle without Obsidian: registrations are recorded, so tests can call the plugin's
+ * commands, and unload() runs what it registered for clean-up, then onunload(), like Obsidian's Component.
+ */
+export class Plugin {
+	readonly commands: StubCommand[] = [];
+	readonly cleanups: (() => unknown)[] = [];
+	private data: unknown = null;
+
+	constructor(
+		public app: unknown,
+		public manifest: unknown,
+	) {}
+
+	addCommand(command: StubCommand): StubCommand {
+		this.commands.push(command);
+		return command;
+	}
+
+	register(cleanup: () => unknown): void {
+		this.cleanups.push(cleanup);
+	}
+
+	onunload(): void {}
+
+	unload(): void {
+		for (const cleanup of this.cleanups.splice(0)) cleanup();
+		this.onunload();
+	}
+
+	registerEvent(): void {}
+	registerView(): void {}
+	registerEditorExtension(): void {}
+	addRibbonIcon(): void {}
+	addSettingTab(): void {}
+
+	loadData(): Promise<unknown> {
+		return Promise.resolve(this.data);
+	}
+
+	saveData(data: unknown): Promise<void> {
+		this.data = data;
+		return Promise.resolve();
+	}
+}
+
+/** Every debouncer made by debounce(), so tests can check a plugin cancels them on unload. */
+export const debouncers: { cancelled: boolean }[] = [];
+
+/** Runs the callback right away (no timing in tests); `cancel` records that it was cancelled. */
+export function debounce<T extends unknown[]>(callback: (...args: T) => unknown): ((...args: T) => void) & { cancel: () => void } {
+	const state = { cancelled: false };
+	debouncers.push(state);
+	return Object.assign((...args: T) => void callback(...args), { cancel: () => void (state.cancelled = true) });
+}
+
+export function setIcon(): void {}
+
 export class TFile {
 	path = '';
 	basename = '';
