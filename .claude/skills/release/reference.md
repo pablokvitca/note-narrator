@@ -27,7 +27,7 @@ Only `manifest.json` is bumped by hand. `package.json` and `versions.json` are u
 
 ## Stable releases
 
-- The stable workflow (`.github/workflows/release.yml`) runs on a pushed tag, checks the tag equals `manifest.json`'s version, builds, and creates the GitHub release with `main.js`, `manifest.json` and `styles.css` attached. Tags have **no `v` prefix** (`.npmrc` sets `tag-version-prefix=""`). Plain `x.y.z` tags become stable releases; suffixed tags become pre-releases.
+- The stable workflow (`.github/workflows/release.yml`) runs on a pushed tag, checks the tag equals `manifest.json`'s version, builds, and creates the GitHub release with at least these 3 release files attached: `main.js`, `manifest.json` and `styles.css` (plus `LICENSE` and `THIRD_PARTY_NOTICES.md`). Tags have **no `v` prefix** (`.npmrc` sets `tag-version-prefix=""`). Plain `x.y.z` tags become stable releases; suffixed tags become pre-releases.
 - **The repository uses immutable releases.** A published release's tag and assets cannot be changed, and a deleted release's tag name can never be reused (the `0.16.0` name was burned this way). Get the version right before pushing the tag; if a stable release goes wrong, ship a new version number.
 
 ## Special cases
