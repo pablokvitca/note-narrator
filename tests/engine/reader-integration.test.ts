@@ -5,6 +5,9 @@ import { Reader } from '../../src/engine/reader';
 import { DEFAULT_SETTINGS, NoteNarratorSettings } from '../../src/settings/settings';
 import { migrateProfileSettings } from '../../src/settings/profiles';
 import { extractFrontmatterYaml, stripFrontmatter } from '../../src/text/text-utils';
+import { savedAudioFreshness } from '../../src/engine/saved-audio-freshness';
+import { backgroundButtonSpec } from '../../src/ui/background-button';
+import { editorTextForNote, savedAudioPanelUpdate } from '../../src/ui/panel-decisions';
 
 /**
  * Reader with its real collaborators (NoteText, SavedAudio, profiles, text chunking) against an in-memory
@@ -229,9 +232,12 @@ class FakeVault {
 		});
 	}
 
-	/** A Markdown view of the note that, like the real editor, always shows the file's current text. */
-	view(path: string): MarkdownView {
-		return fake<MarkdownView>({ file: this.file(path), editor: { getValue: () => this.text.get(path) ?? '', getSelection: () => '' } });
+	/**
+	 * A Markdown view of the note that, like the real editor, shows the file's current text, or `unsavedText`
+	 * for an edit the editor hasn't saved to disk yet.
+	 */
+	view(path: string, unsavedText?: string): MarkdownView {
+		return fake<MarkdownView>({ file: this.file(path), editor: { getValue: () => unsavedText ?? this.text.get(path) ?? '', getSelection: () => '' } });
 	}
 }
 
@@ -454,6 +460,48 @@ describe('Reader end to end: deleting and clearing saved audio', () => {
 
 		expect(reader.getState().backgroundJobs.map((job) => job.status)).toEqual(['done']);
 		expect(await reader.getAudioStatus(vault.file('Note.md'))).toBe('up-to-date');
+	});
+});
+
+describe('Reader end to end: the panel\'s background button', () => {
+	/** The button the panel shows for the note: first from the job list, then again once the saved audio's freshness loads. */
+	async function panelBackgroundButton(view: MarkdownView): Promise<{ first: string; settled: string }> {
+		const note = vault.file('Note.md');
+		const currentContent = editorTextForNote(view, note);
+		const first = reader.getGenerateInBackgroundAction(note, currentContent);
+		// The same steps as the panel, which leaves the button as it was when the note has no saved audio.
+		const info = await reader.getAudioInfo(note);
+		const freshness = info ? savedAudioFreshness(info.status, info.savedVoice, reader.getActiveNarrator()?.voice ?? null) : null;
+		const savedAudioCurrent = freshness !== null && savedAudioPanelUpdate(freshness, false).savedAudioCurrent;
+		const settled = reader.getGenerateInBackgroundAction(note, currentContent, savedAudioCurrent);
+		return { first: backgroundButtonSpec(first).tooltip, settled: backgroundButtonSpec(settled).tooltip };
+	}
+
+	it('switches to Regenerate in background once the saved audio turns out to be current', async () => {
+		reader.generateNoteInBackground(vault.view('Note.md'));
+		await settle();
+		await finishGenerating();
+		reader.discardBackgroundJob(reader.getState().backgroundJobs[0]!.id);
+
+		const { first, settled } = await panelBackgroundButton(vault.view('Note.md'));
+
+		expect(first).toBe(backgroundButtonSpec('generate').tooltip);
+		expect(settled).toBe(backgroundButtonSpec('regenerate').tooltip);
+		expect(settled.startsWith('Regenerate in background')).toBe(true);
+	});
+
+	it('treats a finished card as stale from the editor\'s unsaved edit, so it offers to regenerate', async () => {
+		reader.generateNoteInBackground(vault.view('Note.md'));
+		await settle();
+		await finishGenerating();
+		const saved = vault.text.get('Note.md') ?? '';
+
+		expect((await panelBackgroundButton(vault.view('Note.md'))).settled).toBe(backgroundButtonSpec('ready-in-background').tooltip);
+		const { first, settled } = await panelBackgroundButton(vault.view('Note.md', `${saved}\n\nAn unsaved line.`));
+
+		expect(first).toBe(backgroundButtonSpec('generate').tooltip);
+		// The file on disk hasn't changed, so its saved audio still counts as current.
+		expect(settled).toBe(backgroundButtonSpec('regenerate').tooltip);
 	});
 });
 
