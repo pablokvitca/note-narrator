@@ -33,7 +33,10 @@ export class SavedAudio {
 	 * generated from, captured when generation started. Required on purpose: hashing the note as it is when
 	 * saving finishes instead would mark the audio up to date even if the note was edited while it generated.
 	 *
-	 * Resolves to the saved audio file, or null if saving failed (already reported with a notice).
+	 * `isCancelled` is checked just before the audio is written: getting there takes a network request (the
+	 * voice name) and file system checks, and the note can be deleted (or the plugin unloaded) meanwhile.
+	 *
+	 * Resolves to the saved audio file, or null if saving failed (already reported with a notice) or was cancelled.
 	 */
 	async saveAudioFile(
 		chunks: ArrayBuffer[],
@@ -41,6 +44,7 @@ export class SavedAudio {
 		chunkDurations: number[],
 		narrator: ResolvedNarrator,
 		contentHash: string,
+		isCancelled: () => boolean = () => false,
 	): Promise<TFile | null> {
 		try {
 			const apiKey = getProviderApiKey(this.app, narrator.provider);
@@ -54,6 +58,7 @@ export class SavedAudio {
 
 			let audioFile: TFile;
 			if (existingAudioFile) {
+				if (isCancelled()) return null;
 				await this.app.vault.modifyBinary(existingAudioFile, data);
 				audioFile = existingAudioFile;
 				new Notice(`Updated audio at ${audioFile.path}`);
@@ -63,6 +68,7 @@ export class SavedAudio {
 				const noteName = sourceFile?.basename ?? `Reading ${formatTimestampForFilename(new Date())}`;
 				const baseName = sanitizeFilenameComponent(`${noteName} (${voiceName})`);
 				const path = await this.uniquePath(folderPath, baseName, 'mp3');
+				if (isCancelled()) return null;
 				audioFile = await this.app.vault.createBinary(path, data);
 				new Notice(`Saved audio to ${path}`);
 			}

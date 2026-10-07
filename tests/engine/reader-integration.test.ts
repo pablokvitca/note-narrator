@@ -18,12 +18,18 @@ import { extractFrontmatterYaml, stripFrontmatter } from '../../src/text/text-ut
 
 const CHUNK_BYTES = 8;
 
-const fakes = vi.hoisted(() => ({ synthCalls: [] as { text: string; resolve: () => void }[] }));
+const fakes = vi.hoisted(() => ({
+	synthCalls: [] as { text: string; resolve: () => void }[],
+	/** When true, the voice name lookup a save starts with stays pending until the test calls releaseVoiceLabels(). */
+	holdVoiceLabels: false,
+	heldVoiceLabels: [] as (() => void)[],
+}));
 
 vi.mock('../../src/tts/registry', () => ({
 	getProviderApiKey: () => 'key',
 	missingApiKeyMessage: () => 'No API key.',
-	resolveVoiceLabel: () => Promise.resolve('Voice'),
+	resolveVoiceLabel: () =>
+		fakes.holdVoiceLabels ? new Promise<string>((resolve) => fakes.heldVoiceLabels.push(() => resolve('Voice'))) : Promise.resolve('Voice'),
 	createTTSProvider: () => ({
 		synthesize: (text: string) =>
 			new Promise<ArrayBuffer>((resolve) => fakes.synthCalls.push({ text, resolve: () => resolve(new ArrayBuffer(8)) })),
@@ -192,6 +198,8 @@ beforeEach(() => {
 	});
 	vi.stubGlobal('Audio', FakeAudio);
 	fakes.synthCalls.length = 0;
+	fakes.holdVoiceLabels = false;
+	fakes.heldVoiceLabels.length = 0;
 	FakeAudio.instances = [];
 	Notice.messages = [];
 	vault = new FakeVault();
@@ -380,5 +388,69 @@ describe('Reader end to end: deleting and clearing saved audio', () => {
 
 		expect(reader.getState().backgroundJobs.map((job) => job.status)).toEqual(['done']);
 		expect(await reader.getAudioStatus(vault.file('Note.md'))).toBe('up-to-date');
+	});
+});
+
+describe('Reader end to end: a note deleted while its audio is being saved', () => {
+	async function deleteDuringSave(start: () => void): Promise<void> {
+		fakes.holdVoiceLabels = true;
+		start();
+		await settle();
+		await finishGenerating();
+		// Every chunk is generated; the save is waiting on the voice name lookup.
+		expect(fakes.heldVoiceLabels).toHaveLength(1);
+
+		vault.trash('Note.md');
+		for (const release of fakes.heldVoiceLabels.splice(0)) release();
+		await settle();
+	}
+
+	it('writes no audio file for Auto-generate on open', async () => {
+		reader = new Reader(vault.app(), { ...DEFAULT_SETTINGS, ...migrateProfileSettings({}), saveAudioFile: true, linkAudioInNote: true, autoGenerateOnOpen: true });
+		vault.onDelete((file) => reader.handleFileDeleted(file.path));
+
+		await deleteDuringSave(() => void reader.autoGenerateIfNeeded(vault.file('Note.md')));
+
+		expect(vault.binary.size).toBe(0);
+		expect(Notice.messages.filter((message) => message.startsWith('Failed'))).toEqual([]);
+	});
+
+	it('writes no audio file for a read', async () => {
+		await deleteDuringSave(() => void reader.readNote(vault.view('Note.md')));
+
+		expect(vault.binary.size).toBe(0);
+		expect(Notice.messages.filter((message) => message.startsWith('Failed'))).toEqual([]);
+	});
+
+	it('writes no audio file for a background job', async () => {
+		await deleteDuringSave(() => reader.generateNoteInBackground(vault.view('Note.md')));
+
+		expect(vault.binary.size).toBe(0);
+		expect(Notice.messages.filter((message) => message.startsWith('Failed'))).toEqual([]);
+	});
+});
+
+describe('Reader end to end: a note deleted while its existing audio is being replaced', () => {
+	it('leaves the old audio as it was', async () => {
+		reader.generateNoteInBackground(vault.view('Note.md'));
+		await settle();
+		await finishGenerating();
+		const [audioPath, oldAudio] = [...vault.binary.entries()][0]!;
+		reader.discardBackgroundJob(reader.getState().backgroundJobs[0]!.id);
+
+		vault.write('Note.md', `${vault.text.get('Note.md') ?? ''}\n\nAn added line.`);
+		fakes.holdVoiceLabels = true;
+		reader.generateNoteInBackground(vault.view('Note.md'));
+		await settle();
+		await finishGenerating();
+		expect(fakes.heldVoiceLabels).toHaveLength(1);
+
+		vault.trash('Note.md');
+		for (const release of fakes.heldVoiceLabels.splice(0)) release();
+		await settle();
+
+		expect([...vault.binary.keys()]).toEqual([audioPath]);
+		expect(vault.binary.get(audioPath)).toBe(oldAudio);
+		expect(Notice.messages.filter((message) => message.startsWith('Failed'))).toEqual([]);
 	});
 });

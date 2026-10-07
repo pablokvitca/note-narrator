@@ -33,6 +33,9 @@ const fakes = vi.hoisted(() => ({
 	holdDecodes: false,
 	heldDecodes: [] as (() => void)[],
 	saveAudioFile: [] as unknown[][],
+	/** When true, SavedAudio.saveAudioFile() stays pending until the test releases it (see heldSaves). */
+	holdSaves: false,
+	heldSaves: [] as (() => void)[],
 	narrator: {
 		profile: { id: 'p' },
 		provider: { parallelGenerationEnabled: true, maxParallelGeneration: 2, maxBackgroundParallelGeneration: 1 },
@@ -93,7 +96,9 @@ vi.mock('../../src/engine/saved-audio', () => ({
 		saveAudioFile(...args: unknown[]) {
 			fakes.saveAudioFile.push(args);
 			const note = args[1] as { basename: string } | null;
-			return Promise.resolve(note ? { path: `audio/${note.basename}.mp3` } : null);
+			const saved = note ? { path: `audio/${note.basename}.mp3` } : null;
+			if (fakes.holdSaves) return new Promise((resolve) => fakes.heldSaves.push(() => resolve(saved)));
+			return Promise.resolve(saved);
 		}
 		clearReaderFiles() {
 			return fakes.clearFails ? Promise.reject(new Error('cannot trash')) : Promise.resolve();
@@ -226,6 +231,8 @@ beforeEach(() => {
 	fakes.holdDecodes = false;
 	fakes.heldDecodes.length = 0;
 	fakes.saveAudioFile.length = 0;
+	fakes.holdSaves = false;
+	fakes.heldSaves.length = 0;
 	FakeAudio.instances = [];
 	Notice.messages = [];
 });
@@ -697,6 +704,30 @@ describe('Reader saving generated audio', () => {
 		expect(fakes.saveAudioFile).toHaveLength(0);
 	});
 
+	it('cancels a read\'s save when its note is deleted while the save is still in progress', async () => {
+		const reader = makeReader({ saveAudioFile: true });
+		void reader.readNote(makeView(makeFile('A'), ['A1']));
+		await settle();
+		await finishGenerating('A');
+
+		const isSaveCancelled = fakes.saveAudioFile[0]?.[5] as () => boolean;
+		expect(isSaveCancelled()).toBe(false);
+		reader.handleFileDeleted('A.md');
+		expect(isSaveCancelled()).toBe(true);
+	});
+
+	it('cancels a background job\'s save when its note is deleted while the save is still in progress', async () => {
+		const reader = makeReader({ saveAudioFile: true });
+		reader.generateNoteInBackground(makeView(makeFile('A'), ['A1']));
+		await settle();
+		await finishGenerating('A');
+
+		const isSaveCancelled = fakes.saveAudioFile[0]?.[5] as () => boolean;
+		expect(isSaveCancelled()).toBe(false);
+		reader.handleFileDeleted('A.md');
+		expect(isSaveCancelled()).toBe(true);
+	});
+
 	it('never saves a selection read', async () => {
 		const reader = makeReader({ saveAudioFile: true });
 		void reader.readNote(makeView(makeFile('A'), ['A1'], 'selected'));
@@ -817,6 +848,35 @@ describe('Reader auto-generating on open', () => {
 		expect(fakes.saveAudioFile).toHaveLength(0);
 	});
 
+	it('stops when the note is deleted before it starts generating', async () => {
+		const reader = makeReader(autoGenerateSettings);
+		fakes.diskContent = 'A1';
+		const done = reader.autoGenerateIfNeeded(makeFile('A'));
+		// Still waiting on the saved-audio status check.
+		reader.handleFileDeleted('A.md');
+		await done;
+
+		expect(fakes.synthCalls).toHaveLength(0);
+		expect(fakes.saveAudioFile).toHaveLength(0);
+	});
+
+	it('cancels its save when the note is deleted while the save is still in progress', async () => {
+		const reader = makeReader(autoGenerateSettings);
+		fakes.diskContent = 'A1';
+		fakes.holdSaves = true;
+		const done = reader.autoGenerateIfNeeded(makeFile('A'));
+		await settle();
+		await finishGenerating('A');
+
+		const isSaveCancelled = fakes.saveAudioFile[0]?.[5] as () => boolean;
+		expect(isSaveCancelled()).toBe(false);
+		reader.handleFileDeleted('A.md');
+		expect(isSaveCancelled()).toBe(true);
+
+		for (const release of fakes.heldSaves.splice(0)) release();
+		await done;
+	});
+
 	it('keeps going when a different note is deleted', async () => {
 		const reader = makeReader(autoGenerateSettings);
 		fakes.diskContent = 'A1\nA2';
@@ -859,8 +919,16 @@ describe('Reader auto-generating on open', () => {
 		await settle();
 		expect(callsFor('A1')).toHaveLength(2);
 
+		callsFor('A1')[0]?.resolve();
+		await settle();
+		await first;
+		// The first (cancelled) run finishing doesn't drop the second from tracking: opening the note again
+		// still doesn't start a third.
+		await reader.autoGenerateIfNeeded(makeFile('A'));
+		expect(callsFor('A1')).toHaveLength(2);
+
 		await finishGenerating('A');
-		await Promise.all([first, second]);
+		await second;
 		expect(fakes.saveAudioFile).toHaveLength(1);
 	});
 });

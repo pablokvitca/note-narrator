@@ -897,8 +897,10 @@ export class Reader extends Events {
 		job.savedForSession = true;
 		const buffers = job.chunkBuffers.filter((buffer): buffer is ArrayBuffer => buffer !== undefined);
 		const chunkDurations = job.chunkDurations.map((duration) => duration ?? 0);
+		// The note can still be deleted (or the plugin unloaded) while saving waits, e.g. on the voice name lookup.
+		const isCancelled = () => job.noteDeleted || this.disposed;
 		void (async () => {
-			const audioFile = await this.savedAudio.saveAudioFile(buffers, sourceFileForSave, chunkDurations, job.narrator, contentHash);
+			const audioFile = await this.savedAudio.saveAudioFile(buffers, sourceFileForSave, chunkDurations, job.narrator, contentHash, isCancelled);
 			job.savedAudioPath = audioFile?.path ?? null;
 		})();
 	}
@@ -915,6 +917,9 @@ export class Reader extends Events {
 	 */
 	handleFileDeleted(path: string): void {
 		if (this.activeJob?.file?.path === path) this.activeJob.noteDeleted = true;
+		for (const job of this.backgroundJobs) {
+			if (job.file?.path === path) job.noteDeleted = true;
+		}
 		const autoGeneration = this.autoGenerations.get(path);
 		if (autoGeneration) autoGeneration.cancelled = true;
 		for (const job of this.backgroundJobs.filter((j) => j.file?.path === path || j.savedAudioPath === path)) {
@@ -947,7 +952,14 @@ export class Reader extends Events {
 	async autoGenerateIfNeeded(file: TFile): Promise<void> {
 		if (!this.settings.autoGenerateOnOpen || !this.settings.saveAudioFile || !this.settings.linkAudioInNote) return;
 		if (file.extension !== 'md') return;
+		if (this.disposed || this.isNoteBeingGenerated(file)) return;
 
+		// Tracked from the start, before the first wait, so deleting the note at any point stops the run.
+		const run = { cancelled: false };
+		this.autoGenerations.set(file.path, run);
+		// Stops (without saving) once the plugin unloads or the run is cancelled: a request in flight then
+		// finishes or gives up on its own, but no further chunks are requested, and nothing is written.
+		const isCancelled = () => this.disposed || run.cancelled;
 		try {
 			const status = await this.savedAudio.getAudioStatus(file);
 			if (status === 'up-to-date') return;
@@ -958,8 +970,8 @@ export class Reader extends Events {
 			if (!apiKey) return;
 
 			const rawText = await this.app.vault.cachedRead(file);
-			// Checked after the last wait before generating starts, so nothing can begin generating the note in between.
-			if (this.disposed || this.isNoteBeingGenerated(file)) return;
+			// A read or background job of the note may have started during the waits above.
+			if (isCancelled() || this.isNoteReadOrQueued(file)) return;
 			// Taken now, from the text being generated, so edits made while it generates show as outdated.
 			const contentHash = this.savedAudio.stalenessHash(rawText, file);
 			const body = stripFrontmatter(rawText);
@@ -980,30 +992,22 @@ export class Reader extends Events {
 			if (chunks.length === 0) return;
 
 			const provider = createTTSProvider(narrator.provider, narrator.voice, apiKey);
-
-			const run = { cancelled: false };
-			this.autoGenerations.set(file.path, run);
-			try {
-				const buffers: ArrayBuffer[] = [];
-				const chunkDurations: number[] = [];
-				// Stops (without saving) once the plugin unloads or the run is cancelled: a request in flight
-				// then finishes or gives up on its own, but no further chunks are requested.
-				const isCancelled = () => this.disposed || run.cancelled;
-				for (const chunk of chunks) {
-					if (isCancelled()) return;
-					const buffer = await provider.synthesize(chunk, isCancelled);
-					buffers.push(buffer);
-					chunkDurations.push(await decodeAudioDuration(buffer));
-				}
+			const buffers: ArrayBuffer[] = [];
+			const chunkDurations: number[] = [];
+			for (const chunk of chunks) {
 				if (isCancelled()) return;
-
-				await this.savedAudio.saveAudioFile(buffers, file, chunkDurations, narrator, contentHash);
-			} finally {
-				// Another run of the note may have started since this one was cancelled; leave that one tracked.
-				if (this.autoGenerations.get(file.path) === run) this.autoGenerations.delete(file.path);
+				const buffer = await provider.synthesize(chunk, isCancelled);
+				buffers.push(buffer);
+				chunkDurations.push(await decodeAudioDuration(buffer));
 			}
+			if (isCancelled()) return;
+
+			await this.savedAudio.saveAudioFile(buffers, file, chunkDurations, narrator, contentHash, isCancelled);
 		} catch (error) {
 			console.error('Note Narrator: auto-generate on open failed', error);
+		} finally {
+			// Another run of the note may have started since this one was cancelled; leave that one tracked.
+			if (this.autoGenerations.get(file.path) === run) this.autoGenerations.delete(file.path);
 		}
 	}
 
@@ -1013,11 +1017,16 @@ export class Reader extends Events {
 	 * Auto-generating it as well would pay for the same audio twice and race the two saves.
 	 */
 	private isNoteBeingGenerated(file: TFile): boolean {
-		const active = this.activeJob;
-		if (active && !active.isSelection && active.file?.path === file.path) return true;
-		if (this.findBackgroundJob(file) !== undefined) return true;
+		if (this.isNoteReadOrQueued(file)) return true;
 		const autoGeneration = this.autoGenerations.get(file.path);
 		return autoGeneration !== undefined && !autoGeneration.cancelled;
+	}
+
+	/** Whether the note's full audio is being generated by its active read or a background job (queued, generating or done). */
+	private isNoteReadOrQueued(file: TFile): boolean {
+		const active = this.activeJob;
+		if (active && !active.isSelection && active.file?.path === file.path) return true;
+		return this.findBackgroundJob(file) !== undefined;
 	}
 
 	/** The active narrator profile resolved with its provider, or null when none is usable. */
