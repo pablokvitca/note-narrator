@@ -47,6 +47,9 @@ export class PlayerView extends ItemView {
 	/** The currently-open compact speed/volume slider popover (narrow-width layout only), if any. Its anchor button is torn down by every render(), so it's simplest to always dismiss on render() rather than try to keep it pinned to a since-replaced element -- see {@link dismissPopover}. */
 	private openPopover: { el: HTMLElement; cleanup: () => void } | null = null;
 
+	/** Re-renders a second after typing stops; cancelled on close so a pending redraw can't run on a closed panel. */
+	private readonly debouncedRender = debounce(() => this.render(), 1000, true);
+
 	constructor(
 		leaf: WorkspaceLeaf,
 		private plugin: NoteNarratorPlugin,
@@ -67,6 +70,7 @@ export class PlayerView extends ItemView {
 	}
 
 	async onClose(): Promise<void> {
+		this.debouncedRender.cancel();
 		this.dismissPopover();
 	}
 
@@ -91,8 +95,7 @@ export class PlayerView extends ItemView {
 			}),
 		);
 
-		const debouncedRender = debounce(() => this.render(), 1000, true);
-		this.registerEvent(this.app.workspace.on('editor-change', () => debouncedRender()));
+		this.registerEvent(this.app.workspace.on('editor-change', () => this.debouncedRender()));
 
 		this.render();
 	}
