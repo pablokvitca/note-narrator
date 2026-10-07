@@ -1,9 +1,11 @@
 import { debounce, ItemView, MarkdownView, Menu, setIcon, Setting, TFile, WorkspaceLeaf } from 'obsidian';
 import { ConfirmModal } from './confirm-modal';
 import NoteNarratorPlugin from '../main';
-import { getActiveProfile, getDropdownProfiles, savedVoiceMatches } from '../settings/profiles';
+import { getActiveProfile, getDropdownProfiles } from '../settings/profiles';
 import { hasPendingGeneration } from '../engine/background-job';
+import { savedAudioFreshness } from '../engine/saved-audio-freshness';
 import { BackgroundButtonSpec, backgroundButtonSpec } from './background-button';
+import { readButtonLabel } from './read-button';
 import { PLAY_SAVED_ICON_ID, skipIconId } from './icons';
 import { AudioLinkStatus, ReaderState } from '../engine/reader-types';
 import { computeFullReadTimes, formatTimeDisplay } from '../engine/time-utils';
@@ -799,20 +801,14 @@ export class PlayerView extends ItemView {
 					// clicking it just stops whatever's currently happening and plays the saved copy instead (same
 					// pattern as Read/Regenerate staying clickable while a *different* note is playing).
 					const narrator = this.plugin.reader.getActiveNarrator();
-					const voiceMismatch = info.savedVoice !== undefined && !!narrator && !savedVoiceMatches(info.savedVoice, narrator.voice);
-					if (!active) {
-						if (info.status === 'outdated') {
-							this.setButtonLabel(readButton, readLabelEl, 'Regenerate');
-						} else if (voiceMismatch) {
-							this.setButtonLabel(readButton, readLabelEl, 'Regenerate with new narrator');
-						}
-					}
+					const freshness = savedAudioFreshness(info.status, info.savedVoice, narrator?.voice ?? null);
+					const readLabel = readButtonLabel(freshness);
+					if (!active && readLabel) this.setButtonLabel(readButton, readLabelEl, readLabel);
 
-					// Now that the saved audio's status is known, decide again with it: up to date with this
+					// Now that the saved audio's freshness is known, decide again with it: up to date with this
 					// narrator makes the background button regenerate (its tooltip says so), the same way Read
 					// is the button that regenerates.
-					const savedAudioUpToDate = info.status === 'up-to-date' && !voiceMismatch;
-					const decided = this.plugin.reader.getGenerateInBackgroundAction(activeFile, currentContent, savedAudioUpToDate);
+					const decided = this.plugin.reader.getGenerateInBackgroundAction(activeFile, currentContent, freshness === 'current');
 					if (decided !== action) showBackgroundButton(backgroundButtonSpec(decided));
 
 					playSavedButton.disabled = false;
