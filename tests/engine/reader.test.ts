@@ -328,6 +328,19 @@ describe('Reader given a note with no open editor', () => {
 		expect(Notice.messages).not.toContain('Open a note to read it aloud.');
 	});
 
+	it('starts nothing if the plugin unloads while the note is being read from the vault', async () => {
+		const reader = makeReader();
+		fakes.diskContent = 'A1';
+		void reader.readNote(closedNote('A'));
+		reader.generateNoteInBackground(closedNote('B'));
+		reader.dispose();
+		await settle();
+
+		expect(fakes.synthCalls).toHaveLength(0);
+		expect(reader.getState().status).toBe('idle');
+		expect(reader.getState().backgroundJobs).toHaveLength(0);
+	});
+
 	it('generates the note in the background from the vault', async () => {
 		const reader = makeReader();
 		fakes.diskContent = 'A1\nA2';
@@ -748,6 +761,31 @@ describe('Reader auto-generating on open', () => {
 
 		expect(callsFor('A')).toHaveLength(1);
 		expect(fakes.saveAudioFile).toHaveLength(saves);
+	});
+
+	it('stops, without saving, when the plugin unloads mid-generation', async () => {
+		const reader = makeReader(autoGenerateSettings);
+		fakes.diskContent = 'A1\nA2\nA3';
+		const done = reader.autoGenerateIfNeeded(makeFile('A'));
+		await settle();
+
+		reader.dispose();
+		expect(callsFor('A1')[0]?.isCancelled()).toBe(true);
+		await finishGenerating('A');
+		await done;
+
+		expect(callsFor('A')).toHaveLength(1);
+		expect(fakes.saveAudioFile).toHaveLength(0);
+	});
+
+	it('does not start once the plugin has unloaded', async () => {
+		const reader = makeReader(autoGenerateSettings);
+		fakes.diskContent = 'A1';
+		reader.dispose();
+
+		await reader.autoGenerateIfNeeded(makeFile('A'));
+
+		expect(fakes.synthCalls).toHaveLength(0);
 	});
 
 	it('does not start again when the note is reopened while it is still generating', async () => {
