@@ -16,6 +16,8 @@ export default class NoteNarratorPlugin extends Plugin {
 	// MarkdownView instances (and their DOM) survive a plugin reload/update; track the action
 	// buttons we add so onunload can remove them and a fresh load doesn't duplicate them.
 	private actionButtons: HTMLElement[] = [];
+	/** Refreshes every toolbar icon after a short pause; see onload() for what triggers it. */
+	private readonly refreshIconsSoon = debounce(() => void this.refreshActionIcons(), 1000, true);
 
 	async onload() {
 		registerCustomIcons();
@@ -36,7 +38,8 @@ export default class NoteNarratorPlugin extends Plugin {
 		// The saved-audio state can change from a frontmatter update (audio linked/unlinked), a content
 		// edit (up to date -> outdated), or the Note Narrator panel saving audio; refresh the toolbar icons for
 		// all of those. Content edits are debounced since each refresh re-hashes the note.
-		const refreshIcons = debounce(() => void this.refreshActionIcons(), 1000, true);
+		const refreshIcons = this.refreshIconsSoon;
+		this.register(() => refreshIcons.cancel());
 		this.registerEvent(this.app.metadataCache.on('changed', refreshIcons));
 		this.registerEvent(this.app.vault.on('modify', refreshIcons));
 		// The linked audio file being deleted or moved (from the file explorer or outside Obsidian) changes the status too.
@@ -145,7 +148,8 @@ export default class NoteNarratorPlugin extends Plugin {
 		const file = view.file;
 		if (!button || !file) return;
 
-		const saved = (await this.reader.getAudioStatus(file)) === 'up-to-date';
+		// Only when it's current with the active narrator too: otherwise Read regenerates it.
+		const saved = (await this.reader.getSavedAudioFreshness(file)) === 'current';
 		// The view may have moved to another note while the status was being computed.
 		if (view.file !== file) return;
 
@@ -169,6 +173,8 @@ export default class NoteNarratorPlugin extends Plugin {
 	async saveSettings() {
 		await this.saveData(this.settings);
 		this.refreshPanels();
+		// A different narrator profile can make a note's saved audio stop (or start) counting as current.
+		this.refreshIconsSoon();
 	}
 
 	/** Re-renders any open player panel so it reflects settings changed elsewhere (profiles added, renamed or edited). */

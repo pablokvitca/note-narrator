@@ -3,11 +3,11 @@ import { ConfirmModal } from './confirm-modal';
 import NoteNarratorPlugin from '../main';
 import { getActiveProfile, getDropdownProfiles } from '../settings/profiles';
 import { hasPendingGeneration } from '../engine/background-job';
-import { savedAudioFreshness } from '../engine/saved-audio-freshness';
+import { SavedAudioFreshness, savedAudioFreshness } from '../engine/saved-audio-freshness';
 import { BackgroundButtonSpec, backgroundButtonSpec } from './background-button';
 import { readButtonLabel } from './read-button';
 import { PLAY_SAVED_ICON_ID, skipIconId } from './icons';
-import { AudioLinkStatus, ReaderState } from '../engine/reader-types';
+import { ReaderState } from '../engine/reader-types';
 import { computeFullReadTimes, formatTimeDisplay } from '../engine/time-utils';
 import { BackgroundJobList } from './background-job-list';
 import { attachTooltip } from './touch-tooltip';
@@ -26,9 +26,10 @@ const STATUS_LABELS: Record<ReaderState['status'], string> = {
 	paused: 'Paused',
 };
 
-const AUDIO_STATUS_LABELS: Record<AudioLinkStatus, string> = {
-	none: '',
-	'up-to-date': '✓ Saved audio is up to date',
+/** The saved-audio status line; no line at all for 'unknown' (no stored link or hash to compare with). */
+const AUDIO_STATUS_LABELS: Record<Exclude<SavedAudioFreshness, 'unknown'>, string> = {
+	current: '✓ Saved audio is up to date',
+	'other-narrator': '⚠ Saved audio was made with a different narrator',
 	outdated: '⚠ Saved audio is outdated — note has changed since it was generated',
 };
 
@@ -648,10 +649,10 @@ export class PlayerView extends ItemView {
 		const statusEl = container.createDiv({ cls: 'note-narrator-audio-status' });
 		void (async () => {
 			try {
-				const status = await this.plugin.reader.getAudioStatus(activeFile);
-					if (status === 'none') return;
-					statusEl.addClass(status === 'outdated' ? 'is-outdated' : 'is-up-to-date');
-					statusEl.createSpan({ text: AUDIO_STATUS_LABELS[status] });
+				const freshness = await this.plugin.reader.getSavedAudioFreshness(activeFile);
+					if (freshness === null || freshness === 'unknown') return;
+					statusEl.addClass(freshness === 'current' ? 'is-up-to-date' : 'is-outdated');
+					statusEl.createSpan({ text: AUDIO_STATUS_LABELS[freshness] });
 
 					if (this.plugin.settings.showClearFilesButton) {
 						const deleteButton = statusEl.createDiv({ cls: 'clickable-icon note-narrator-audio-status-delete' });

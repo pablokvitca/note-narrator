@@ -9,6 +9,7 @@ import { chunkNote, stripFrontmatter } from '../text/text-utils';
 import { createTTSProvider, getProviderApiKey, missingApiKeyMessage } from '../tts/registry';
 import { NoteText } from './note-text';
 import { SavedAudio } from './saved-audio';
+import { SavedAudioFreshness, savedAudioFreshness } from './saved-audio-freshness';
 
 /** What the "Generate note audio in background" command says when there's nothing for it to do. */
 const GENERATE_IN_BACKGROUND_NOTICES: Record<Exclude<GenerateInBackgroundAction, 'move-active' | 'generate' | 'regenerate'>, (note: string) => string> = {
@@ -1057,6 +1058,17 @@ export class Reader extends Events {
 	/** Compares the note's current content against the hash stored when its linked audio was last generated. */
 	getAudioStatus(file: TFile): Promise<AudioLinkStatus> {
 		return this.savedAudio.getAudioStatus(file);
+	}
+
+	/**
+	 * How the note's saved audio compares with the note and the active narrator (see {@link savedAudioFreshness}),
+	 * or null when it has none. For the panel's status line and the toolbar icon, which is also where the
+	 * properties of a linked audio file that's gone missing are cleaned up.
+	 */
+	async getSavedAudioFreshness(file: TFile): Promise<SavedAudioFreshness | null> {
+		const info = await this.savedAudio.getAudioInfo(file, true);
+		if (!info) return null;
+		return savedAudioFreshness(info.status, info.savedVoice, this.noteText.getActiveNarrator()?.voice ?? null);
 	}
 
 	/** Info about a note's linked saved audio, for the player view's "Play saved"/"Regenerate" buttons. Null if none exists. */

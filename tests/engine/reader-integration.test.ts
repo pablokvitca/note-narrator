@@ -454,3 +454,40 @@ describe('Reader end to end: a note deleted while its existing audio is being re
 		expect(Notice.messages.filter((message) => message.startsWith('Failed'))).toEqual([]);
 	});
 });
+
+describe('Reader end to end: saved audio freshness after the narrator changes', () => {
+	it('is current once saved, and other-narrator after switching to a profile with another voice', async () => {
+		const settings = { ...DEFAULT_SETTINGS, ...migrateProfileSettings({}), saveAudioFile: true, linkAudioInNote: true } as NoteNarratorSettings;
+		reader = new Reader(vault.app(), settings);
+		const note = vault.file('Note.md');
+		expect(await reader.getSavedAudioFreshness(note)).toBeNull();
+
+		reader.generateNoteInBackground(vault.view('Note.md'));
+		await settle();
+		await finishGenerating();
+		expect(await reader.getSavedAudioFreshness(note)).toBe('current');
+
+		const profile = settings.profiles[0]!;
+		profile.voice = { ...profile.voice, voiceId: `${profile.voice.voiceId}-other` };
+		expect(await reader.getSavedAudioFreshness(note)).toBe('other-narrator');
+	});
+});
+
+describe('Reader end to end: saved audio deleted outside Note Narrator', () => {
+	it('cleans up the note\'s audio properties when its freshness is checked', async () => {
+		const settings = { ...DEFAULT_SETTINGS, ...migrateProfileSettings({}), saveAudioFile: true, linkAudioInNote: true } as NoteNarratorSettings;
+		reader = new Reader(vault.app(), settings);
+		reader.generateNoteInBackground(vault.view('Note.md'));
+		await settle();
+		await finishGenerating();
+		const [audioPath] = [...vault.binary.keys()];
+		expect(vault.frontmatter('Note.md')?.[settings.audioLinkProperty]).toBeDefined();
+
+		// Gone without a delete event reaching Note Narrator (e.g. removed outside Obsidian).
+		vault.binary.delete(audioPath!);
+		expect(await reader.getSavedAudioFreshness(vault.file('Note.md'))).toBeNull();
+		await settle();
+
+		expect(vault.frontmatter('Note.md')?.[settings.audioLinkProperty]).toBeUndefined();
+	});
+});

@@ -262,9 +262,17 @@ export class SavedAudio {
 	}
 
 	/** Info about a note's linked saved audio, for the player view's "Play saved"/"Regenerate" buttons. Null if none exists. */
-	async getAudioInfo(file: TFile): Promise<{ audioFile: TFile; status: AudioLinkStatus; savedVoice: string | undefined } | null> {
+	async getAudioInfo(
+		file: TFile,
+		cleanUpMissing = false,
+	): Promise<{ audioFile: TFile; status: AudioLinkStatus; savedVoice: string | undefined } | null> {
 		const audioFile = this.findExistingAudioFile(file);
-		if (!audioFile) return null;
+		if (!audioFile) {
+			// getAudioStatus() is what removes the properties a missing audio file left behind (when that
+			// setting is on). Only the status displays (status line, toolbar icon) ask for it.
+			if (cleanUpMissing) await this.getAudioStatus(file);
+			return null;
+		}
 
 		const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
 		const savedVoice = frontmatter?.[this.settings.audioVoiceProperty] as string | undefined;
