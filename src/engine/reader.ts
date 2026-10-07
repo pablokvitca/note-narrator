@@ -62,8 +62,11 @@ export class Reader extends Events {
 
 	/** Set while a saved file plays directly (no generation job), so `getSpan()` can still map elapsed playback time back to a chunk/section. Null whenever there's no such timeline (e.g. the note's since changed, or no chunk-durations property was saved). */
 	private savedPlaybackTimeline: SavedPlaybackTimeline | null = null;
-	/** Paths of the notes "Auto-generate on open" is generating right now, so reopening one doesn't start it again. */
-	private readonly autoGenerating = new Set<string>();
+	/**
+	 * The notes "Auto-generate on open" is generating right now, by path, so reopening one doesn't start it
+	 * again. Setting `cancelled` (e.g. the note was deleted) stops that run before its next chunk and before saving.
+	 */
+	private readonly autoGenerations = new Map<string, { cancelled: boolean }>();
 	/** Set once the plugin unloads (see {@link dispose}), so work still waiting on a request or a vault read stops instead of starting or saving anything. */
 	private disposed = false;
 
@@ -145,7 +148,7 @@ export class Reader extends Events {
 	/** Stops playback and cancels every generation job, background ones included; called when the plugin unloads so nothing keeps generating or saving afterwards. */
 	dispose(): void {
 		this.disposed = true;
-		this.autoGenerating.clear();
+		this.autoGenerations.clear();
 		this.stop();
 		for (const job of this.backgroundJobs) job.cancelled = true;
 		this.backgroundJobs = [];
@@ -907,10 +910,13 @@ export class Reader extends Events {
 	 *
 	 * The active read of a deleted note keeps playing, but is marked so it's never saved (that would leave
 	 * an orphan audio file, then fail to link it from the missing note) or moved to the background (where it
-	 * would show as a card for a note that no longer exists).
+	 * would show as a card for a note that no longer exists). An "Auto-generate on open" of it stops, for
+	 * the same reason.
 	 */
 	handleFileDeleted(path: string): void {
 		if (this.activeJob?.file?.path === path) this.activeJob.noteDeleted = true;
+		const autoGeneration = this.autoGenerations.get(path);
+		if (autoGeneration) autoGeneration.cancelled = true;
 		for (const job of this.backgroundJobs.filter((j) => j.file?.path === path || j.savedAudioPath === path)) {
 			this.discardBackgroundJob(job.id);
 		}
@@ -920,11 +926,17 @@ export class Reader extends Events {
 	 * Keeps a job's saved-audio path in step with the file being moved or renamed, so deleting it from its
 	 * new place still drops the job. (Trashing a file, to the system trash or Obsidian's `.trash` folder,
 	 * fires a delete event, not a rename -- see {@link handleFileDeleted}. A renamed note needs nothing here:
-	 * the job holds the same TFile, whose path Obsidian updates.)
+	 * the job holds the same TFile, whose path Obsidian updates. A running "Auto-generate on open" is tracked
+	 * by path, so it moves along with its note.)
 	 */
 	handleFileRenamed(newPath: string, oldPath: string): void {
 		for (const job of this.backgroundJobs) {
 			if (job.savedAudioPath === oldPath) job.savedAudioPath = newPath;
+		}
+		const autoGeneration = this.autoGenerations.get(oldPath);
+		if (autoGeneration) {
+			this.autoGenerations.delete(oldPath);
+			this.autoGenerations.set(newPath, autoGeneration);
 		}
 	}
 
@@ -969,13 +981,14 @@ export class Reader extends Events {
 
 			const provider = createTTSProvider(narrator.provider, narrator.voice, apiKey);
 
-			this.autoGenerating.add(file.path);
+			const run = { cancelled: false };
+			this.autoGenerations.set(file.path, run);
 			try {
 				const buffers: ArrayBuffer[] = [];
 				const chunkDurations: number[] = [];
-				// Stops (without saving) once the plugin unloads: a request in flight then finishes or gives up
-				// on its own, but no further chunks are requested.
-				const isCancelled = () => this.disposed;
+				// Stops (without saving) once the plugin unloads or the run is cancelled: a request in flight
+				// then finishes or gives up on its own, but no further chunks are requested.
+				const isCancelled = () => this.disposed || run.cancelled;
 				for (const chunk of chunks) {
 					if (isCancelled()) return;
 					const buffer = await provider.synthesize(chunk, isCancelled);
@@ -986,7 +999,8 @@ export class Reader extends Events {
 
 				await this.savedAudio.saveAudioFile(buffers, file, chunkDurations, narrator, contentHash);
 			} finally {
-				this.autoGenerating.delete(file.path);
+				// Another run of the note may have started since this one was cancelled; leave that one tracked.
+				if (this.autoGenerations.get(file.path) === run) this.autoGenerations.delete(file.path);
 			}
 		} catch (error) {
 			console.error('Note Narrator: auto-generate on open failed', error);
@@ -1001,7 +1015,9 @@ export class Reader extends Events {
 	private isNoteBeingGenerated(file: TFile): boolean {
 		const active = this.activeJob;
 		if (active && !active.isSelection && active.file?.path === file.path) return true;
-		return this.findBackgroundJob(file) !== undefined || this.autoGenerating.has(file.path);
+		if (this.findBackgroundJob(file) !== undefined) return true;
+		const autoGeneration = this.autoGenerations.get(file.path);
+		return autoGeneration !== undefined && !autoGeneration.cancelled;
 	}
 
 	/** The active narrator profile resolved with its provider, or null when none is usable. */

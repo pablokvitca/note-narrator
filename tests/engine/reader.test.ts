@@ -801,6 +801,68 @@ describe('Reader auto-generating on open', () => {
 		await first;
 		expect(fakes.saveAudioFile).toHaveLength(1);
 	});
+
+	it('stops, without saving, when the note is deleted mid-generation', async () => {
+		const reader = makeReader(autoGenerateSettings);
+		fakes.diskContent = 'A1\nA2\nA3';
+		const done = reader.autoGenerateIfNeeded(makeFile('A'));
+		await settle();
+
+		reader.handleFileDeleted('A.md');
+		expect(callsFor('A1')[0]?.isCancelled()).toBe(true);
+		await finishGenerating('A');
+		await done;
+
+		expect(callsFor('A')).toHaveLength(1);
+		expect(fakes.saveAudioFile).toHaveLength(0);
+	});
+
+	it('keeps going when a different note is deleted', async () => {
+		const reader = makeReader(autoGenerateSettings);
+		fakes.diskContent = 'A1\nA2';
+		const done = reader.autoGenerateIfNeeded(makeFile('A'));
+		await settle();
+
+		reader.handleFileDeleted('B.md');
+		await finishGenerating('A');
+		await done;
+
+		expect(callsFor('A')).toHaveLength(2);
+		expect(fakes.saveAudioFile).toHaveLength(1);
+	});
+
+	it('still stops when the note is renamed, then deleted, mid-generation', async () => {
+		const reader = makeReader(autoGenerateSettings);
+		fakes.diskContent = 'A1\nA2';
+		const file = makeFile('A');
+		const done = reader.autoGenerateIfNeeded(file);
+		await settle();
+
+		file.path = 'Renamed.md';
+		reader.handleFileRenamed('Renamed.md', 'A.md');
+		reader.handleFileDeleted('Renamed.md');
+		await finishGenerating('A');
+		await done;
+
+		expect(callsFor('A')).toHaveLength(1);
+		expect(fakes.saveAudioFile).toHaveLength(0);
+	});
+
+	it('can generate the note again once a deleted note with the same path is recreated', async () => {
+		const reader = makeReader(autoGenerateSettings);
+		fakes.diskContent = 'A1';
+		const first = reader.autoGenerateIfNeeded(makeFile('A'));
+		await settle();
+		reader.handleFileDeleted('A.md');
+
+		const second = reader.autoGenerateIfNeeded(makeFile('A'));
+		await settle();
+		expect(callsFor('A1')).toHaveLength(2);
+
+		await finishGenerating('A');
+		await Promise.all([first, second]);
+		expect(fakes.saveAudioFile).toHaveLength(1);
+	});
 });
 
 describe('Reader playing a background job while another note is being read', () => {
