@@ -201,6 +201,7 @@ class FakeVault {
 						this.binary.set(f.path, data);
 					}),
 				createFolder: () => Promise.resolve(),
+				getMarkdownFiles: () => [...this.text.keys()].filter((path) => path.endsWith('.md')).map((path) => this.file(path)),
 				getAbstractFileByPath: (path: string) => (this.text.has(path) || this.binary.has(path) ? this.file(path) : null),
 			},
 			metadataCache: {
@@ -795,5 +796,131 @@ describe('Reader end to end: saved audio deleted outside Note Narrator', () => {
 		await settle();
 
 		expect(vault.frontmatter('Note.md')?.[settings.audioLinkProperty]).toBeUndefined();
+	});
+});
+
+describe('Reader end to end: an audio-path property pointing at something other than audio', () => {
+	const OTHER = '# Other note\n\nNot audio.';
+
+	/** Note.md's audio properties, hand-edited so its audio path names another note. */
+	function pointAudioPathAtOtherNote(): void {
+		vault.write('Other.md', OTHER);
+		vault.refreshCache('Other.md');
+		const frontmatter = `---\n${DEFAULT_SETTINGS.audioLinkProperty}: "[[Other.md]]"\n${DEFAULT_SETTINGS.audioHashProperty}: v2:stale\n${DEFAULT_SETTINGS.audioPathProperty}: Other.md\n---\n`;
+		vault.write('Note.md', `${frontmatter}${NOTE}`);
+		vault.refreshCache('Note.md');
+	}
+
+	it('saves new audio in Replace mode instead of overwriting the other note', async () => {
+		pointAudioPathAtOtherNote();
+
+		reader.generateNoteInBackground(vault.view('Note.md'));
+		await settle();
+		await finishGenerating();
+
+		expect(vault.text.get('Other.md')).toBe(OTHER);
+		expect(vault.binary.has('Other.md')).toBe(false);
+		const [audioPath] = [...vault.binary.keys()];
+		expect(audioPath).toMatch(/\.mp3$/);
+		expect(vault.frontmatter('Note.md')?.[DEFAULT_SETTINGS.audioPathProperty]).toBe(audioPath);
+		expect(await reader.getAudioStatus(vault.file('Note.md'))).toBe('up-to-date');
+	});
+
+	it('Clear removes the properties but leaves the other note alone', async () => {
+		pointAudioPathAtOtherNote();
+
+		await reader.clearReaderFiles(vault.file('Note.md'));
+		await settle();
+
+		expect(vault.text.get('Other.md')).toBe(OTHER);
+		expect(Object.keys(vault.frontmatter('Note.md') ?? {})).toEqual([]);
+	});
+
+	it('still replaces audio saved with an uppercase .MP3 extension', async () => {
+		vault.binary.set('Note.MP3', new ArrayBuffer(1));
+		const frontmatter = `---\n${DEFAULT_SETTINGS.audioLinkProperty}: "[[Note.MP3]]"\n${DEFAULT_SETTINGS.audioHashProperty}: v2:stale\n${DEFAULT_SETTINGS.audioPathProperty}: Note.MP3\n---\n`;
+		vault.write('Note.md', `${frontmatter}${NOTE}`);
+		vault.refreshCache('Note.md');
+
+		reader.generateNoteInBackground(vault.view('Note.md'));
+		await settle();
+		await finishGenerating();
+
+		expect([...vault.binary.keys()]).toEqual(['Note.MP3']);
+		expect(vault.binary.get('Note.MP3')?.byteLength).toBeGreaterThan(1);
+	});
+
+	it('shows no saved audio to play', async () => {
+		pointAudioPathAtOtherNote();
+
+		expect(await reader.getAudioInfo(vault.file('Note.md'))).toBeNull();
+	});
+});
+
+describe('Reader end to end: a copy of a note, sharing its saved audio', () => {
+	/** Saves Note.md's audio, then copies the note (properties included), like Obsidian's Make a copy. */
+	async function saveAndCopy(): Promise<{ audioPath: string; audio: ArrayBuffer }> {
+		reader.generateNoteInBackground(vault.view('Note.md'));
+		await settle();
+		await finishGenerating();
+		reader.discardBackgroundJob(reader.getState().backgroundJobs[0]!.id);
+		const [audioPath, audio] = [...vault.binary.entries()][0]!;
+		vault.write('Copy.md', vault.text.get('Note.md') ?? '');
+		vault.refreshCache('Copy.md');
+		Notice.messages = [];
+		return { audioPath, audio };
+	}
+
+	it('saves the copy\'s audio to a new file in Replace mode, keeping the original\'s, with a notice', async () => {
+		const { audioPath, audio } = await saveAndCopy();
+		vault.write('Copy.md', `${vault.text.get('Copy.md') ?? ''}\n\nAn added line.`);
+
+		reader.generateNoteInBackground(vault.view('Copy.md'));
+		await settle();
+		await finishGenerating();
+
+		expect(vault.binary.get(audioPath)).toBe(audio);
+		const copyAudio = vault.frontmatter('Copy.md')?.[DEFAULT_SETTINGS.audioPathProperty];
+		expect(copyAudio).not.toBe(audioPath);
+		expect(vault.binary.has(String(copyAudio))).toBe(true);
+		expect(Notice.messages).toContain(`Kept ${audioPath}, since another note's audio is saved there too.`);
+	});
+
+	it('Clear on the copy removes its properties but keeps the original\'s audio, with a notice', async () => {
+		const { audioPath, audio } = await saveAndCopy();
+
+		await reader.clearReaderFiles(vault.file('Copy.md'));
+		await settle();
+
+		expect(vault.binary.get(audioPath)).toBe(audio);
+		expect(Object.keys(vault.frontmatter('Copy.md') ?? {})).toEqual([]);
+		expect(Notice.messages).toContain(`Cleared Note Narrator properties. Kept ${audioPath}, since another note's audio is saved there too.`);
+	});
+
+	it('keeps the original\'s audio when the copy links it with a Markdown link', async () => {
+		const { audioPath, audio } = await saveAndCopy();
+		// "Use [[Wikilinks]]" off: Obsidian doesn't index Markdown links in properties.
+		vault.write('Copy.md', (vault.text.get('Copy.md') ?? '').replace(`"[[${audioPath}]]"`, `"[Note](${encodeURI(audioPath)})"`));
+		vault.refreshCache('Copy.md');
+		expect(vault.text.get('Copy.md')).not.toContain('[[');
+
+		await reader.clearReaderFiles(vault.file('Copy.md'));
+		await settle();
+
+		expect(vault.binary.get(audioPath)).toBe(audio);
+	});
+
+	it('still replaces audio that another note only embeds in its text', async () => {
+		const { audioPath } = await saveAndCopy();
+		vault.trash('Copy.md');
+		vault.write('Daily.md', `Listen: ![[${audioPath}]]`);
+		vault.write('Note.md', `${vault.text.get('Note.md') ?? ''}\n\nAn added line.`);
+
+		reader.generateNoteInBackground(vault.view('Note.md'));
+		await settle();
+		await finishGenerating();
+
+		expect([...vault.binary.keys()]).toEqual([audioPath]);
+		expect(Notice.messages).toContain(`Updated audio at ${audioPath}`);
 	});
 });

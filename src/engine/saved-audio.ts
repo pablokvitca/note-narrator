@@ -14,6 +14,9 @@ import { extractFrontmatterYaml, hashText, stripFrontmatter } from '../text/text
  */
 const HASH_VERSION_PREFIX = 'v2:';
 
+/** The extension saved audio is written with. */
+const AUDIO_EXTENSION = 'mp3';
+
 /**
  * A note's saved audio: writing the `.mp3` next to it, linking it in the note's frontmatter, deciding whether
  * it is up to date or outdated (by hashing the note), and clearing it. Everything here goes through the vault
@@ -56,10 +59,14 @@ export class SavedAudio {
 			const voiceName = apiKey ? await resolveVoiceLabel(narrator.provider, narrator.voice, apiKey) : this.voiceFallbackLabel(narrator.voice);
 			const data = concatArrayBuffers(chunks);
 
-			const existingAudioFile =
+			let existingAudioFile =
 				this.settings.saveVersioning === 'replace' && this.settings.linkAudioInNote && sourceFile
 					? this.findExistingAudioFile(sourceFile)
 					: null;
+			if (existingAudioFile && sourceFile && this.isAnotherNotesAudio(existingAudioFile, sourceFile)) {
+				new Notice(`Kept ${existingAudioFile.path}, since another note's audio is saved there too.`);
+				existingAudioFile = null;
+			}
 
 			let audioFile: TFile;
 			if (existingAudioFile) {
@@ -74,7 +81,7 @@ export class SavedAudio {
 				await this.ensureFolder(folderPath);
 				const noteName = sourceFile?.basename ?? `Reading ${formatTimestampForFilename(new Date())}`;
 				const baseName = sanitizeFilenameComponent(`${noteName} (${voiceName})`);
-				const path = await this.uniquePath(folderPath, baseName, 'mp3');
+				const path = await this.uniquePath(folderPath, baseName, AUDIO_EXTENSION);
 				if (isCancelled()) return null;
 				audioFile = await this.app.vault.createBinary(path, data);
 				if (this.wasDeleted(sourceFile)) {
@@ -115,13 +122,28 @@ export class SavedAudio {
 		return voice.voiceId;
 	}
 
+	/**
+	 * The note's saved audio file, if its audio-path property points at one. Only an `.mp3` (what saving writes)
+	 * counts: the property is user-editable, and anything else it points at, such as another note, must never be
+	 * overwritten by a save in Replace mode or trashed by Clear.
+	 */
 	private findExistingAudioFile(sourceFile: TFile): TFile | null {
 		const frontmatter = this.app.metadataCache.getFileCache(sourceFile)?.frontmatter;
 		const storedPath: unknown = frontmatter?.[this.settings.audioPathProperty];
-		// The property is user-editable, so clean it up (stray slashes, non-breaking spaces, non-NFC Unicode) before the lookup.
+		// Clean it up (stray slashes, non-breaking spaces, non-NFC Unicode) before the lookup.
 		if (typeof storedPath !== 'string' || !storedPath) return null;
 		const file = this.app.vault.getAbstractFileByPath(normalizePath(storedPath));
-		return file instanceof TFile ? file : null;
+		return file instanceof TFile && file.extension.toLowerCase() === AUDIO_EXTENSION ? file : null;
+	}
+
+	/**
+	 * Whether another note's saved audio is also `audioFile`, as for a copy of the note, which keeps its
+	 * properties. That audio is then the other note's too, so this note must neither replace nor trash it.
+	 * Checks every note's audio-path property in the metadata cache (no file reads), so it works whatever
+	 * link format the audio link property uses.
+	 */
+	private isAnotherNotesAudio(audioFile: TFile, sourceFile: TFile): boolean {
+		return this.app.vault.getMarkdownFiles().some((other) => other !== sourceFile && this.findExistingAudioFile(other) === audioFile);
 	}
 
 	/**
@@ -248,13 +270,15 @@ export class SavedAudio {
 	/** Deletes a note's linked audio file (if any) and removes the Note Narrator audio properties from its frontmatter. */
 	async clearReaderFiles(sourceFile: TFile): Promise<void> {
 		const audioFile = this.findExistingAudioFile(sourceFile);
-		if (audioFile) {
+		const shared = audioFile !== null && this.isAnotherNotesAudio(audioFile, sourceFile);
+		if (audioFile && !shared) {
 			await this.app.fileManager.trashFile(audioFile);
 		}
 
 		await this.removeReaderProperties(sourceFile);
 
-		new Notice(audioFile ? 'Cleared Note Narrator audio file and properties.' : 'Cleared Note Narrator properties (no audio file was linked).');
+		if (audioFile && shared) new Notice(`Cleared Note Narrator properties. Kept ${audioFile.path}, since another note's audio is saved there too.`);
+		else new Notice(audioFile ? 'Cleared Note Narrator audio file and properties.' : 'Cleared Note Narrator properties (no audio file was linked).');
 	}
 
 	/** Compares the note's current content against the hash stored when its linked audio was last generated. */

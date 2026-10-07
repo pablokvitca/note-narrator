@@ -115,7 +115,7 @@ export class FilesSection extends SettingsSection {
 					},
 					{
 						name: 'Auto-clean up properties when saved file is missing',
-						desc: "When a note's linked audio file no longer exists (moved or deleted outside Note Narrator), silently remove the properties above instead of showing a misleading \"outdated\" status.",
+						desc: "When a note's linked audio file no longer exists (moved or deleted outside Note Narrator), or its path property doesn't name an .mp3 file, silently remove the properties above instead of showing a misleading \"outdated\" status.",
 						control: {
 							type: 'toggle',
 							key: 'autoCleanupMissingAudioProperties',

@@ -12,7 +12,7 @@ function fake<T>(value: object): T {
 }
 
 function makeFile(path: string): TFile {
-	return fake<TFile>(Object.assign(new StubTFile(), { path, basename: path.replace(/\.md$/, '') }));
+	return fake<TFile>(Object.assign(new StubTFile(), { path, basename: path.replace(/\.[^.]+$/, ''), extension: path.split('.').pop() }));
 }
 
 interface Vault {
