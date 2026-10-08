@@ -1,10 +1,11 @@
 import { App, Events, MarkdownView, Notice, TFile } from 'obsidian';
 import { decodeAudioDuration, sliceIntoChunks } from './audio-utils';
-import { AudioLinkStatus, ChunkOutcome, GenerationJob, IDLE_STATE, PositionBase, ReaderState, SavedPlaybackTimeline } from './reader-types';
+import { AudioLinkStatus, ChunkOutcome, GenerationJob, IDLE_STATE, PoolResult, PositionBase, ReaderState, SavedPlaybackTimeline } from './reader-types';
 import { ChunkPosition, RawSpan } from '../text/text-position';
 import { HighlightGranularity, NoteNarratorSettings } from '../settings/settings';
 import { ResolvedNarrator, generationWindow } from '../settings/profiles';
-import { GenerateInBackgroundAction, buildBackgroundJobInfo, decideGenerateInBackground, hasPendingGeneration } from './background-job';
+import { GenerateInBackgroundAction, decideGenerateInBackground, hasPendingGeneration } from './background-job';
+import { BackgroundQueue } from './background-queue';
 import { createTTSProvider, getProviderApiKey, missingApiKeyMessage } from '../tts/registry';
 import { NoteText } from './note-text';
 import { SavedAudio } from './saved-audio';
@@ -17,9 +18,6 @@ const GENERATE_IN_BACKGROUND_NOTICES: Record<Exclude<GenerateInBackgroundAction,
 	'already-queued': (note) => `"${note}" is already in the background queue.`,
 	'ready-in-background': (note) => `"${note}" has already finished generating in the background.`,
 };
-
-/** How a worker pool's run ended; see `Reader.runGenerationWorkerPool()`. */
-type PoolResult = 'done' | 'superseded' | 'failed';
 
 /** Whether a read covers the whole note or just the selected text. */
 type ReadKind = 'full' | 'selection';
@@ -57,8 +55,8 @@ export class Reader extends Events {
 	/** The job currently bound to playback and driving `state`. Null when nothing is generating/playing (or a saved file is playing directly, with no generation job involved). */
 	private activeJob: GenerationJob | null = null;
 
-	/** Jobs generating (or queued to generate, or done) without being bound to playback. At most one has backgroundStatus 'generating' at a time. */
-	private backgroundJobs: GenerationJob[] = [];
+	/** Jobs generating (or queued to generate, or done) without being bound to playback. */
+	private readonly backgroundQueue: BackgroundQueue;
 
 	/** Set while a saved file plays directly (no generation job), so `getSpan()` can still map elapsed playback time back to a chunk/section. Null whenever there's no such timeline (e.g. the note's since changed, or no chunk-durations property was saved). */
 	private savedPlaybackTimeline: SavedPlaybackTimeline | null = null;
@@ -81,6 +79,11 @@ export class Reader extends Events {
 		this.currentPlaybackRate = settings.playbackRate;
 		this.savedAudio = new SavedAudio(app, settings, (file) => this.trigger('audio-status-change', file));
 		this.noteText = new NoteText(app, settings);
+		this.backgroundQueue = new BackgroundQueue(settings, {
+			runWorkerPool: (job, windowSize) => this.runGenerationWorkerPool(job, windowSize),
+			publish: (backgroundJobs) => this.setState({ backgroundJobs }),
+			isStale: (job, file, currentContent) => this.isBackgroundJobStale(job, file, currentContent),
+		});
 	}
 
 	getState(): ReaderState {
@@ -100,76 +103,6 @@ export class Reader extends Events {
 		this.setState({ ...IDLE_STATE, backgroundJobs: this.state.backgroundJobs });
 	}
 
-	/** Publishes `this.backgroundJobs`' current progress/status onto `state.backgroundJobs`. */
-	private publishBackgroundJobs(): void {
-		this.setState({
-			backgroundJobs: this.backgroundJobs.map((job) =>
-				buildBackgroundJobInfo(job.id, job.file, job.chunkReady, job.chunkInFlight, job.backgroundStatus),
-			),
-		});
-	}
-
-	/** Starts the next queued background job (if any) generating. No-op if one is already generating or none are queued. */
-	private advanceBackgroundQueue(): void {
-		if (this.backgroundJobs.some((job) => job.backgroundStatus === 'generating')) return;
-		const next = this.backgroundJobs.find((job) => job.backgroundStatus === 'queued');
-		if (!next) return;
-
-		next.backgroundStatus = 'generating';
-		this.publishBackgroundJobs();
-		void this.runBackgroundJob(next);
-	}
-
-	/** Drives one background job's generation to completion, then advances the queue. A no-op past its own removal (promoted or discarded) -- the action that removed it is responsible for advancing the queue itself. */
-	private async runBackgroundJob(job: GenerationJob): Promise<void> {
-		const windowSize = generationWindow(job.narrator.provider, true);
-		const result = await this.runGenerationWorkerPool(job, windowSize);
-		// Superseded: a newer pool owns the job now (it was adopted into playback, maybe moved back here
-		// since), and whichever run owns it finishes it -- acting here too would finish it twice.
-		// A 'failed' run has always cancelled the job, so past this check the run is 'done'.
-		if (result === 'superseded' || job.cancelled || !this.backgroundJobs.includes(job)) return;
-
-		this.finishBackgroundJob(job);
-		this.advanceBackgroundQueue();
-	}
-
-	/** Marks a background job done and announces it, once: a no-op if it's already done or still has chunks left. */
-	private finishBackgroundJob(job: GenerationJob): void {
-		if (job.backgroundStatus === 'done' || hasPendingGeneration(job.chunkReady)) return;
-		job.backgroundStatus = 'done';
-		this.publishBackgroundJobs();
-		new Notice(`Finished generating "${job.file?.basename ?? 'note'}" in the background.`);
-		this.freeSavedAudio(job);
-		this.enforceUnsavedJobLimit();
-	}
-
-	/**
-	 * Drops a finished background job's audio from memory once it's saved in the vault: playing its card then
-	 * plays the saved file instead (see {@link adoptBackgroundJob}). A no-op until the job is both finished and
-	 * saved, or once it has left the background list.
-	 */
-	private freeSavedAudio(job: GenerationJob): void {
-		if (job.backgroundStatus !== 'done' || job.savedAudioPath === null || job.audioFreed) return;
-		if (!this.backgroundJobs.includes(job)) return;
-		job.audioFreed = true;
-		job.chunkBuffers = new Array<ArrayBuffer | undefined>(job.chunks.length);
-		job.chunkPromises = new Array<Promise<ArrayBuffer> | undefined>(job.chunks.length);
-	}
-
-	/**
-	 * Keeps at most `maxUnsavedBackgroundJobs` finished background jobs whose audio is held only in memory (not
-	 * saved, and not being saved), clearing the oldest beyond that. 0 (or an invalid value) keeps them all.
-	 */
-	private enforceUnsavedJobLimit(): void {
-		const limit = this.settings.maxUnsavedBackgroundJobs;
-		if (!Number.isFinite(limit) || limit <= 0) return;
-		const unsaved = this.backgroundJobs.filter((job) => job.backgroundStatus === 'done' && job.savedAudioPath === null && !job.saving);
-		for (const job of unsaved.slice(0, Math.max(0, unsaved.length - limit))) {
-			this.discardBackgroundJob(job.id);
-			new Notice(`Cleared "${job.file?.basename ?? 'note'}" from the background list, since its audio wasn't saved. Up to ${limit} unsaved notes are kept (see the Performance settings).`);
-		}
-	}
-
 	isPlaying(): boolean {
 		return this.state.status === 'playing';
 	}
@@ -179,9 +112,7 @@ export class Reader extends Events {
 		this.disposed = true;
 		this.autoGenerations.clear();
 		this.stop();
-		for (const job of this.backgroundJobs) job.cancelled = true;
-		this.backgroundJobs = [];
-		this.setState({ backgroundJobs: [] });
+		this.backgroundQueue.dispose();
 	}
 
 	/** Asks every open editor to redraw its highlight, e.g. after a highlight setting changed while reading is paused or idle. */
@@ -229,26 +160,14 @@ export class Reader extends Events {
 
 		this.activeJob = null;
 		// Bumping the session stops the playback loop (playFromIndex) at its next check without touching
-		// `job` itself. Its generation is handed to the background queue below: enqueueBackgroundJob() retires
+		// `job` itself. Its generation is handed to the background queue below: enqueuing it retires
 		// the foreground worker pool (see GenerationJob.poolToken), and the queue starts a background one
 		// when it's the job's turn. Chunks already in flight still finish and are kept.
 		this.sessionId++;
 		this.releaseCurrentAudio();
 
 		this.resetToIdle();
-		this.enqueueBackgroundJob(job);
-	}
-
-	/** Adds a job to the background list, starting it right away if nothing else is generating there, otherwise queueing it behind the one that is. */
-	private enqueueBackgroundJob(job: GenerationJob): void {
-		// Retires whatever pool was driving it (its foreground one, after "Move to background"), so the
-		// background queue alone decides when it generates and how many chunks at once.
-		job.poolToken++;
-		job.backgroundStatus = this.backgroundJobs.some((j) => j.backgroundStatus === 'generating') ? 'queued' : 'generating';
-		this.backgroundJobs.push(job);
-		this.publishBackgroundJobs();
-
-		if (job.backgroundStatus === 'generating') void this.runBackgroundJob(job);
+		this.backgroundQueue.enqueue(job);
 	}
 
 	/** What "Generate in background" would do for this note right now; shared by the command and the panel's button so they always agree. */
@@ -260,7 +179,8 @@ export class Reader extends Events {
 			activeKind: state.activeReadKind,
 			activePendingGeneration: hasPendingGeneration(state.chunkReady),
 			// A stale job for this note doesn't count: generating again replaces it.
-			backgroundJobs: this.backgroundJobs
+			backgroundJobs: this.backgroundQueue
+				.all()
 				.filter((job) => job.file?.path !== file.path || !this.isBackgroundJobStale(job, file, currentContent))
 				.map((job) => ({ path: job.file?.path ?? null, status: job.backgroundStatus })),
 			savedAudioUpToDate,
@@ -277,17 +197,6 @@ export class Reader extends Events {
 		if (narrator && narrator.fingerprint !== job.narrator.fingerprint) return true;
 		if (currentContent === undefined || job.contentHash === null) return false;
 		return job.contentHash !== this.savedAudio.stalenessHash(currentContent, file);
-	}
-
-	/** The note's background job, if it has one. A note never has more than one: generating again replaces or reuses it. */
-	private findBackgroundJob(file: TFile): GenerationJob | undefined {
-		return this.backgroundJobs.find((job) => job.file?.path === file.path);
-	}
-
-	/** Discards this note's background job if it's stale (see {@link isBackgroundJobStale}). */
-	private discardStaleBackgroundJob(file: TFile, currentContent: string): void {
-		const existing = this.findBackgroundJob(file);
-		if (existing && this.isBackgroundJobStale(existing, file, currentContent)) this.discardBackgroundJob(existing.id);
 	}
 
 	/**
@@ -346,9 +255,9 @@ export class Reader extends Events {
 		const prepared = this.prepareRead(rawText, positionBase);
 		if (!prepared) return;
 
-		this.discardStaleBackgroundJob(file, fullValue);
+		this.backgroundQueue.discardIfStale(file, fullValue);
 		this.cancelAutoGeneration(file.path);
-		this.enqueueBackgroundJob(this.createJob(file, prepared, 'full', fullValue));
+		this.backgroundQueue.enqueue(this.createJob(file, prepared, 'full', fullValue));
 	}
 
 	/**
@@ -366,7 +275,7 @@ export class Reader extends Events {
 
 	/** Promotes a background job (queued, generating, or done) to active and starts playing it from the beginning. No-op if `jobId` isn't in the list. */
 	playBackgroundJob(jobId: number): void {
-		const job = this.backgroundJobs.find((j) => j.id === jobId);
+		const job = this.backgroundQueue.findById(jobId);
 		if (!job) return;
 		this.adoptBackgroundJob(job);
 	}
@@ -381,14 +290,9 @@ export class Reader extends Events {
 			else new Notice(`Couldn't find the saved audio for "${job.file?.basename ?? 'note'}". Generate it again.`);
 			return;
 		}
-		this.backgroundJobs = this.backgroundJobs.filter((j) => j !== job);
-		const wasGenerating = job.backgroundStatus === 'generating';
-		this.publishBackgroundJobs();
-
-		// Promoting the job that held the one "generating" slot frees it for the next queued job. A job
-		// that was only 'queued' or already 'done' wasn't occupying that slot, so nothing to advance.
-		// Advanced before the current read moves aside below, so jobs keep the order they were backgrounded in.
-		if (wasGenerating) this.advanceBackgroundQueue();
+		// Promoting the job that held the one "generating" slot frees it for the next queued job, which starts
+		// before the current read moves aside below, so jobs keep the order they were backgrounded in.
+		this.backgroundQueue.take(job);
 
 		// Same as starting any other note: with "Keep generating when starting another note" on, a read of a
 		// different note that's still generating moves to the background instead of being thrown away. It
@@ -423,13 +327,7 @@ export class Reader extends Events {
 
 	/** Removes a background job from the list -- cancels its generation if still queued/generating, or just clears it once done. No-op if `jobId` isn't in the list. */
 	discardBackgroundJob(jobId: number): void {
-		const job = this.backgroundJobs.find((j) => j.id === jobId);
-		if (!job) return;
-		this.backgroundJobs = this.backgroundJobs.filter((j) => j !== job);
-		const wasGenerating = job.backgroundStatus === 'generating';
-		job.cancelled = true;
-		this.publishBackgroundJobs();
-		if (wasGenerating) this.advanceBackgroundQueue();
+		this.backgroundQueue.discard(jobId);
 	}
 
 	/**
@@ -696,8 +594,8 @@ export class Reader extends Events {
 		// (the note was edited, or the narrator changed, since it was generated) is discarded instead, so
 		// Read -- or "Regenerate" -- actually generates the note as it is now.
 		if (sourceFile && options.kind === 'full') {
-			if (options.sourceContent !== undefined) this.discardStaleBackgroundJob(sourceFile, options.sourceContent);
-			const existing = this.findBackgroundJob(sourceFile);
+			if (options.sourceContent !== undefined) this.backgroundQueue.discardIfStale(sourceFile, options.sourceContent);
+			const existing = this.backgroundQueue.find(sourceFile);
 			if (existing) {
 				this.adoptBackgroundJob(existing);
 				return;
@@ -807,12 +705,7 @@ export class Reader extends Events {
 				this.activeJob = null;
 				this.resetToIdle();
 			}
-			const bgIndex = this.backgroundJobs.indexOf(job);
-			if (bgIndex !== -1) {
-				this.backgroundJobs.splice(bgIndex, 1);
-				this.publishBackgroundJobs();
-				this.advanceBackgroundQueue();
-			}
+			this.backgroundQueue.take(job);
 			return 'failed';
 		}
 	}
@@ -899,11 +792,8 @@ export class Reader extends Events {
 				chunkInFlight: [...job.chunkInFlight],
 				chunkDurations: [...job.chunkDurations],
 			});
-		} else if (this.backgroundJobs.includes(job)) {
-			this.publishBackgroundJobs();
-			// A queued job can still finish before its turn, when every chunk it had left was already in
-			// flight as it moved to the background: finish it now instead of showing it as queued.
-			if (job.backgroundStatus === 'queued') this.finishBackgroundJob(job);
+		} else if (this.backgroundQueue.includes(job)) {
+			this.backgroundQueue.onProgress(job);
 		}
 	}
 
@@ -930,17 +820,13 @@ export class Reader extends Events {
 			const audioFile = await this.savedAudio.saveAudioFile(buffers, sourceFileForSave, chunkDurations, job.narrator, contentHash, isCancelled);
 			job.saving = false;
 			job.savedAudioPath = audioFile?.path ?? null;
-			if (this.disposed) return;
-			this.freeSavedAudio(job);
-			// A failed save leaves a finished background job's audio only in memory.
-			if (!audioFile) this.enforceUnsavedJobLimit();
+			if (!this.disposed) this.backgroundQueue.onSaved(job);
 		})();
 	}
 
 	/**
 	 * Drops background jobs for a file that was just deleted: either the job's note, or the audio file it
-	 * saved. A finished job's card would otherwise keep showing "Ready in background" (blocking generating
-	 * the note again) for audio that's gone from the vault, or for a note that no longer exists.
+	 * saved (see {@link BackgroundQueue.handleFileDeleted}).
 	 *
 	 * The active read of a deleted note keeps playing, but is marked so it's never saved (that would leave
 	 * an orphan audio file, then fail to link it from the missing note) or moved to the background (where it
@@ -949,13 +835,8 @@ export class Reader extends Events {
 	 */
 	handleFileDeleted(path: string): void {
 		if (this.activeJob?.file?.path === path) this.activeJob.noteDeleted = true;
-		for (const job of this.backgroundJobs) {
-			if (job.file?.path === path) job.noteDeleted = true;
-		}
 		this.cancelAutoGeneration(path);
-		for (const job of this.backgroundJobs.filter((j) => j.file?.path === path || j.savedAudioPath === path)) {
-			this.discardBackgroundJob(job.id);
-		}
+		this.backgroundQueue.handleFileDeleted(path);
 	}
 
 	/**
@@ -966,9 +847,7 @@ export class Reader extends Events {
 	 * by path, so it moves along with its note.)
 	 */
 	handleFileRenamed(newPath: string, oldPath: string): void {
-		for (const job of this.backgroundJobs) {
-			if (job.savedAudioPath === oldPath) job.savedAudioPath = newPath;
-		}
+		this.backgroundQueue.handleFileRenamed(newPath, oldPath);
 		const autoGeneration = this.autoGenerations.get(oldPath);
 		if (autoGeneration) {
 			this.autoGenerations.delete(oldPath);
@@ -1058,7 +937,7 @@ export class Reader extends Events {
 	private isNoteReadOrQueued(file: TFile): boolean {
 		const active = this.activeJob;
 		if (active && !active.isSelection && active.file?.path === file.path) return true;
-		return this.findBackgroundJob(file) !== undefined;
+		return this.backgroundQueue.find(file) !== undefined;
 	}
 
 	/** The active narrator profile resolved with its provider, or null when none is usable. */
@@ -1107,8 +986,8 @@ export class Reader extends Events {
 		// clearing then failed on the properties: that audio really is gone. A queued or generating job is
 		// left alone: clearing old audio shouldn't throw away a (paid) generation in progress, whose new audio
 		// is saved and linked when it finishes.
-		const job = this.findBackgroundJob(sourceFile);
-		if (job?.backgroundStatus === 'done') this.discardBackgroundJob(job.id);
+		const job = this.backgroundQueue.find(sourceFile);
+		if (job?.backgroundStatus === 'done') this.backgroundQueue.discard(job.id);
 	}
 
 	/** Plays a previously saved audio file directly, without generating anything. */

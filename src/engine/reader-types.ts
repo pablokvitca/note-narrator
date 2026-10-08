@@ -77,10 +77,13 @@ export const IDLE_STATE: ReaderState = {
 
 export type ChunkOutcome = 'ended' | 'next' | 'previous';
 
+/** How a worker pool's run ended; see `Reader.runGenerationWorkerPool()`. */
+export type PoolResult = 'done' | 'superseded' | 'failed';
+
 /**
  * A single read's generation state: its chunk texts, buffers/promises/readiness, and the provider used to
  * synthesize them. Exactly one job at a time drives active playback (`Reader.activeJob`); any number of
- * others can be queued/generating/done in the background (`Reader.backgroundJobs`), either moved there from
+ * others can be queued/generating/done in the background (`BackgroundQueue`), either moved there from
  * playback (`continueGeneratingInBackground()`) or created there directly (`generateNoteInBackground()`).
  * Kept as a plain object (rather than flat fields on Reader) so a job can be handed off between roles, or
  * discarded, without those roles' state colliding.
@@ -110,7 +113,7 @@ export interface GenerationJob {
 	savedForSession: boolean;
 	/** Where its audio was saved, once that finishes -- so deleting that file can drop the job too. */
 	savedAudioPath: string | null;
-	/** Set while its audio is being saved, so a finished background job doesn't count as unsaved yet (see `Reader.enforceUnsavedJobLimit()`). */
+	/** Set while its audio is being saved, so a finished background job doesn't count as unsaved yet (see `BackgroundQueue.enforceUnsavedJobLimit()`). */
 	saving: boolean;
 	/** Set once a finished background job's audio is freed from memory because it's saved in the vault: playing its card then plays the saved file, like Play saved. */
 	audioFreed: boolean;
@@ -125,6 +128,6 @@ export interface GenerationJob {
 	poolToken: number;
 	/** Set once this job is discarded (stopped, discarded from the background, failed, or the plugin unloaded) so any still-settling promises know not to touch playback/background state on completion. Handing a job between owners (playback and the background queue) doesn't cancel it -- see `poolToken`. */
 	cancelled: boolean;
-	/** Only meaningful while the job is in `Reader.backgroundJobs` -- see {@link BackgroundJobStatus}. */
+	/** Only meaningful while the job is in the `BackgroundQueue` -- see {@link BackgroundJobStatus}. */
 	backgroundStatus: BackgroundJobStatus;
 }
