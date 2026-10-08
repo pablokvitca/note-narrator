@@ -1,4 +1,4 @@
-import { App, Notice, TFile, normalizePath, parseYaml } from 'obsidian';
+import { App, Notice, TFile, normalizePath } from 'obsidian';
 import { AudioLinkStatus } from './reader-types';
 import { formatTimestampForFilename, toLocalISOString } from './time-utils';
 import { cleanVaultFolderPath } from './vault-path';
@@ -6,13 +6,17 @@ import { DEFAULT_SETTINGS, NoteNarratorSettings } from '../settings/settings';
 import { ResolvedNarrator, VoiceConfig } from '../settings/profiles';
 import { concatArrayBuffers, sanitizeFilenameComponent } from './audio-utils';
 import { getProviderApiKey, resolveVoiceLabel } from '../tts/registry';
-import { extractFrontmatterYaml, hashText, stripFrontmatter } from '../text/text-utils';
+import { hashText, stripFrontmatter } from '../text/text-utils';
+import { parseNoteFrontmatter } from './note-frontmatter';
 
 /**
  * Marks staleness hashes computed by {@link SavedAudio.stalenessHash} (1.1+). Hashes stored by 1.0.0 have no
  * prefix and are checked with the 1.0.0 algorithm instead, so existing saved audio stays up to date.
  */
 const HASH_VERSION_PREFIX = 'v2:';
+
+/** The frontmatter block as 1.0.0 stripped it: LF line endings only, so a CRLF note's frontmatter stayed in its body. */
+const LEGACY_FRONTMATTER_BLOCK = /^---\n[\s\S]*?\n---(\n|$)/;
 
 /** The extension saved audio is written with. */
 const AUDIO_EXTENSION = 'mp3';
@@ -160,7 +164,7 @@ export class SavedAudio {
 	 */
 	stalenessHash(rawContent: string, file: TFile): string {
 		const content = rawContent.replace(/\r\n/g, '\n');
-		return `${HASH_VERSION_PREFIX}${this.hashNote(this.parseFrontmatter(content, file), stripFrontmatter(content))}`;
+		return `${HASH_VERSION_PREFIX}${this.hashNote(parseNoteFrontmatter(this.app, content, file), stripFrontmatter(content))}`;
 	}
 
 	/**
@@ -169,19 +173,7 @@ export class SavedAudio {
 	 * older version doesn't all turn "outdated" on update just because the hash is now computed differently.
 	 */
 	private legacyStalenessHash(rawContent: string, file: TFile): string {
-		return this.hashNote(this.app.metadataCache.getFileCache(file)?.frontmatter ?? {}, stripFrontmatter(rawContent));
-	}
-
-	/** Falls back to the metadata cache's copy if the YAML doesn't parse (Obsidian's own view of it is the best we have then). */
-	private parseFrontmatter(content: string, file: TFile): Record<string, unknown> {
-		const yaml = extractFrontmatterYaml(content);
-		if (yaml === null) return {};
-		try {
-			const parsed: unknown = parseYaml(yaml);
-			return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {};
-		} catch {
-			return this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
-		}
+		return this.hashNote(this.app.metadataCache.getFileCache(file)?.frontmatter ?? {}, rawContent.replace(LEGACY_FRONTMATTER_BLOCK, ''));
 	}
 
 	private hashNote(sourceFrontmatter: Record<string, unknown>, body: string): string {

@@ -8,6 +8,7 @@ import {
 	isHeadingSkipped,
 	parseHeadingSkipPatterns,
 	sectionHeadingText,
+	stripFrontmatter,
 } from '../../src/text/text-utils';
 
 describe('parseHeadingSkipPatterns', () => {
@@ -104,6 +105,12 @@ describe('extractFrontmatterYaml', () => {
 
 	it('handles a note that is only frontmatter', () => {
 		expect(extractFrontmatterYaml('---\ntitle: Hi\n---')).toBe('title: Hi');
+	});
+
+	it('reads, and strips, frontmatter saved with CRLF line endings', () => {
+		const crlf = '---\r\ntitle: Hi\r\n---\r\nBody\r\nMore';
+		expect(extractFrontmatterYaml(crlf)).toBe('title: Hi');
+		expect(stripFrontmatter(crlf)).toBe('Body\r\nMore');
 	});
 });
 

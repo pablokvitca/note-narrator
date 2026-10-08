@@ -1,6 +1,7 @@
 import { App, TFile } from 'obsidian';
 import { ChunkPosition, computeChunkPositions, rebaseSpan, splitChunkPosition } from '../text/text-position';
 import { NULL_CHUNK_POSITION, PositionBase } from './reader-types';
+import { parseNoteFrontmatter } from './note-frontmatter';
 import { NoteNarratorSettings, getGlobalReadingConfig } from '../settings/settings';
 import { ReadingConfig, ResolvedNarrator, getActiveProfile, providerCharLimit, resolveNarrator, resolveReadingConfig } from '../settings/profiles';
 import { StripMarkdownOptions, buildReadingPreamble, chunkBySentence, chunkByWordCount, chunkNote, parseHeadingSkipPatterns, stripFrontmatter } from '../text/text-utils';
@@ -51,6 +52,25 @@ export class NoteText {
 
 	getSkipHeadingPatterns(): RegExp[] {
 		return parseHeadingSkipPatterns(this.getReadingConfig().skipSectionHeadingPatterns);
+	}
+
+	/**
+	 * The text a note is read from (spoken preamble plus body, frontmatter stripped), and where that body sits
+	 * in the file for highlighting. `fullValue` is the note's full text: the editor's, or the file's as saved.
+	 * The one place this is built, for reading, background generation, Auto-generate on open and saved-audio
+	 * playback alike. The preamble's properties come from `fullValue` itself (see {@link parseNoteFrontmatter}),
+	 * like the staleness hash the audio is saved with, so the two always describe the same version of the note.
+	 */
+	buildNoteInput(file: TFile | null, fullText: string): { rawText: string; positionBase: PositionBase } {
+		// The editor's text is always LF; a file read from disk may be CRLF. Positions are for the editor.
+		const fullValue = fullText.replace(/\r\n/g, '\n');
+		const body = stripFrontmatter(fullValue);
+		const fileOffset = fullValue.length - body.length;
+		const preamble = this.buildPreamble(file?.basename ?? null, parseNoteFrontmatter(this.app, fullValue, file), body);
+		return {
+			rawText: preamble ? `${preamble}\n\n${body}` : body,
+			positionBase: { rawTextOffset: preamble ? preamble.length + 2 : 0, fileOffset, length: body.length },
+		};
 	}
 
 	private rebasePosition(position: ChunkPosition, base: PositionBase): ChunkPosition {
@@ -112,11 +132,7 @@ export class NoteText {
 	): Promise<{ totalChars: number; chunkCount: number; avgCharsPerChunk: number; avgWordsPerChunk: number } | null> {
 		if (file.extension !== 'md') return null;
 
-		const rawText = await this.app.vault.cachedRead(file);
-		const body = stripFrontmatter(rawText);
-		const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
-		const preamble = this.buildPreamble(file.basename, frontmatter, body);
-		const textToRead = preamble ? `${preamble}\n\n${body}` : body;
+		const { rawText: textToRead, positionBase } = this.buildNoteInput(file, await this.app.vault.cachedRead(file));
 		if (!textToRead.trim()) return null;
 
 		const charLimit = this.getCharLimit();
@@ -127,7 +143,7 @@ export class NoteText {
 			this.getReadingConfig().maxHeadingDepth,
 			this.getStripMarkdownOptions(),
 			this.getSkipHeadingPatterns(),
-			preamble ? preamble.length + 2 : 0,
+			positionBase.rawTextOffset,
 		);
 		if (chunks.length === 0) return null;
 

@@ -130,6 +130,18 @@ describe('SavedAudio.getAudioStatus', () => {
 		expect(await saved.getAudioStatus(note)).toBe('up-to-date');
 	});
 
+	it('still accepts a hash 1.0.0 stored for a CRLF note, whose frontmatter it hashed as part of the body', async () => {
+		const content = '---\r\ntitle: Hello\r\n---\r\nBody';
+		const cachedFrontmatter = { title: 'Hello' };
+		const vault: Vault = { content, cachedFrontmatter };
+		const { saved, note, settings } = makeSavedAudio(vault);
+		// 1.0.0 only stripped LF frontmatter, so the whole CRLF text was hashed as the body.
+		const hashFrom100 = hashText(`${JSON.stringify(cachedFrontmatter)}\n${content}`);
+
+		vault.cachedFrontmatter = { ...cachedFrontmatter, ...linked(settings, hashFrom100) };
+		expect(await saved.getAudioStatus(note)).toBe('up-to-date');
+	});
+
 	it('still accepts a hash stored by an older version (cache frontmatter, no line-ending normalization)', async () => {
 		const content = 'Line one\r\nLine two';
 		const vault: Vault = { content };

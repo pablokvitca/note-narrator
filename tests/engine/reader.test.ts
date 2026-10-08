@@ -63,32 +63,14 @@ vi.mock('../../src/engine/note-text', () => ({
 		getActiveNarrator() {
 			return fakes.narrator;
 		}
-		buildPreamble() {
-			return '';
-		}
-		getCharLimit() {
-			return 1000;
-		}
-		getReadingConfig() {
-			return { chunkerStyle: 'sentence', maxHeadingDepth: 6 };
-		}
-		getStripMarkdownOptions() {
-			return {};
-		}
-		getSkipHeadingPatterns() {
-			return [];
+		buildNoteInput(_file: unknown, fullValue: string) {
+			return { rawText: fullValue, positionBase: { rawTextOffset: 0, fileOffset: 0, length: fullValue.length } };
 		}
 		buildChunksAndPositions(rawText: string) {
 			const chunks = rawText.split('\n').filter((line) => line.length > 0);
 			return { chunks, positions: chunks.map(() => ({ span: null, sectionSpan: null, sectionHeadingSpan: null })) };
 		}
 	},
-}));
-
-// Auto-generate on open chunks with chunkNote() directly; one chunk per non-empty line, like the NoteText fake.
-vi.mock('../../src/text/text-utils', async (importOriginal) => ({
-	...(await importOriginal<typeof import('../../src/text/text-utils')>()),
-	chunkNote: (text: string) => text.split('\n').filter((line) => line.length > 0),
 }));
 
 vi.mock('../../src/engine/saved-audio', () => ({

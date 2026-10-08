@@ -5,7 +5,6 @@ import { ChunkPosition, RawSpan } from '../text/text-position';
 import { HighlightGranularity, NoteNarratorSettings } from '../settings/settings';
 import { ResolvedNarrator, generationWindow } from '../settings/profiles';
 import { GenerateInBackgroundAction, buildBackgroundJobInfo, decideGenerateInBackground, hasPendingGeneration } from './background-job';
-import { chunkNote, stripFrontmatter } from '../text/text-utils';
 import { createTTSProvider, getProviderApiKey, missingApiKeyMessage } from '../tts/registry';
 import { NoteText } from './note-text';
 import { SavedAudio } from './saved-audio';
@@ -331,7 +330,7 @@ export class Reader extends Events {
 
 	/** The shared rest of {@link generateNoteInBackground}, given the note's full text. */
 	private enqueueNoteGeneration(file: TFile, fullValue: string): void {
-		const { rawText, positionBase } = this.buildNoteInput(file, fullValue);
+		const { rawText, positionBase } = this.noteText.buildNoteInput(file, fullValue);
 		// Up-to-date saved audio doesn't stop it: like Read, it regenerates (the panel labels the button
 		// tooltip says "Regenerate in background" then), so the decision doesn't need the saved-audio status here.
 		const action = this.getGenerateInBackgroundAction(file, fullValue);
@@ -580,13 +579,7 @@ export class Reader extends Events {
 				chunkByteLengths.push(byteLength);
 			}
 
-			const fullValue = await this.app.vault.cachedRead(sourceFile);
-			const body = stripFrontmatter(fullValue);
-			const fileOffset = fullValue.length - body.length;
-			const preamble = this.noteText.buildPreamble(sourceFile.basename, frontmatter, body);
-			const rawText = preamble ? `${preamble}\n\n${body}` : body;
-			const positionBase: PositionBase = { rawTextOffset: preamble ? preamble.length + 2 : 0, fileOffset, length: body.length };
-
+			const { rawText, positionBase } = this.noteText.buildNoteInput(sourceFile, await this.app.vault.cachedRead(sourceFile));
 			const { positions } = this.noteText.buildChunksAndPositions(rawText, positionBase);
 			if (positions.length !== chunkDurations.length) return null;
 
@@ -606,7 +599,7 @@ export class Reader extends Events {
 			const fullValue = await this.readNoteFromVault(target);
 			// The plugin may have unloaded while the note was being read.
 			if (fullValue === null || this.disposed) return;
-			const { rawText, positionBase } = this.buildNoteInput(target, fullValue);
+			const { rawText, positionBase } = this.noteText.buildNoteInput(target, fullValue);
 			await this.readText(rawText, target, { kind: 'full', positionBase, sourceContent: fullValue });
 			return;
 		}
@@ -626,20 +619,8 @@ export class Reader extends Events {
 		}
 
 		const fullValue = view.editor.getValue();
-		const { rawText, positionBase } = this.buildNoteInput(view.file, fullValue);
+		const { rawText, positionBase } = this.noteText.buildNoteInput(view.file, fullValue);
 		await this.readText(rawText, view.file, { kind: 'full', positionBase, sourceContent: fullValue });
-	}
-
-	/** The full text a note is read from (spoken preamble plus body, frontmatter stripped), and where that body sits in the file for highlighting. */
-	private buildNoteInput(file: TFile | null, fullValue: string): { rawText: string; positionBase: PositionBase } {
-		const body = stripFrontmatter(fullValue);
-		const fileOffset = fullValue.length - body.length;
-		const frontmatter = file ? this.app.metadataCache.getFileCache(file)?.frontmatter : undefined;
-		const preamble = this.noteText.buildPreamble(file?.basename ?? null, frontmatter, body);
-		return {
-			rawText: preamble ? `${preamble}\n\n${body}` : body,
-			positionBase: { rawTextOffset: preamble ? preamble.length + 2 : 0, fileOffset, length: body.length },
-		};
 	}
 
 	/** Resolves the narrator and API key and chunks the text, showing a notice and returning null when any of that makes reading impossible. */
@@ -1024,21 +1005,10 @@ export class Reader extends Events {
 			if (isCancelled() || this.isNoteReadOrQueued(file)) return;
 			// Taken now, from the text being generated, so edits made while it generates show as outdated.
 			const contentHash = this.savedAudio.stalenessHash(rawText, file);
-			const body = stripFrontmatter(rawText);
-			const frontmatter = this.app.metadataCache.getFileCache(file)?.frontmatter;
-			const preamble = this.noteText.buildPreamble(file.basename, frontmatter, body);
-			const textToRead = preamble ? `${preamble}\n\n${body}` : body;
-
-			const charLimit = this.noteText.getCharLimit();
-			const chunks = chunkNote(
-				textToRead,
-				charLimit,
-				this.noteText.getReadingConfig().chunkerStyle,
-				this.noteText.getReadingConfig().maxHeadingDepth,
-				this.noteText.getStripMarkdownOptions(),
-				this.noteText.getSkipHeadingPatterns(),
-				preamble ? preamble.length + 2 : 0,
-			);
+			const input = this.noteText.buildNoteInput(file, rawText);
+			// Chunked exactly as a read is (quick start's short first chunks included), so playing the saved
+			// audio can slice it back into the chunks the note splits into, for Previous/Next part and highlighting.
+			const { chunks } = this.noteText.buildChunksAndPositions(input.rawText, input.positionBase);
 			if (chunks.length === 0) return;
 
 			const provider = createTTSProvider(narrator.provider, narrator.voice, apiKey);

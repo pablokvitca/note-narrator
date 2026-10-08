@@ -2,8 +2,11 @@ export type ChunkerStyle = 'markdown-aware' | 'sentence';
 
 const SENTENCE_MARKER = '~~NOTE-NARRATOR-SENTENCE-BREAK~~';
 
-/** A leading YAML frontmatter block; group 1 is the YAML between its `---` fences. Shared so the two helpers below always agree. */
-const FRONTMATTER_BLOCK = /^---\n([\s\S]*?)\n---(\n|$)/;
+/**
+ * A leading YAML frontmatter block; group 1 is the YAML between its `---` fences. Shared so the two helpers
+ * below always agree. Accepts CRLF line endings too: a note read from disk may use them (the editor never does).
+ */
+const FRONTMATTER_BLOCK = /^---\r?\n([\s\S]*?)\r?\n---(\r?\n|$)/;
 
 /** Removes a leading YAML frontmatter block, if present. */
 export function stripFrontmatter(markdown: string): string {

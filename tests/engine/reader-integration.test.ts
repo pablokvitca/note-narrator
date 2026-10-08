@@ -373,6 +373,89 @@ describe('Reader end to end: a note with its own properties', () => {
 		vault.refreshCache('Note.md');
 		expect(await reader.getAudioStatus(note)).toBe('outdated');
 	});
+
+	it('speaks a property edited in the editor before the metadata cache catches up, and saves it as current', async () => {
+		reader = new Reader(vault.app(), { ...DEFAULT_SETTINGS, ...migrateProfileSettings({}), saveAudioFile: true, linkAudioInNote: true, readProperties: true });
+		vault.write('Note.md', WITH_PROPERTIES);
+		vault.refreshCache('Note.md');
+
+		// Edited in the editor, not yet saved: the cache still has "draft".
+		const edited = WITH_PROPERTIES.replace('status: draft', 'status: final');
+		reader.generateNoteInBackground(vault.view('Note.md', edited));
+		await settle();
+
+		expect(fakes.synthCalls[0]?.text).toContain('status: final');
+		expect(fakes.synthCalls.map((call) => call.text).join(' ')).not.toContain('draft');
+
+		// Once the edit is saved, the audio counts as made from it.
+		vault.write('Note.md', edited);
+		await finishGenerating();
+		expect(await reader.getAudioStatus(vault.file('Note.md'))).toBe('up-to-date');
+	});
+});
+
+describe('Reader end to end: a note saved with CRLF line endings', () => {
+	it('doesn\'t speak its frontmatter when read from the vault', async () => {
+		reader = new Reader(vault.app(), { ...DEFAULT_SETTINGS, ...migrateProfileSettings({}), saveAudioFile: false, readProperties: true });
+		vault.write('Note.md', `---\r\nstatus: draft\r\n---\r\n${NOTE.replace(/\n/g, '\r\n')}`);
+		vault.refreshCache('Note.md');
+
+		// A closed tab: read from the vault, not an editor.
+		reader.generateNoteInBackground(vault.file('Note.md'));
+		await settle();
+
+		const spoken = fakes.synthCalls.map((call) => call.text).join(' ');
+		expect(spoken).not.toContain('---');
+		// Spoken once, from the preamble.
+		expect(spoken.match(/status: draft/g)).toHaveLength(1);
+	});
+});
+
+describe('Reader end to end: highlighting a note saved with CRLF line endings', () => {
+	/** Where the second chunk of `content` highlights, read from the vault (a closed tab). */
+	async function secondChunkSpan(content: string): Promise<unknown> {
+		vault.write('Note.md', content);
+		vault.refreshCache('Note.md');
+		reader = new Reader(vault.app(), { ...DEFAULT_SETTINGS, ...migrateProfileSettings({}), saveAudioFile: false });
+		void reader.readNote(vault.file('Note.md'));
+		await settle();
+		await finishGenerating();
+		reader.nextPart();
+		await settle();
+		expect(reader.getState().chunkIndex).toBe(1);
+		return reader.getSpan('chunk')?.span;
+	}
+
+	it('lands where it does for the same note with LF line endings, as the editor shows it', async () => {
+		const lf = `---\nstatus: draft\n---\n${NOTE}`;
+		const expected = await secondChunkSpan(lf);
+		expect(expected).toBeDefined();
+
+		expect(await secondChunkSpan(lf.replace(/\n/g, '\r\n'))).toEqual(expected);
+	});
+});
+
+describe('Reader end to end: audio saved by Auto-generate on open', () => {
+	it('plays back part by part with quick start on, sliced into the chunks a read uses', async () => {
+		// A short quick-start lead-in splits the first chunk into several.
+		const settings = { ...DEFAULT_SETTINGS, ...migrateProfileSettings({}), saveAudioFile: true, linkAudioInNote: true, autoGenerateOnOpen: true, quickStart: true, quickStartWordCount: 2 };
+		reader = new Reader(vault.app(), settings);
+		const note = vault.file('Note.md');
+
+		void reader.autoGenerateIfNeeded(note);
+		await settle();
+		await finishGenerating();
+		await settle();
+		const info = await reader.getAudioInfo(note);
+		if (!info) throw new Error('expected saved audio');
+		const savedChunks = (vault.frontmatter('Note.md')?.[settings.audioChunkDurationsProperty] as unknown[]).length;
+		expect(savedChunks).toBeGreaterThan(2);
+
+		void reader.playSavedFile(info.audioFile, note);
+		await settle();
+
+		expect(reader.getState().chunkCount).toBe(savedChunks);
+	});
 });
 
 describe('Reader end to end: Play saved', () => {
