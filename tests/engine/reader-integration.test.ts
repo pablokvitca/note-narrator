@@ -85,6 +85,10 @@ class FakeVault {
 	/** When true, audio writes (createBinary, modifyBinary) stay pending until the test calls releaseWrites(). */
 	holdWrites = false;
 	private readonly heldWrites: (() => void)[] = [];
+	/** When true, audio writes fail, like a full disk. */
+	failWrites = false;
+	/** Every binary file read, by path, in order. */
+	readonly binaryReads: string[] = [];
 
 	/** Finishes the audio writes held by holdWrites, in order. Returns how many there were. */
 	releaseWrites(): number {
@@ -95,6 +99,7 @@ class FakeVault {
 
 	/** Runs an audio write now, or holds it until releaseWrites() when holdWrites is set. */
 	private writeBinary<T>(write: () => T): Promise<T> {
+		if (this.failWrites) return Promise.reject(new Error('Disk full'));
 		if (!this.holdWrites) return Promise.resolve(write());
 		return new Promise<T>((resolve) => this.heldWrites.push(() => resolve(write())));
 	}
@@ -190,7 +195,10 @@ class FakeVault {
 			vault: {
 				configDir: 'vault-config',
 				cachedRead: (f: TFile) => Promise.resolve(this.text.get(f.path) ?? ''),
-				readBinary: (f: TFile) => Promise.resolve(this.binary.get(f.path) ?? new ArrayBuffer(0)),
+				readBinary: (f: TFile) => {
+					this.binaryReads.push(f.path);
+					return Promise.resolve(this.binary.get(f.path) ?? new ArrayBuffer(0));
+				},
 				createBinary: (path: string, data: ArrayBuffer) =>
 					this.writeBinary(() => {
 						this.binary.set(path, data);
@@ -922,5 +930,175 @@ describe('Reader end to end: a copy of a note, sharing its saved audio', () => {
 
 		expect([...vault.binary.keys()]).toEqual([audioPath]);
 		expect(Notice.messages).toContain(`Updated audio at ${audioPath}`);
+	});
+});
+
+describe('Reader end to end: a finished background job\'s audio in memory', () => {
+	async function finishInBackground(): Promise<{ jobId: number; audioPath: string; chunkCount: number }> {
+		reader.generateNoteInBackground(vault.view('Note.md'));
+		await settle();
+		await finishGenerating();
+		const [job] = reader.getState().backgroundJobs;
+		const [audioPath] = [...vault.binary.keys()];
+		if (!job || job.status !== 'done' || !audioPath) throw new Error('expected a finished, saved job');
+		return { jobId: job.id, audioPath, chunkCount: job.chunkCount };
+	}
+
+	it('plays a saved job\'s card from its saved file, like Play saved, without generating again', async () => {
+		const { jobId, audioPath, chunkCount } = await finishInBackground();
+		expect(vault.binaryReads).toEqual([]);
+
+		reader.playBackgroundJob(jobId);
+		await settle();
+
+		expect(vault.binaryReads).toEqual([audioPath]);
+		const state = reader.getState();
+		expect(state.status).toBe('playing');
+		expect(state.activeReadKind).toBe('saved');
+		// Sliced back into its parts, as Play saved does for linked, up-to-date audio.
+		expect(state.chunkCount).toBe(chunkCount);
+		expect(state.backgroundJobs).toHaveLength(0);
+		expect(fakes.synthCalls).toHaveLength(0);
+	});
+
+	it('Read of the note plays the saved job the same way', async () => {
+		const { audioPath } = await finishInBackground();
+
+		void reader.readNote(vault.view('Note.md'));
+		await settle();
+
+		expect(vault.binaryReads).toEqual([audioPath]);
+		expect(reader.getState().status).toBe('playing');
+		expect(reader.getState().activeReadKind).toBe('saved');
+		expect(fakes.synthCalls).toHaveLength(0);
+	});
+
+	it('lets a Read started while the card\'s file loads take over', async () => {
+		const { jobId } = await finishInBackground();
+		vault.write('Other.md', NOTE);
+		vault.refreshCache('Other.md');
+
+		reader.playBackgroundJob(jobId);
+		void reader.readNote(vault.view('Other.md'));
+		await settle();
+
+		expect(reader.getState().activeFile?.path).toBe('Other.md');
+		expect(reader.getState().activeReadKind).toBe('full');
+		expect(fakes.synthCalls.length).toBeGreaterThan(0);
+	});
+
+	it('drops the card with a notice when its saved file can\'t be found', async () => {
+		const { jobId, audioPath } = await finishInBackground();
+		// Gone without a delete event reaching Note Narrator (e.g. removed outside Obsidian).
+		vault.binary.delete(audioPath);
+
+		reader.playBackgroundJob(jobId);
+		await settle();
+
+		expect(reader.getState().status).toBe('idle');
+		expect(reader.getState().backgroundJobs).toHaveLength(0);
+		expect(Notice.messages).toContain('Couldn\'t find the saved audio for "Note". Generate it again.');
+		expect(fakes.synthCalls).toHaveLength(0);
+	});
+
+	it('keeps an unsaved job\'s audio in memory, so its card plays without reading the vault', async () => {
+		reader = new Reader(vault.app(), { ...DEFAULT_SETTINGS, ...migrateProfileSettings({}), saveAudioFile: false });
+		reader.generateNoteInBackground(vault.view('Note.md'));
+		await settle();
+		await finishGenerating();
+
+		reader.playBackgroundJob(reader.getState().backgroundJobs[0]!.id);
+		await settle();
+
+		expect(vault.binaryReads).toEqual([]);
+		expect(reader.getState().status).toBe('playing');
+		expect(reader.getState().activeReadKind).toBe('full');
+		expect(fakes.synthCalls).toHaveLength(0);
+	});
+});
+
+describe('Reader end to end: the limit on unsaved finished background jobs', () => {
+	/** Generates notes A, B, C... in the background, one after another, with the given settings. */
+	async function finishNotes(count: number, settings: Partial<NoteNarratorSettings>): Promise<string[]> {
+		reader = new Reader(vault.app(), { ...DEFAULT_SETTINGS, ...migrateProfileSettings({}), ...settings });
+		const names = ['A', 'B', 'C', 'D'].slice(0, count);
+		for (const name of names) {
+			vault.write(`${name}.md`, NOTE);
+			vault.refreshCache(`${name}.md`);
+			reader.generateNoteInBackground(vault.view(`${name}.md`));
+			await settle();
+		}
+		await finishGenerating();
+		return names;
+	}
+
+	const cards = () => reader.getState().backgroundJobs.map((job) => job.file?.basename);
+
+	it('clears the oldest unsaved one beyond the limit, with a notice', async () => {
+		await finishNotes(3, { saveAudioFile: false, maxUnsavedBackgroundJobs: 2 });
+
+		expect(cards()).toEqual(['B', 'C']);
+		expect(Notice.messages.filter((message) => message.startsWith('Cleared'))).toEqual([
+			'Cleared "A" from the background list, since its audio wasn\'t saved. Up to 2 unsaved notes are kept (see the Performance settings).',
+		]);
+	});
+
+	it('keeps them all with a limit of 0', async () => {
+		await finishNotes(4, { saveAudioFile: false, maxUnsavedBackgroundJobs: 0 });
+
+		expect(cards()).toEqual(['A', 'B', 'C', 'D']);
+	});
+
+	it('doesn\'t count jobs whose audio is saved', async () => {
+		await finishNotes(3, { saveAudioFile: true, linkAudioInNote: true, maxUnsavedBackgroundJobs: 1 });
+
+		expect(cards()).toEqual(['A', 'B', 'C']);
+	});
+
+	it('doesn\'t count jobs whose audio is still being saved', async () => {
+		fakes.holdVoiceLabels = true;
+		await finishNotes(2, { saveAudioFile: true, linkAudioInNote: true, maxUnsavedBackgroundJobs: 1 });
+		expect(fakes.heldVoiceLabels).toHaveLength(2);
+		expect(cards()).toEqual(['A', 'B']);
+
+		for (const release of fakes.heldVoiceLabels.splice(0)) release();
+		await settle();
+
+		expect(cards()).toEqual(['A', 'B']);
+	});
+
+	it('doesn\'t count a moved read that finishes while queued, since its save starts first', async () => {
+		reader = new Reader(vault.app(), { ...DEFAULT_SETTINGS, ...migrateProfileSettings({}), saveAudioFile: true, linkAudioInNote: true, maxUnsavedBackgroundJobs: 1 });
+		// An older finished job whose save failed: the one unsaved job the limit allows.
+		vault.failWrites = true;
+		vault.write('Old.md', NOTE);
+		vault.refreshCache('Old.md');
+		reader.generateNoteInBackground(vault.view('Old.md'));
+		await settle();
+		await finishGenerating();
+		vault.failWrites = false;
+		// Another note holds the background queue's generating slot.
+		vault.write('Busy.md', 'Busy only.');
+		vault.refreshCache('Busy.md');
+		reader.generateNoteInBackground(vault.view('Busy.md'));
+		await settle();
+
+		// A read with every chunk already requested moves to the background, behind Busy.
+		void reader.readNote(vault.view('Note.md'));
+		await settle();
+		reader.continueGeneratingInBackground();
+		expect(cards()).toEqual(['Old', 'Busy', 'Note']);
+		for (const call of fakes.synthCalls.filter((c) => !c.text.includes('Busy'))) call.resolve();
+		await settle();
+
+		expect(reader.getState().backgroundJobs.map((job) => `${job.file?.basename}:${job.status}`)).toEqual(['Old:done', 'Busy:generating', 'Note:done']);
+		expect(Notice.messages.filter((message) => message.startsWith('Cleared'))).toEqual([]);
+	});
+
+	it('counts a job whose save failed', async () => {
+		vault.failWrites = true;
+		await finishNotes(2, { saveAudioFile: true, linkAudioInNote: true, maxUnsavedBackgroundJobs: 1 });
+
+		expect(cards()).toEqual(['B']);
 	});
 });

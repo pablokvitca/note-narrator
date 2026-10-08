@@ -22,6 +22,18 @@ export class PerformanceSection extends SettingsSection {
 						desc: 'When you start reading a different note while one is still generating, move the current one to the background instead of discarding it. Finished notes show up in the background list, ready to play.',
 						control: { type: 'toggle', key: 'autoBackgroundOnSwitch', defaultValue: DEFAULT_SETTINGS.autoBackgroundOnSwitch },
 					},
+					this.numberRow(
+						'Unsaved finished notes kept in memory',
+						`How many notes finished in the background, but not saved to the vault, are kept ready to play. Finishing one more clears the oldest. 0 keeps them all. Notes with saved audio don't count: their audio is played from the vault. Default: ${DEFAULT_SETTINGS.maxUnsavedBackgroundJobs}.`,
+						{
+							get: () => settings.maxUnsavedBackgroundJobs,
+							set: (value) => {
+								settings.maxUnsavedBackgroundJobs = value;
+							},
+							min: 0,
+							defaultValue: DEFAULT_SETTINGS.maxUnsavedBackgroundJobs,
+						},
+					),
 					{
 						name: 'Start playback immediately',
 						desc: 'Start playing as soon as the first chunk is ready, instead of waiting for the whole note to finish generating first.',

@@ -110,6 +110,10 @@ export interface GenerationJob {
 	savedForSession: boolean;
 	/** Where its audio was saved, once that finishes -- so deleting that file can drop the job too. */
 	savedAudioPath: string | null;
+	/** Set while its audio is being saved, so a finished background job doesn't count as unsaved yet (see `Reader.enforceUnsavedJobLimit()`). */
+	saving: boolean;
+	/** Set once a finished background job's audio is freed from memory because it's saved in the vault: playing its card then plays the saved file, like Play saved. */
+	audioFreed: boolean;
 	/** Set once a 429 is seen for this job; falls back its generation to sequential (1 at a time) to avoid repeating it. */
 	rateLimited: boolean;
 	/**

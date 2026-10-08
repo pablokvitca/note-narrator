@@ -225,7 +225,8 @@ export abstract class SettingsSection {
 			text.inputEl.min = String(min);
 			text.setValue(String(get()));
 			text.onChange(async (raw) => {
-				const parsed = Number(raw);
+				// Number('') is 0, so an emptied field is checked first: it means the default, not 0.
+				const parsed = raw.trim() === '' ? Number.NaN : Number(raw);
 				set(Number.isFinite(parsed) && parsed >= min ? Math.round(parsed) : defaultValue);
 				await this.plugin.saveSettings();
 			});

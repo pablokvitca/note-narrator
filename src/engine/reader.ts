@@ -140,6 +140,35 @@ export class Reader extends Events {
 		job.backgroundStatus = 'done';
 		this.publishBackgroundJobs();
 		new Notice(`Finished generating "${job.file?.basename ?? 'note'}" in the background.`);
+		this.freeSavedAudio(job);
+		this.enforceUnsavedJobLimit();
+	}
+
+	/**
+	 * Drops a finished background job's audio from memory once it's saved in the vault: playing its card then
+	 * plays the saved file instead (see {@link adoptBackgroundJob}). A no-op until the job is both finished and
+	 * saved, or once it has left the background list.
+	 */
+	private freeSavedAudio(job: GenerationJob): void {
+		if (job.backgroundStatus !== 'done' || job.savedAudioPath === null || job.audioFreed) return;
+		if (!this.backgroundJobs.includes(job)) return;
+		job.audioFreed = true;
+		job.chunkBuffers = new Array<ArrayBuffer | undefined>(job.chunks.length);
+		job.chunkPromises = new Array<Promise<ArrayBuffer> | undefined>(job.chunks.length);
+	}
+
+	/**
+	 * Keeps at most `maxUnsavedBackgroundJobs` finished background jobs whose audio is held only in memory (not
+	 * saved, and not being saved), clearing the oldest beyond that. 0 (or an invalid value) keeps them all.
+	 */
+	private enforceUnsavedJobLimit(): void {
+		const limit = this.settings.maxUnsavedBackgroundJobs;
+		if (!Number.isFinite(limit) || limit <= 0) return;
+		const unsaved = this.backgroundJobs.filter((job) => job.backgroundStatus === 'done' && job.savedAudioPath === null && !job.saving);
+		for (const job of unsaved.slice(0, Math.max(0, unsaved.length - limit))) {
+			this.discardBackgroundJob(job.id);
+			new Notice(`Cleared "${job.file?.basename ?? 'note'}" from the background list, since its audio wasn't saved. Up to ${limit} unsaved notes are kept (see the Performance settings).`);
+		}
 	}
 
 	isPlaying(): boolean {
@@ -345,6 +374,14 @@ export class Reader extends Events {
 
 	/** Shared by `playBackgroundJob()` and `readText()` re-adopting a matching in-progress job: promotes a background job to active and starts playing it from the beginning. */
 	private adoptBackgroundJob(job: GenerationJob): void {
+		// Its audio is only in the saved file now: the card goes, and the file plays like Play saved.
+		if (job.audioFreed) {
+			this.discardBackgroundJob(job.id);
+			const audioFile = job.savedAudioPath === null ? null : this.app.vault.getAbstractFileByPath(job.savedAudioPath);
+			if (audioFile instanceof TFile) void this.playSavedFile(audioFile, job.file);
+			else new Notice(`Couldn't find the saved audio for "${job.file?.basename ?? 'note'}". Generate it again.`);
+			return;
+		}
 		this.backgroundJobs = this.backgroundJobs.filter((j) => j !== job);
 		const wasGenerating = job.backgroundStatus === 'generating';
 		this.publishBackgroundJobs();
@@ -653,6 +690,8 @@ export class Reader extends Events {
 			noteDeleted: false,
 			savedForSession: false,
 			savedAudioPath: null,
+			saving: false,
+			audioFreed: false,
 			rateLimited: false,
 			poolToken: 0,
 			cancelled: false,
@@ -860,8 +899,9 @@ export class Reader extends Events {
 			job.chunkReady[index] = true;
 			job.chunkDurations[index] = duration;
 			job.chunkInFlight[index] = false;
-			this.publishJobProgress(job);
+			// The save starts first, so a background job finished by this progress counts as being saved.
 			this.maybeSaveOnGenerationComplete(job);
+			this.publishJobProgress(job);
 			return buffer;
 		} catch (error) {
 			job.chunkInFlight[index] = false;
@@ -904,9 +944,15 @@ export class Reader extends Events {
 		const chunkDurations = job.chunkDurations.map((duration) => duration ?? 0);
 		// The note can still be deleted (or the plugin unloaded) while saving waits, e.g. on the voice name lookup.
 		const isCancelled = () => job.noteDeleted || this.disposed;
+		job.saving = true;
 		void (async () => {
 			const audioFile = await this.savedAudio.saveAudioFile(buffers, sourceFileForSave, chunkDurations, job.narrator, contentHash, isCancelled);
+			job.saving = false;
 			job.savedAudioPath = audioFile?.path ?? null;
+			if (this.disposed) return;
+			this.freeSavedAudio(job);
+			// A failed save leaves a finished background job's audio only in memory.
+			if (!audioFile) this.enforceUnsavedJobLimit();
 		})();
 	}
 

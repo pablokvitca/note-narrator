@@ -61,6 +61,12 @@ export interface NoteNarratorSettings extends ProfileSettings, ReadingConfig {
 	saveVersioning: SaveVersioning;
 	/** When a read (or Play saved) starts on a different note while another note is still generating, keep generating the old one in the background instead of discarding it. */
 	autoBackgroundOnSwitch: boolean;
+	/**
+	 * How many finished background jobs whose audio isn't saved in the vault are kept in memory; finishing one
+	 * more clears the oldest. 0 keeps them all. A finished job whose audio is saved doesn't count: its audio is
+	 * freed from memory and read back from the vault when played.
+	 */
+	maxUnsavedBackgroundJobs: number;
 	/** Start playback as soon as the first chunk is ready, rather than waiting for the whole note to generate. */
 	startPlaybackImmediately: boolean;
 	/** Generate an artificially short first chunk so playback can start sooner. Only applies when startPlaybackImmediately is on. */
@@ -127,6 +133,7 @@ export const DEFAULT_SETTINGS: NoteNarratorSettings = {
 	stripCommentDelimiters: true,
 	announceComments: true,
 	autoBackgroundOnSwitch: true,
+	maxUnsavedBackgroundJobs: 5,
 	startPlaybackImmediately: true,
 	quickStart: true,
 	quickStartUnit: 'words',
