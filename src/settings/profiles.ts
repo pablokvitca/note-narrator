@@ -1,5 +1,5 @@
 import { ChunkerStyle, hashText } from '../text/text-utils';
-import { DEFAULT_ELEVENLABS_CHAR_LIMIT, ELEVENLABS_MODEL_CHAR_LIMITS } from '../tts/elevenlabs-models';
+import { DEFAULT_ELEVENLABS_CHAR_LIMIT, DEFAULT_ELEVENLABS_MODEL_ID, ELEVENLABS_MODEL_CHAR_LIMITS } from '../tts/elevenlabs-models';
 
 /*
  * Providers and narrator profiles. Pure data + helpers (no Obsidian imports) so they can be unit tested.
@@ -128,7 +128,7 @@ export function createProvider(type: ProviderType, name: string): ProviderEntry 
 export function defaultVoiceConfig(type: ProviderType): VoiceConfig {
 	switch (type) {
 		case 'elevenlabs':
-			return { type, voiceId: DEFAULT_ELEVENLABS_VOICE_ID, modelId: 'eleven_multilingual_v2', stability: 0.5, similarityBoost: 0.75 };
+			return { type, voiceId: DEFAULT_ELEVENLABS_VOICE_ID, modelId: DEFAULT_ELEVENLABS_MODEL_ID, stability: 0.5, similarityBoost: 0.75 };
 	}
 }
 

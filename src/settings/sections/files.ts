@@ -38,7 +38,7 @@ export class FilesSection extends SettingsSection {
 						control: {
 							type: 'dropdown',
 							key: 'saveAudioLocation',
-							options: { 'note-folder': 'Same folder as the note', 'custom-folder': 'Custom folder' },
+							options: { 'note-folder': 'Same folder as the note (default)', 'custom-folder': 'Custom folder' },
 							defaultValue: DEFAULT_SETTINGS.saveAudioLocation,
 							disabled: savingOff,
 						},
@@ -60,7 +60,7 @@ export class FilesSection extends SettingsSection {
 						control: {
 							type: 'dropdown',
 							key: 'saveVersioning',
-							options: { replace: 'Replace existing file', keep: 'Keep old versions' },
+							options: { replace: 'Replace existing file (default)', keep: 'Keep old versions' },
 							defaultValue: DEFAULT_SETTINGS.saveVersioning,
 							disabled: linkingOff,
 						},
