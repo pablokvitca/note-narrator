@@ -24,7 +24,7 @@ export class PerformanceSection extends SettingsSection {
 					},
 					this.numberRow(
 						'Unsaved finished notes kept in memory',
-						`How many notes finished in the background, but not saved to the vault, are kept ready to play. Finishing one more clears the oldest. 0 keeps them all. Notes with saved audio don't count: their audio is played from the vault. Default: ${DEFAULT_SETTINGS.maxUnsavedBackgroundJobs}.`,
+						`How many notes finished in the background, but not saved to the vault, are kept ready to play. Finishing one more clears the oldest, and playing a cleared note means generating it again, which uses ElevenLabs credits. 0 keeps them all. Notes with saved audio don't count: their audio is played from the vault. Default: ${DEFAULT_SETTINGS.maxUnsavedBackgroundJobs}.`,
 						{
 							get: () => settings.maxUnsavedBackgroundJobs,
 							set: (value) => {
@@ -55,7 +55,7 @@ export class PerformanceSection extends SettingsSection {
 						control: {
 							type: 'dropdown',
 							key: 'quickStartUnit',
-							options: { words: 'Words', characters: 'Characters' },
+							options: { words: 'Words (default)', characters: 'Characters' },
 							defaultValue: DEFAULT_SETTINGS.quickStartUnit,
 							disabled: () => !settings.startPlaybackImmediately || !settings.quickStart,
 						},

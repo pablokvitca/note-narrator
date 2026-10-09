@@ -7,6 +7,16 @@ export interface ElevenLabsVoice {
 	name: string;
 }
 
+/** How much of an error response's body goes into the error message (and so into notices and the console). */
+const MAX_ERROR_BODY_CHARS = 200;
+
+/** The error for a failed ElevenLabs request: its status plus the start of its body, so an unexpectedly large or odd response can't flood a notice or the console. */
+export function requestFailedError(status: number, body: string): Error {
+	const trimmed = body.trim();
+	const shown = trimmed.length > MAX_ERROR_BODY_CHARS ? `${trimmed.slice(0, MAX_ERROR_BODY_CHARS)}…` : trimmed;
+	return new Error(shown ? `ElevenLabs request failed (${status}): ${shown}` : `ElevenLabs request failed (${status})`);
+}
+
 /** Fetches up to 100 voices available to the account (ElevenLabs' /v2/voices is paginated; MVP fetches the first page only). */
 export async function listElevenLabsVoices(apiKey: string): Promise<ElevenLabsVoice[]> {
 	const response = await requestUrl({
@@ -17,7 +27,7 @@ export async function listElevenLabsVoices(apiKey: string): Promise<ElevenLabsVo
 	});
 
 	if (response.status !== 200) {
-		throw new Error(`ElevenLabs request failed (${response.status}): ${response.text}`);
+		throw requestFailedError(response.status, response.text);
 	}
 
 	const body = response.json as { voices?: { voice_id: string; name: string }[] };
@@ -34,7 +44,7 @@ export async function getElevenLabsVoiceName(apiKey: string, voiceId: string): P
 	});
 
 	if (response.status !== 200) {
-		throw new Error(`ElevenLabs request failed (${response.status}): ${response.text}`);
+		throw requestFailedError(response.status, response.text);
 	}
 
 	const body = response.json as { name?: string };
@@ -98,7 +108,7 @@ export class ElevenLabsProvider implements TTSProvider {
 				continue;
 			}
 
-			throw new Error(`ElevenLabs request failed (${response.status}): ${response.text}`);
+			throw requestFailedError(response.status, response.text);
 		}
 	}
 }

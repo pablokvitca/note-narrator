@@ -34,7 +34,7 @@ export class AppearanceSection extends SettingsSection {
 						control: {
 							type: 'dropdown',
 							key: 'timeDisplayMode',
-							options: { full: 'Show full times', current: 'Show current part times', both: 'Show full times + current part times' },
+							options: { full: 'Show full times', current: 'Show current part times (default)', both: 'Show full times + current part times' },
 							defaultValue: DEFAULT_SETTINGS.timeDisplayMode,
 						},
 					},

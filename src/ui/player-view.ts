@@ -125,7 +125,7 @@ export class PlayerView extends ItemView {
 	private updateProgress(state: ReaderState): void {
 		if (this.progressFillEl && state.status !== 'generating') {
 			const percent = state.duration > 0 ? Math.min(100, (state.currentTime / state.duration) * 100) : 0;
-			this.progressFillEl.style.width = `${percent}%`;
+			this.progressFillEl.setCssStyles({ width: `${percent}%` });
 		}
 
 		if (this.timeEl) {

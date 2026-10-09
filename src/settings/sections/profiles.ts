@@ -1,12 +1,16 @@
 import { DropdownComponent, Notice, SettingDefinitionItem, SettingDefinitionPage, SettingGroupItem } from 'obsidian';
 import { ChunkerStyle, findHeadingPatternIssues } from '../../text/text-utils';
-import { ELEVENLABS_MODELS } from '../../tts/elevenlabs-models';
+import { DEFAULT_ELEVENLABS_MODEL_ID, ELEVENLABS_MODELS } from '../../tts/elevenlabs-models';
 import { ElevenLabsVoiceConfig, NarratorProfile, ReadingConfig, ReadingOverrides, createProfile, defaultVoiceConfig, getActiveProfile, getProvider, normalizeProfileSettings, resolveReadingConfig, uniqueName } from '../profiles';
 import { SettingsSection } from '../section';
 import { getGlobalReadingConfig } from '../settings';
 
 const INHERIT = 'inherit';
 
+/** The Model dropdown's options: the model list, with the default marked like every other dropdown's. */
+const MODEL_OPTIONS: Record<string, string> = Object.fromEntries(
+	Object.entries(ELEVENLABS_MODELS).map(([id, label]) => [id, id === DEFAULT_ELEVENLABS_MODEL_ID ? `${label} (default)` : label]),
+);
 export class ProfilesSection extends SettingsSection {
 	/** Reloads a profile's voice dropdown (keyed by profile id) after its provider changes, while its page is open. */
 	private voiceRefreshers = new Map<string, () => void>();
@@ -222,7 +226,7 @@ export class ProfilesSection extends SettingsSection {
 					void reload(false);
 				},
 			},
-			this.dropdownRow('Model', 'The ElevenLabs text-to-speech model to use.', ELEVENLABS_MODELS, () => voice().modelId, (value) => {
+			this.dropdownRow('Model', 'The ElevenLabs text-to-speech model to use.', MODEL_OPTIONS, () => voice().modelId, (value) => {
 				voice().modelId = value;
 			}),
 			this.sliderRow(
