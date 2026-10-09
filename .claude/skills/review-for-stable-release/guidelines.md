@@ -229,6 +229,7 @@ Where a check says "report facts", the reviewer must not soften or invent findin
 - **Guideline:** Use `getFileByPath`/`getFolderByPath`/`getAbstractFileByPath`, not `getFiles().find(...)`.
 - **Scope:** `src/**`
 - **Check:** no `getFiles`, `getMarkdownFiles`, `getAllLoadedFiles`, link-graph scans; event handlers scale with open tabs, not vault size.
+- **Waived:** `SavedAudio.isAnotherNotesAudio()` (`src/engine/saved-audio.ts`) scans `getMarkdownFiles()` to find whether another note shares a note's saved audio. It reads only the metadata cache and runs once per explicit save or Clear, never in an event handler, so it is accepted (OBS-240). Report it only if it moves into an event handler or starts reading files.
 
 ### G40 normalizePath for user-defined paths
 - **Guideline:** Use `normalizePath()` for user-defined and constructed vault paths.
