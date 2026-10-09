@@ -82,6 +82,8 @@ class FakeVault {
 	private readonly renameHandlers = new Set<(file: TFile, oldPath: string) => void>();
 	/** Like Obsidian, one TFile instance per path. */
 	private readonly files = new Map<string, TFile>();
+	/** How many times the plugin listed every note (getMarkdownFiles). */
+	markdownFileListings = 0;
 	/** When true, audio writes (createBinary, modifyBinary) stay pending until the test calls releaseWrites(). */
 	holdWrites = false;
 	private readonly heldWrites: (() => void)[] = [];
@@ -209,7 +211,10 @@ class FakeVault {
 						this.binary.set(f.path, data);
 					}),
 				createFolder: () => Promise.resolve(),
-				getMarkdownFiles: () => [...this.text.keys()].filter((path) => path.endsWith('.md')).map((path) => this.file(path)),
+				getMarkdownFiles: () => {
+					this.markdownFileListings++;
+					return [...this.text.keys()].filter((path) => path.endsWith('.md')).map((path) => this.file(path));
+				},
 				getAbstractFileByPath: (path: string) => (this.text.has(path) || this.binary.has(path) ? this.file(path) : null),
 			},
 			metadataCache: {
@@ -1035,9 +1040,13 @@ describe('Reader end to end: a copy of a note, sharing its saved audio', () => {
 
 	it('Clear on the copy removes its properties but keeps the original\'s audio, with a notice', async () => {
 		const { audioPath, audio } = await saveAndCopy();
+		vault.markdownFileListings = 0;
 
 		await reader.clearReaderFiles(vault.file('Copy.md'));
 		await settle();
+
+		// The check that finds the original lists the vault's notes (see the setting-off tests below).
+		expect(vault.markdownFileListings).toBeGreaterThan(0);
 
 		expect(vault.binary.get(audioPath)).toBe(audio);
 		expect(Object.keys(vault.frontmatter('Copy.md') ?? {})).toEqual([]);
@@ -1055,6 +1064,37 @@ describe('Reader end to end: a copy of a note, sharing its saved audio', () => {
 		await settle();
 
 		expect(vault.binary.get(audioPath)).toBe(audio);
+	});
+
+	describe('with "Protect audio shared with copied notes" off', () => {
+		beforeEach(() => {
+			reader = new Reader(vault.app(), { ...DEFAULT_SETTINGS, ...migrateProfileSettings({}), saveAudioFile: true, linkAudioInNote: true, protectSharedAudio: false });
+		});
+
+		it('replaces the shared file when the copy is regenerated, without listing the vault\'s notes', async () => {
+			const { audioPath, audio } = await saveAndCopy();
+			vault.write('Copy.md', `${vault.text.get('Copy.md') ?? ''}\n\nAn added line.`);
+			vault.markdownFileListings = 0;
+
+			reader.generateNoteInBackground(vault.view('Copy.md'));
+			await settle();
+			await finishGenerating();
+
+			expect(vault.frontmatter('Copy.md')?.[DEFAULT_SETTINGS.audioPathProperty]).toBe(audioPath);
+			expect(vault.binary.get(audioPath)).not.toBe(audio);
+			expect(vault.markdownFileListings).toBe(0);
+		});
+
+		it('trashes the shared file when the copy is cleared, without listing the vault\'s notes', async () => {
+			const { audioPath } = await saveAndCopy();
+			vault.markdownFileListings = 0;
+
+			await reader.clearReaderFiles(vault.file('Copy.md'));
+			await settle();
+
+			expect(vault.binary.has(audioPath)).toBe(false);
+			expect(vault.markdownFileListings).toBe(0);
+		});
 	});
 
 	it('still replaces audio that another note only embeds in its text', async () => {

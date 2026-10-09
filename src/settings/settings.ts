@@ -59,6 +59,8 @@ export interface NoteNarratorSettings extends ProfileSettings, ReadingConfig {
 	autoGenerateOnOpen: boolean;
 	/** Whether regenerating a note's audio replaces the previously linked file or keeps it and creates a new one. Only applies when linkAudioInNote is on. */
 	saveVersioning: SaveVersioning;
+	/** Before replacing or trashing a note's saved audio, check whether another note (a copy) links the same file, and leave it alone if so. This is the only place Note Narrator looks at other notes: their audio path property, read from the metadata cache. */
+	protectSharedAudio: boolean;
 	/** When a read (or Play saved) starts on a different note while another note is still generating, keep generating the old one in the background instead of discarding it. */
 	autoBackgroundOnSwitch: boolean;
 	/**
@@ -124,6 +126,7 @@ export const DEFAULT_SETTINGS: NoteNarratorSettings = {
 	autoCleanupMissingAudioProperties: true,
 	autoGenerateOnOpen: false,
 	saveVersioning: 'replace',
+	protectSharedAudio: true,
 	chunkerStyle: 'markdown-aware',
 	maxHeadingDepth: 2,
 	readTitle: true,
