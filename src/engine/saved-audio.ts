@@ -144,9 +144,11 @@ export class SavedAudio {
 	 * Whether another note's saved audio is also `audioFile`, as for a copy of the note, which keeps its
 	 * properties. That audio is then the other note's too, so this note must neither replace nor trash it.
 	 * Checks every note's audio-path property in the metadata cache (no file reads), so it works whatever
-	 * link format the audio link property uses.
+	 * link format the audio link property uses. Never true with "Protect audio shared with copied notes"
+	 * off, which skips looking at other notes at all.
 	 */
 	private isAnotherNotesAudio(audioFile: TFile, sourceFile: TFile): boolean {
+		if (!this.settings.protectSharedAudio) return false;
 		return this.app.vault.getMarkdownFiles().some((other) => other !== sourceFile && this.findExistingAudioFile(other) === audioFile);
 	}
 

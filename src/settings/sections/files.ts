@@ -66,8 +66,14 @@ export class FilesSection extends SettingsSection {
 						},
 					},
 					{
+						name: 'Protect audio shared with copied notes',
+						desc: "A copied note keeps its Note Narrator properties, so it links the same audio file as the original. When on, Note Narrator checks other notes' audio path property (from Obsidian's metadata cache) before replacing or trashing a note's audio, and leaves shared audio alone. When off, a copied note can overwrite or trash the original's audio.",
+						// Not greyed out with saving or linking off: Clear still checks then, so it must stay switchable.
+						control: { type: 'toggle', key: 'protectSharedAudio', defaultValue: DEFAULT_SETTINGS.protectSharedAudio },
+					},
+					{
 						name: 'Auto-generate on open',
-						desc: 'When enabled, opening a note silently (re)generates and saves its audio in the background if missing or outdated — without playing it or interrupting anything currently playing.',
+						desc: 'When enabled, opening a note silently (re)generates and saves its audio in the background if missing or outdated, without playing it or interrupting anything currently playing.',
 						control: { type: 'toggle', key: 'autoGenerateOnOpen', defaultValue: DEFAULT_SETTINGS.autoGenerateOnOpen, disabled: linkingOff },
 					},
 				],
@@ -79,7 +85,7 @@ export class FilesSection extends SettingsSection {
 				items: [
 					{
 						name: 'Link saved audio in the note',
-						desc: 'Writes a link to the saved audio file into a frontmatter property on the note, and tracks whether the note has changed since — shown in the player view. On by default; turning on saving turns this on too.',
+						desc: 'Writes a link to the saved audio file into a frontmatter property on the note, and tracks whether the note has changed since, as shown in the player view. On by default; turning on saving turns this on too.',
 						control: { type: 'toggle', key: 'linkAudioInNote', defaultValue: DEFAULT_SETTINGS.linkAudioInNote, disabled: savingOff },
 					},
 					propertyRow('Link property', 'Frontmatter property the audio link is written to.', 'audioLinkProperty'),
@@ -98,7 +104,7 @@ export class FilesSection extends SettingsSection {
 					),
 					{
 						name: 'Extra properties to exclude from staleness hashing',
-						desc: "Besides Note Narrator's own properties above (always excluded), also ignore these frontmatter properties when checking whether a note has changed since its audio was generated — for properties other plugins auto-update that shouldn't count as a real edit. One property key per line.",
+						desc: "Besides Note Narrator's own properties above (always excluded), also ignore these frontmatter properties when checking whether a note has changed since its audio was generated, for properties other plugins auto-update that shouldn't count as a real edit. One property key per line.",
 						control: { type: 'textarea', key: 'extraStaleHashExcludedProperties', placeholder: 'last_modified', rows: 3, disabled: linkingOff },
 					},
 				],
