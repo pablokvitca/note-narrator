@@ -1,31 +1,59 @@
 # Note Narrator
 
-Note Narrator is an Obsidian plugin that **reads your notes aloud** using text to speech. It uses [ElevenLabs](https://elevenlabs.io) voices, starts playing while the rest of the note is still being generated, and can save the audio as an `.mp3` next to your note.
+Note Narrator is an Obsidian plugin that **reads your notes aloud** using text to speech. Open the panel, press **Read**, and it starts playing while the rest of the note is still being generated. It can save the audio as an `.mp3` next to your note, so you can listen again for free.
 
 **Requires an ElevenLabs account and API key, and ElevenLabs charges for the audio it generates** (credits on your plan; free tier limits apply). The text you read is sent to ElevenLabs. See [Requirements and costs](#requirements-and-costs) and [Disclosures](#disclosures) before installing.
 
-![Note Narrator panel reading a note aloud, with the current text highlighted in the editor](docs/screenshots/panel.png)
+**Full documentation and usage guide: [the Note Narrator docs](https://publish.obsidian.md/pablokvitca-plugin-note-narrator/note-narrator).**
 
-![Note Narrator settings, showing the General, Providers, Profiles, Appearance, Performance and Files tabs](docs/screenshots/settings.png)
+![Note Narrator reading a note aloud: the panel on the right, with the part being read marked in the editor](docs/screenshots/panel-reading.png)
 
-## What it does
+## Key features
 
-- Reads the whole note, or just your text selection, from a sidebar panel or the **Read note aloud** command (**Stop reading** stops it).
-- **Narrator profiles**: a provider, a voice and its settings, and optional per-profile reading options. Switch profiles from the panel.
-- Plays as soon as the first chunk is ready, and generates long notes in the background while you listen.
-- **Background generation**: move a read to the background, or generate a note's audio there without playing it (the **Background** button in the panel, or the **Generate note audio in background** command). Background notes generate one at a time, and you can play them from the panel when they're ready.
-- Optionally **saves the audio** to your vault, links it from the note, and tells you when it is outdated.
-- Optionally **highlights** the text being read and scrolls the note to it.
+- **Read aloud** the whole note, or just your selection, from the panel or the **Read note aloud** command. Playback starts as soon as the first part is ready.
+- **Playback controls:** pause, rewind and skip, previous and next part, speed and volume.
+- **Highlighting:** the part being read is marked in the editor, as a margin marker, background wash or underline, and you can scroll to it.
+- **Background generation:** generate notes without playing them, one at a time, and play them from the panel when they're ready. A note edited since is marked **Outdated**.
+- **Saved audio:** save the audio as an `.mp3` in your vault, link it from the note, and see when it's out of date. Replaying it uses no credits.
+- **Narrator profiles:** a provider, a voice and its settings, and optional reading options, switchable from the panel.
+- **Reading options:** read the title and properties, skip sections by heading, skip comments, and choose how notes are split into parts.
 - Works on desktop and mobile.
 
-## Documentation
+![Background generation: one note finished, one generating, one queued](docs/screenshots/background-jobs.png)
 
-Full documentation is at **[the Note Narrator docs](https://publish.obsidian.md/pablokvitca-plugin-note-narrator/note-narrator)**:
+![Highlighting the part being read with a background wash](docs/screenshots/highlighting.png)
 
-- [Installation](https://publish.obsidian.md/pablokvitca-plugin-note-narrator/note-narrator/getting-started/installation) and [Quick start](https://publish.obsidian.md/pablokvitca-plugin-note-narrator/note-narrator/getting-started/quick-start)
-- [Settings](https://publish.obsidian.md/pablokvitca-plugin-note-narrator/note-narrator/settings/overview): every setting, tab by tab
-- [Supported platforms](https://publish.obsidian.md/pablokvitca-plugin-note-narrator/note-narrator/reference/supported-platforms) and [Privacy and network use](https://publish.obsidian.md/pablokvitca-plugin-note-narrator/note-narrator/reference/privacy)
-- [Troubleshooting and FAQ](https://publish.obsidian.md/pablokvitca-plugin-note-narrator/note-narrator/reference/troubleshooting) and the [Roadmap](https://publish.obsidian.md/pablokvitca-plugin-note-narrator/note-narrator/roadmap)
+![Settings tabs: General, Providers, Profiles, Appearance, Performance and Files](docs/screenshots/settings-tabs.png)
+
+## Platforms
+
+Note Narrator uses only Obsidian's cross-platform APIs, so every feature is the same on every device. The difference is how much each platform has been tested.
+
+| Feature | macOS | Windows | Linux | iPhone | iPad | Vision Pro | Android |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Read aloud and playback controls | ✅ | ❔ | ❔ | ✅ | ✅ | ✅ | ❔ |
+| Highlighting and scroll to current | ✅ | ❔ | ❔ | ✅ | ✅ | ✅ | ❔ |
+| Background generation | ✅ | ❔ | ❔ | ✅ | ✅ | ✅ | ❔ |
+| Saved audio | ✅ | ❔ | ❔ | ✅ | ✅ | ✅ | ❔ |
+| Narrator profiles and settings | ✅ | ❔ | ❔ | ✅ | ✅ | ✅ | ❔ |
+
+✅ Tested on a real device. ❔ Should work, but nobody has tried it yet; reports welcome. iPad includes iPad mini. Requires **Obsidian 1.13.1 or newer** everywhere. Details: [Supported platforms](https://publish.obsidian.md/pablokvitca-plugin-note-narrator/note-narrator/reference/supported-platforms).
+
+## Text to speech providers
+
+| | ElevenLabs | Google Gemini | Apple OS (Local) |
+| --- | --- | --- | --- |
+| Status | ✅ Available | 🔜 Planned | 🔜 Planned |
+| Platforms | All | All | Apple devices only |
+| Needs an account and API key | Yes | Yes | No |
+| Needs an internet connection | Yes | Yes | No |
+| Costs | Credits on your ElevenLabs plan | Google's API pricing | Free |
+| Voices | Your account's voices | 🔜 | 🔜 |
+| Models | Eleven v3, Eleven Multilingual v2, Eleven Flash v2.5 | 🔜 | 🔜 |
+| Voice settings | Stability, similarity | 🔜 | 🔜 |
+| Parallel generation | Yes, with automatic retry when rate-limited | 🔜 | 🔜 |
+
+Planned providers are on the [Roadmap](https://publish.obsidian.md/pablokvitca-plugin-note-narrator/note-narrator/roadmap). Plans can change.
 
 ## Install
 
@@ -35,10 +63,7 @@ Requires **Obsidian 1.13.1 or newer**.
 - **BRAT:** install [BRAT](https://github.com/TfTHacker/obsidian42-brat), run **BRAT: Add a beta plugin for testing**, and enter `pablokvitca/note-narrator`, to get updates ahead of the community directory or a beta build.
 - **Manually:** download `main.js`, `manifest.json` and `styles.css` from the [latest release](https://github.com/pablokvitca/note-narrator/releases/latest) into `<your vault>/.obsidian/plugins/note-narrator/`, then enable it under **Settings → Community plugins**.
 
-## Quick start
-
-1. Create an [ElevenLabs](https://elevenlabs.io) account and API key. Then open **Settings → Note Narrator → Providers**, open the ElevenLabs provider and choose your API key.
-2. Open a note, click the **audio-lines** icon in the ribbon (or the note's toolbar) to open the panel, and press **Read**.
+Then follow the [Quick start](https://publish.obsidian.md/pablokvitca-plugin-note-narrator/note-narrator/getting-started/quick-start): add your ElevenLabs API key under **Settings → Note Narrator → Providers**, open a note, open the panel from the ribbon, and press **Read**.
 
 ## Requirements and costs
 
@@ -63,13 +88,7 @@ Obsidian asks plugins to be clear about what they do with your data. For Note Na
 - **No telemetry, no ads, no self-updates.** The plugin collects no usage data, shows no advertising, and does not install or update itself or any code.
 - **Synthetic voices.** The audio is AI-generated. If you share it, consider saying so, and follow ElevenLabs' rules on voice rights and permitted content (see their [Prohibited Use Policy](https://elevenlabs.io/use-policy)).
 
-## What to expect
-
-- Behaviour and settings can still change between releases, and existing settings are migrated when they do.
-- HTML comments (`<!-- like this -->`) are not skipped and are read as text. Obsidian comments (`%% like this %%`) can be skipped.
-- Editing a note marks its saved audio as outdated, even if the edit was outside the text that was read.
-- Highlighting needs the note open in Editing view and is approximate at chunk and section boundaries.
-- More known limitations and the roadmap are in the documentation.
+More detail: [Privacy and network use](https://publish.obsidian.md/pablokvitca-plugin-note-narrator/note-narrator/reference/privacy). Known limitations, such as HTML comments being read aloud, are listed in the [docs](https://publish.obsidian.md/pablokvitca-plugin-note-narrator/note-narrator/reference/known-limitations).
 
 ## Disclaimer
 
@@ -81,4 +100,4 @@ The source code is open: [github.com/pablokvitca/note-narrator](https://github.c
 
 ## Development
 
-`npm i` to install, `npm run dev` to build in watch mode, `npm run build` to type-check and produce a production `main.js`, `npm run lint` and `npm test` to check. The branching model and release process are in [AGENTS.md](AGENTS.md).
+See [DEVELOPMENT.md](DEVELOPMENT.md) and [CONTRIBUTING.md](CONTRIBUTING.md) for details on dev setup and contributions.
