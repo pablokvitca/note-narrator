@@ -746,13 +746,20 @@ export class PlayerView extends ItemView {
 		const { button: playSavedButton } = this.createLabeledButton(actionsRow, 'note-narrator-play-saved-button', PLAY_SAVED_ICON_ID, 'Play saved');
 		playSavedButton.disabled = true;
 
+		const activeFile = this.getActiveFile();
+		// The editor's current text lets a read or background job made from an older version count as stale.
+		const currentContent = editorTextForNote(this.getActiveMarkdownView(), activeFile);
+
+		// While the note is being read, Read stays a disabled "Reading" -- unless the note has been edited (or
+		// the narrator changed) since: then reading it again regenerates it, so it's offered as Regenerate.
+		const activeReadStale = active && !!activeFile && this.plugin.reader.isActiveReadStale(activeFile, currentContent);
 		const { button: readButton, labelEl: readLabelEl } = this.createLabeledButton(
 			actionsRow,
 			'mod-cta note-narrator-read-button',
 			'audio-lines',
-			active ? 'Reading' : 'Read',
+			activeReadStale ? 'Regenerate' : active ? 'Reading' : 'Read',
 		);
-		readButton.disabled = active;
+		readButton.disabled = active && !activeReadStale;
 		readButton.onclick = () => void this.plugin.reader.readNote(this.getActiveMarkdownView() ?? this.getActiveFile() ?? undefined);
 
 		const { button: cancelButton } = this.createLabeledButton(actionsRow, 'note-narrator-cancel-button', 'octagon-x', 'Cancel');
@@ -763,9 +770,6 @@ export class PlayerView extends ItemView {
 		// One slot, two jobs: while the selected note's full read is playing it moves that read to the
 		// background; otherwise (including while only a selection of it is being read) it starts generating
 		// the whole note in the background without playing it. Same decision as the command's.
-		const activeFile = this.getActiveFile();
-		// The editor's current text lets a background job made from an older version count as stale.
-		const currentContent = editorTextForNote(this.getActiveMarkdownView(), activeFile);
 		const action = activeFile ? this.plugin.reader.getGenerateInBackgroundAction(activeFile, currentContent) : null;
 		const spec: BackgroundButtonSpec = backgroundButtonSpec(action);
 		const { button: backgroundButton, labelEl: backgroundLabelEl } = this.createLabeledButton(
@@ -798,15 +802,20 @@ export class PlayerView extends ItemView {
 				const info = await this.plugin.reader.getAudioInfo(activeFile);
 				if (!info) return;
 
-				// Read button's label only makes sense while it's actually clickable (not `active`) — leave it
-				// alone otherwise so it doesn't flash "Regenerate" next to a disabled "Reading" state. Play saved
-				// isn't gated the same way: it's available the instant a saved file exists, even mid-read, since
-				// clicking it just stops whatever's currently happening and plays the saved copy instead (same
-				// pattern as Read/Regenerate staying clickable while a *different* note is playing).
+				// During a read the saved file says nothing about what's playing (a fresh read replaces it once
+				// saved), so it doesn't relabel Read then -- except while the saved file itself is what's playing:
+				// outdated, it's offered as Regenerate. Play saved isn't gated the same way: it's available the
+				// instant a saved file exists, even mid-read, since clicking it just stops whatever's currently
+				// happening and plays the saved copy instead (same pattern as Read/Regenerate staying clickable
+				// while a *different* note is playing).
 				const narrator = this.plugin.reader.getActiveNarrator();
 				const freshness = savedAudioFreshness(info.status, info.savedVoice, narrator?.voice ?? null);
-				const { readLabel, savedAudioCurrent } = savedAudioPanelUpdate(freshness, active);
-				if (readLabel) this.setButtonLabel(readButton, readLabelEl, readLabel);
+				const readingGenerated = active && this.plugin.reader.getState().activeReadKind !== 'saved';
+				const { readLabel, savedAudioCurrent } = savedAudioPanelUpdate(freshness, readingGenerated);
+				if (readLabel) {
+					this.setButtonLabel(readButton, readLabelEl, readLabel);
+					readButton.disabled = false;
+				}
 
 				// Now that the saved audio's freshness is known, decide again with it: up to date with this
 				// narrator makes the background button regenerate (its tooltip says so), the same way Read

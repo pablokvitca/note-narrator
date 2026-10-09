@@ -82,7 +82,7 @@ export class Reader extends Events {
 		this.backgroundQueue = new BackgroundQueue(settings, {
 			runWorkerPool: (job, windowSize) => this.runGenerationWorkerPool(job, windowSize),
 			publish: (backgroundJobs) => this.setState({ backgroundJobs }),
-			isStale: (job, file, currentContent) => this.isBackgroundJobStale(job, file, currentContent),
+			isStale: (job, file, currentContent) => this.isJobStale(job, file, currentContent),
 		});
 	}
 
@@ -181,18 +181,29 @@ export class Reader extends Events {
 			// A stale job for this note doesn't count: generating again replaces it.
 			backgroundJobs: this.backgroundQueue
 				.all()
-				.filter((job) => job.file?.path !== file.path || !this.isBackgroundJobStale(job, file, currentContent))
+				.filter((job) => job.file?.path !== file.path || !this.isJobStale(job, file, currentContent))
 				.map((job) => ({ path: job.file?.path ?? null, status: job.backgroundStatus })),
 			savedAudioUpToDate,
 		});
 	}
 
 	/**
-	 * Whether a background job no longer matches its note: generated with a different narrator than the
-	 * active one, or (when `currentContent` is given) from text that's since been edited. Playing it would
-	 * play the old version, so Read and "Generate in background" replace it instead.
+	 * Whether the note's own read, playing or generating now, is stale (see {@link isJobStale}): reading it
+	 * again then regenerates it, so the panel offers that instead of a disabled "Reading". Saved audio playing
+	 * has no job, so it's judged by its file's freshness instead.
 	 */
-	private isBackgroundJobStale(job: GenerationJob, file: TFile, currentContent?: string): boolean {
+	isActiveReadStale(file: TFile, currentContent?: string): boolean {
+		const job = this.activeJob;
+		// A selection read (no contentHash) isn't the note's audio, so the note's edits don't make it stale.
+		return !!job && job.contentHash !== null && job.file?.path === file.path && this.isJobStale(job, file, currentContent);
+	}
+
+	/**
+	 * Whether a job no longer matches its note: generated with a different narrator than the active one, or
+	 * (when `currentContent` is given) from text that's since been edited. Playing it would play the old
+	 * version, so Read and "Generate in background" replace it instead.
+	 */
+	private isJobStale(job: GenerationJob, file: TFile, currentContent?: string): boolean {
 		const narrator = this.noteText.getActiveNarrator();
 		if (narrator && narrator.fingerprint !== job.narrator.fingerprint) return true;
 		if (currentContent === undefined || job.contentHash === null) return false;

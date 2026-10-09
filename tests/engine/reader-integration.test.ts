@@ -245,8 +245,8 @@ class FakeVault {
 	 * A Markdown view of the note that, like the real editor, shows the file's current text, or `unsavedText`
 	 * for an edit the editor hasn't saved to disk yet.
 	 */
-	view(path: string, unsavedText?: string): MarkdownView {
-		return fake<MarkdownView>({ file: this.file(path), editor: { getValue: () => unsavedText ?? this.text.get(path) ?? '', getSelection: () => '' } });
+	view(path: string, unsavedText?: string, selection = ''): MarkdownView {
+		return fake<MarkdownView>({ file: this.file(path), editor: { getValue: () => unsavedText ?? this.text.get(path) ?? '', getSelection: () => selection } });
 	}
 }
 
@@ -455,6 +455,35 @@ describe('Reader end to end: audio saved by Auto-generate on open', () => {
 		await settle();
 
 		expect(reader.getState().chunkCount).toBe(savedChunks);
+	});
+});
+
+describe('Reader end to end: editing the note being read', () => {
+	it('makes the read stale, and reading again generates the note as it is now', async () => {
+		const note = vault.file('Note.md');
+		// Not awaited: a read only resolves once it has played to the end.
+		void reader.readNote(vault.view('Note.md'));
+		await settle();
+		expect(reader.isActiveReadStale(note, vault.text.get('Note.md'))).toBe(false);
+
+		const edited = `${vault.text.get('Note.md') ?? ''}\n\nAn added line.`;
+		expect(reader.isActiveReadStale(note, edited)).toBe(true);
+		// Another note's edits don't touch this read.
+		expect(reader.isActiveReadStale(vault.file('Other.md'), edited)).toBe(false);
+
+		vault.write('Note.md', edited);
+		void reader.readNote(vault.view('Note.md'));
+		await settle();
+		expect(reader.isActiveReadStale(note, edited)).toBe(false);
+		expect(fakes.synthCalls.map((call) => call.text).join(' ')).toContain('An added line.');
+	});
+
+	it('never counts a selection read as stale: it isn\'t the note\'s audio', async () => {
+		reader = new Reader(vault.app(), { ...DEFAULT_SETTINGS, ...migrateProfileSettings({}), readSelectionIfPresent: true });
+		void reader.readNote(vault.view('Note.md', undefined, 'A selection.'));
+		await settle();
+		expect(reader.getState().activeReadKind).toBe('selection');
+		expect(reader.isActiveReadStale(vault.file('Note.md'), 'Edited.')).toBe(false);
 	});
 });
 

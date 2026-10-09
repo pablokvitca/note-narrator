@@ -66,7 +66,7 @@ describe('savedAudioPanelUpdate', () => {
 		expect(savedAudioPanelUpdate('unknown', false)).toEqual({ readLabel: null, savedAudioCurrent: false });
 	});
 
-	it('never relabels Read while it\'s disabled during a read', () => {
+	it('never relabels Read during a generated read of the note, whose audio replaces the saved file', () => {
 		expect(savedAudioPanelUpdate('outdated', true).readLabel).toBeNull();
 		expect(savedAudioPanelUpdate('other-narrator', true).readLabel).toBeNull();
 		expect(savedAudioPanelUpdate('current', true).savedAudioCurrent).toBe(true);

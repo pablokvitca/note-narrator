@@ -10,7 +10,7 @@ export interface BackgroundQueueHost {
 	runWorkerPool(job: GenerationJob, windowSize: number): Promise<PoolResult>;
 	/** Publishes the list's progress onto the Reader's state, for the panel. */
 	publish(jobs: BackgroundJobInfo[]): void;
-	/** Whether a job no longer matches its note (see `Reader.isBackgroundJobStale()`), so it's replaced rather than played. */
+	/** Whether a job no longer matches its note (see `Reader.isJobStale()`), so it's replaced rather than played. */
 	isStale(job: GenerationJob, file: TFile, currentContent?: string): boolean;
 }
 

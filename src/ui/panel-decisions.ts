@@ -23,9 +23,10 @@ export function editorTextForNote(view: MarkdownView | null, file: TFile | null)
 
 /**
  * What the panel changes once a note's saved-audio freshness is known: the Read button's new label (null to
- * leave it, including while it's disabled during a read, so it doesn't flash "Regenerate"), and whether the
- * saved audio counts as up to date, which turns the background button into a regenerate.
+ * leave it, including during a generated read of the note, whose audio replaces the saved file once saved, so
+ * the old file's freshness doesn't apply to it), and whether the saved audio counts as up to date, which turns
+ * the background button into a regenerate. A label also enables the button, even while the saved file plays.
  */
-export function savedAudioPanelUpdate(freshness: SavedAudioFreshness, readActive: boolean): { readLabel: string | null; savedAudioCurrent: boolean } {
-	return { readLabel: readActive ? null : readButtonLabel(freshness), savedAudioCurrent: freshness === 'current' };
+export function savedAudioPanelUpdate(freshness: SavedAudioFreshness, readingGenerated: boolean): { readLabel: string | null; savedAudioCurrent: boolean } {
+	return { readLabel: readingGenerated ? null : readButtonLabel(freshness), savedAudioCurrent: freshness === 'current' };
 }
