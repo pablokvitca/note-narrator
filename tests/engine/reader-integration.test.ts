@@ -82,6 +82,8 @@ class FakeVault {
 	private readonly renameHandlers = new Set<(file: TFile, oldPath: string) => void>();
 	/** Like Obsidian, one TFile instance per path. */
 	private readonly files = new Map<string, TFile>();
+	/** When true, reading a note's text (cachedRead) fails, as for a note that just became unreadable. */
+	failReads = false;
 	/** How many times the plugin listed every note (getMarkdownFiles). */
 	markdownFileListings = 0;
 	/** When true, audio writes (createBinary, modifyBinary) stay pending until the test calls releaseWrites(). */
@@ -196,7 +198,7 @@ class FakeVault {
 		return fake<App>({
 			vault: {
 				configDir: 'vault-config',
-				cachedRead: (f: TFile) => Promise.resolve(this.text.get(f.path) ?? ''),
+				cachedRead: (f: TFile) => (this.failReads ? Promise.reject(new Error('read failed')) : Promise.resolve(this.text.get(f.path) ?? '')),
 				readBinary: (f: TFile) => {
 					this.binaryReads.push(f.path);
 					return Promise.resolve(this.binary.get(f.path) ?? new ArrayBuffer(0));
@@ -460,6 +462,50 @@ describe('Reader end to end: audio saved by Auto-generate on open', () => {
 		await settle();
 
 		expect(reader.getState().chunkCount).toBe(savedChunks);
+	});
+});
+
+describe('Reader end to end: a stale background job\'s badge', () => {
+	it('says why a background job no longer matches its note: edited, or another narrator', async () => {
+		const settings = { ...DEFAULT_SETTINGS, ...migrateProfileSettings({}), saveAudioFile: false } as NoteNarratorSettings;
+		reader = new Reader(vault.app(), settings);
+		reader.generateNoteInBackground(vault.view('Note.md'));
+		await settle();
+		const jobId = reader.getState().backgroundJobs[0]!.id;
+		expect(await reader.backgroundJobStaleness(jobId)).toBeNull();
+
+		// Edited in the editor only: judged by the text passed in, ahead of the file.
+		const edited = `${vault.text.get('Note.md') ?? ''}\n\nAn added line.`;
+		expect(await reader.backgroundJobStaleness(jobId, edited)).toBe('note-edited');
+		expect(await reader.backgroundJobStaleness(jobId)).toBeNull();
+
+		// Saved: read from the vault when no editor text is given.
+		vault.write('Note.md', edited);
+		expect(await reader.backgroundJobStaleness(jobId)).toBe('note-edited');
+
+		const profile = settings.profiles[0]!;
+		profile.voice = { ...profile.voice, voiceId: `${profile.voice.voiceId}-other` };
+		expect(await reader.backgroundJobStaleness(jobId)).toBe('narrator-changed');
+
+		expect(await reader.backgroundJobStaleness(jobId + 100)).toBeNull();
+	});
+
+	it('reports a narrator change first when the note was edited too, and judges an unreadable note by its narrator alone', async () => {
+		const settings = { ...DEFAULT_SETTINGS, ...migrateProfileSettings({}), saveAudioFile: false } as NoteNarratorSettings;
+		reader = new Reader(vault.app(), settings);
+		reader.generateNoteInBackground(vault.view('Note.md'));
+		await settle();
+		const jobId = reader.getState().backgroundJobs[0]!.id;
+		vault.write('Note.md', `${vault.text.get('Note.md') ?? ''}\n\nAn added line.`);
+
+		vault.failReads = true;
+		expect(await reader.backgroundJobStaleness(jobId)).toBeNull();
+
+		const profile = settings.profiles[0]!;
+		profile.voice = { ...profile.voice, voiceId: `${profile.voice.voiceId}-other` };
+		expect(await reader.backgroundJobStaleness(jobId)).toBe('narrator-changed');
+		vault.failReads = false;
+		expect(await reader.backgroundJobStaleness(jobId)).toBe('narrator-changed');
 	});
 });
 

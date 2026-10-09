@@ -1,5 +1,5 @@
 import type { MarkdownView, TFile } from 'obsidian';
-import type { ReaderStatus } from '../engine/reader-types';
+import type { JobStaleReason, ReaderStatus } from '../engine/reader-types';
 import type { SavedAudioFreshness } from '../engine/saved-audio-freshness';
 import { readButtonLabel } from './read-button';
 
@@ -29,4 +29,11 @@ export function editorTextForNote(view: MarkdownView | null, file: TFile | null)
  */
 export function savedAudioPanelUpdate(freshness: SavedAudioFreshness, readingGenerated: boolean): { readLabel: string | null; savedAudioCurrent: boolean } {
 	return { readLabel: readingGenerated ? null : readButtonLabel(freshness), savedAudioCurrent: freshness === 'current' };
+}
+
+/** The tooltip on a background job's "Outdated" badge, saying why its audio no longer matches the note. */
+export function staleBadgeTooltip(reason: JobStaleReason): string {
+	return reason === 'narrator-changed'
+		? 'Made with a different narrator than the one selected. Open the note and select Read to generate it again.'
+		: 'The note changed after this audio was generated. Playing it plays the older version. Open the note and select Read to generate it again.';
 }

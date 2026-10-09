@@ -7,7 +7,7 @@ import { SavedAudioFreshness, savedAudioFreshness } from '../engine/saved-audio-
 import { BackgroundButtonSpec, backgroundButtonSpec } from './background-button';
 import { editorTextForNote, pauseButtonAction, savedAudioPanelUpdate } from './panel-decisions';
 import { PLAY_SAVED_ICON_ID, skipIconId } from './icons';
-import { ReaderState } from '../engine/reader-types';
+import { JobStaleReason, ReaderState } from '../engine/reader-types';
 import { computeFullReadTimes, formatTimeDisplay } from '../engine/time-utils';
 import { BackgroundJobList } from './background-job-list';
 import { attachTooltip } from './touch-tooltip';
@@ -49,6 +49,9 @@ export class PlayerView extends ItemView {
 
 	/** Re-renders a second after typing stops; cancelled on close so a pending redraw can't run on a closed panel. */
 	private readonly debouncedRender = debounce(() => this.render(), 1000, true);
+
+	/** Each background job's last known stale reason (null: not stale), so a redraw shows its badge right away instead of blinking until the check comes back. */
+	private readonly jobStaleness = new Map<number, JobStaleReason | null>();
 
 	constructor(
 		leaf: WorkspaceLeaf,
@@ -92,6 +95,8 @@ export class PlayerView extends ItemView {
 		this.registerEvent(
 			this.app.metadataCache.on('changed', (file) => {
 				if (file.path === this.lastActiveFilePath) this.render();
+				// A background job's note saved or synced while not selected: its card's Outdated badge may change.
+				else if (this.plugin.reader.getState().backgroundJobs.some((job) => job.file?.path === file.path)) this.debouncedRender();
 			}),
 		);
 
@@ -364,9 +369,11 @@ export class PlayerView extends ItemView {
 		}
 
 		// 12. Background-jobs queue, pinned to the bottom of the panel (outside the scroll area)
+		// Forget jobs that left the list, so the cache can't grow past the list's size.
+		for (const id of this.jobStaleness.keys()) if (!state.backgroundJobs.some((job) => job.id === id)) this.jobStaleness.delete(id);
 		if (state.backgroundJobs.length > 0) {
 			const pinned = contentEl.createDiv({ cls: 'note-narrator-background-jobs-pinned' });
-			new BackgroundJobList(this.plugin.reader, this.plugin.settings).render(pinned, state);
+			new BackgroundJobList(this.plugin.reader, this.plugin.settings, (file) => editorTextForNote(this.getActiveMarkdownView(), file), this.jobStaleness).render(pinned, state);
 		}
 	}
 

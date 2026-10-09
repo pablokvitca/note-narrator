@@ -616,6 +616,18 @@
 	white-space: nowrap;
 }
 
+/* "Outdated" pill on a background job whose note was edited (or narrator changed) since it was
+   generated: the warning color used by the outdated saved-audio status line. */
+.note-narrator-background-job-badge {
+	flex-shrink: 0;
+	padding: 0 var(--size-4-1);
+	border-radius: var(--radius-s);
+	font-size: var(--font-ui-smaller);
+	color: var(--text-warning);
+	background-color: color-mix(in oklch, var(--color-orange) 15%, transparent);
+	white-space: nowrap;
+}
+
 /* Icon buttons used by the compact and minimal styles -- smaller than the transport controls' since
    several can sit inline with a note title. */
 .note-narrator-bgjob-icon-button {

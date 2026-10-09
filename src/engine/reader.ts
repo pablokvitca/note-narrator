@@ -1,6 +1,6 @@
 import { App, Events, MarkdownView, Notice, TFile } from 'obsidian';
 import { decodeAudioDuration, sliceIntoChunks } from './audio-utils';
-import { AudioLinkStatus, ChunkOutcome, GenerationJob, IDLE_STATE, PoolResult, PositionBase, ReaderState, SavedPlaybackTimeline } from './reader-types';
+import { AudioLinkStatus, ChunkOutcome, GenerationJob, IDLE_STATE, JobStaleReason, PoolResult, PositionBase, ReaderState, SavedPlaybackTimeline } from './reader-types';
 import { ChunkPosition, RawSpan } from '../text/text-position';
 import { HighlightGranularity, NoteNarratorSettings } from '../settings/settings';
 import { ResolvedNarrator, generationWindow } from '../settings/profiles';
@@ -209,10 +209,35 @@ export class Reader extends Events {
 	 * version, so Read and "Generate in background" replace it instead.
 	 */
 	private isJobStale(job: GenerationJob, file: TFile, currentContent?: string): boolean {
+		return this.jobStaleReason(job, file, currentContent) !== null;
+	}
+
+	/** Why a job is stale (see {@link isJobStale}), or null if it isn't. A narrator change is reported first. */
+	private jobStaleReason(job: GenerationJob, file: TFile, currentContent?: string): JobStaleReason | null {
 		const narrator = this.noteText.getActiveNarrator();
-		if (narrator && narrator.fingerprint !== job.narrator.fingerprint) return true;
-		if (currentContent === undefined || job.contentHash === null) return false;
-		return job.contentHash !== this.savedAudio.stalenessHash(currentContent, file);
+		if (narrator && narrator.fingerprint !== job.narrator.fingerprint) return 'narrator-changed';
+		if (currentContent === undefined || job.contentHash === null) return null;
+		return job.contentHash !== this.savedAudio.stalenessHash(currentContent, file) ? 'note-edited' : null;
+	}
+
+	/**
+	 * Why a background job is stale, for the "Outdated" badge on its card, or null if it isn't (or isn't in
+	 * the list). `currentContent` is the editor's text when the note is open there, since it can be ahead of
+	 * the file; otherwise the note is read from the vault.
+	 */
+	async backgroundJobStaleness(jobId: number, currentContent?: string): Promise<JobStaleReason | null> {
+		const job = this.backgroundQueue.findById(jobId);
+		const file = job?.file;
+		if (!job || !file) return null;
+		let content = currentContent;
+		if (content === undefined) {
+			try {
+				content = await this.app.vault.cachedRead(file);
+			} catch {
+				// Unreadable now (e.g. just deleted): judge by the narrator alone, without a notice for a badge.
+			}
+		}
+		return this.jobStaleReason(job, file, content);
 	}
 
 	/**

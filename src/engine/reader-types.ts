@@ -80,6 +80,9 @@ export type ChunkOutcome = 'ended' | 'next' | 'previous';
 /** How a worker pool's run ended; see `Reader.runGenerationWorkerPool()`. */
 export type PoolResult = 'done' | 'superseded' | 'failed';
 
+/** Why a job no longer matches its note: its text was edited since, or the selected narrator differs from the one generating it. */
+export type JobStaleReason = 'note-edited' | 'narrator-changed';
+
 /**
  * A single read's generation state: its chunk texts, buffers/promises/readiness, and the provider used to
  * synthesize them. Exactly one job at a time drives active playback (`Reader.activeJob`); any number of
