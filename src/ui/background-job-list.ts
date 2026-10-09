@@ -1,9 +1,11 @@
 import { setIcon } from 'obsidian';
+import type { TFile } from 'obsidian';
 import { queuePosition } from '../engine/background-job';
 import type { BackgroundJobInfo } from '../engine/background-job';
 import type { Reader } from '../engine/reader';
-import { ReaderState } from '../engine/reader-types';
+import { JobStaleReason, ReaderState } from '../engine/reader-types';
 import type { NoteNarratorSettings } from '../settings/settings';
+import { staleBadgeTooltip } from './panel-decisions';
 import { attachTooltip } from './touch-tooltip';
 
 /** The player view's list of queued/generating/finished background jobs, drawn in the style chosen in settings. */
@@ -11,7 +13,35 @@ export class BackgroundJobList {
 	constructor(
 		private readonly reader: Reader,
 		private readonly settings: NoteNarratorSettings,
+		/** The editor's current text for a note open in the panel's editor, ahead of the file when unsaved; undefined otherwise. */
+		private readonly editorTextFor: (file: TFile | null) => string | undefined = () => undefined,
+		/** Each job's last known stale reason, kept by the panel across redraws; updated here as checks come back. */
+		private readonly staleness: Map<number, JobStaleReason | null> = new Map(),
 	) {}
+
+	/**
+	 * Adds an "Outdated" badge, hidden until the job turns out to be stale (note edited, or narrator changed,
+	 * since it was generated): that's decided asynchronously, since a note not open in the editor is read
+	 * from the vault. Its tooltip says why. Playing the card still plays the old audio; Read replaces it.
+	 */
+	private renderStaleBadge(container: HTMLElement, job: BackgroundJobInfo): void {
+		const badge = container.createSpan({ cls: 'note-narrator-background-job-badge', text: 'Outdated' });
+		const show = (reason: JobStaleReason | null | undefined) => {
+			if (reason) attachTooltip(badge, staleBadgeTooltip(reason));
+			badge.toggle(!!reason);
+		};
+		// The last known answer first, so a redraw (one per chunk while a job generates) doesn't blink the badge.
+		show(this.staleness.get(job.id));
+		void (async () => {
+			try {
+				const reason = await this.reader.backgroundJobStaleness(job.id, this.editorTextFor(job.file));
+				this.staleness.set(job.id, reason);
+				show(reason);
+			} catch (error) {
+				console.error('Note Narrator: failed to check whether a background job is outdated', error);
+			}
+		})();
+	}
 
 	/** Label text for a background job's current status, per {@link BackgroundJobInfo.status}. */
 	private backgroundJobLabel(job: BackgroundJobInfo, allJobs: BackgroundJobInfo[]): string {
@@ -91,6 +121,7 @@ export class BackgroundJobList {
 		const header = box.createDiv({ cls: 'note-narrator-background-job-header' });
 		header.createSpan({ cls: 'note-narrator-background-job-icon' }, (el) => setIcon(el, this.backgroundJobIcon(job)));
 		header.createSpan({ text: this.backgroundJobLabel(job, allJobs) });
+		this.renderStaleBadge(header, job);
 
 		this.renderBackgroundGenerationBar(box, job);
 
@@ -118,6 +149,7 @@ export class BackgroundJobList {
 
 		row.createSpan({ cls: 'note-narrator-background-job-icon' }, (el) => setIcon(el, this.backgroundJobIcon(job)));
 		row.createSpan({ cls: 'note-narrator-background-job-name', text: job.file?.basename ?? 'note' });
+		this.renderStaleBadge(row, job);
 
 		const bar = row.createDiv({ cls: 'note-narrator-background-job-minibar' });
 		for (let i = 0; i < job.chunkCount; i++) {
@@ -140,6 +172,7 @@ export class BackgroundJobList {
 		const titleRow = card.createDiv({ cls: 'note-narrator-background-job-title-row' });
 		titleRow.createSpan({ cls: 'note-narrator-background-job-icon' }, (el) => setIcon(el, this.backgroundJobIcon(job)));
 		titleRow.createSpan({ cls: 'note-narrator-background-job-name', text: job.file?.basename ?? 'note' });
+		this.renderStaleBadge(titleRow, job);
 
 		const buttons = titleRow.createDiv({ cls: 'note-narrator-background-job-minimal-buttons' });
 		this.createBackgroundJobIconButton(buttons, 'play', 'Play', () => this.reader.playBackgroundJob(job.id));

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { MarkdownView, TFile } from 'obsidian';
-import { editorTextForNote, pauseButtonAction, savedAudioPanelUpdate } from '../../src/ui/panel-decisions';
+import { editorTextForNote, pauseButtonAction, savedAudioPanelUpdate, staleBadgeTooltip } from '../../src/ui/panel-decisions';
 
 /** Test doubles only implement what the helpers touch; this is the one place they stand in for the real types. */
 function fake<T>(value: object): T {
@@ -70,5 +70,12 @@ describe('savedAudioPanelUpdate', () => {
 		expect(savedAudioPanelUpdate('outdated', true).readLabel).toBeNull();
 		expect(savedAudioPanelUpdate('other-narrator', true).readLabel).toBeNull();
 		expect(savedAudioPanelUpdate('current', true).savedAudioCurrent).toBe(true);
+	});
+});
+
+describe('staleBadgeTooltip', () => {
+	it('says the note was edited, or the narrator changed', () => {
+		expect(staleBadgeTooltip('note-edited')).toContain('The note changed after this audio was generated');
+		expect(staleBadgeTooltip('narrator-changed')).toContain('Made with a different narrator');
 	});
 });
