@@ -751,15 +751,15 @@ export class PlayerView extends ItemView {
 		const currentContent = editorTextForNote(this.getActiveMarkdownView(), activeFile);
 
 		// While the note is being read, Read stays a disabled "Reading" -- unless the note has been edited (or
-		// the narrator changed) since: then reading it again regenerates it, so it's offered as Regenerate.
-		const activeReadStale = active && !!activeFile && this.plugin.reader.isActiveReadStale(activeFile, currentContent);
+		// the narrator changed) since, or the read's saved audio was deleted: then it's offered again.
+		const activeReadAction = active && activeFile ? this.plugin.reader.activeReadAction(activeFile, currentContent) : null;
 		const { button: readButton, labelEl: readLabelEl } = this.createLabeledButton(
 			actionsRow,
 			'mod-cta note-narrator-read-button',
 			'audio-lines',
-			activeReadStale ? 'Regenerate' : active ? 'Reading' : 'Read',
+			activeReadAction === 'regenerate' ? 'Regenerate' : active && !activeReadAction ? 'Reading' : 'Read',
 		);
-		readButton.disabled = active && !activeReadStale;
+		readButton.disabled = active && !activeReadAction;
 		readButton.onclick = () => void this.plugin.reader.readNote(this.getActiveMarkdownView() ?? this.getActiveFile() ?? undefined);
 
 		const { button: cancelButton } = this.createLabeledButton(actionsRow, 'note-narrator-cancel-button', 'octagon-x', 'Cancel');

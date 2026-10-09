@@ -188,14 +188,19 @@ export class Reader extends Events {
 	}
 
 	/**
-	 * Whether the note's own read, playing or generating now, is stale (see {@link isJobStale}): reading it
-	 * again then regenerates it, so the panel offers that instead of a disabled "Reading". Saved audio playing
-	 * has no job, so it's judged by its file's freshness instead.
+	 * What Read offers while the note's own read is playing or generating, instead of a disabled "Reading":
+	 * - 'regenerate' once the read is stale (see {@link isJobStale}), since reading again regenerates it;
+	 * - 'read' once its audio was saved and that file is gone (deleted, or the save failed), the same Read
+	 *   the panel shows after stopping;
+	 * - null otherwise.
+	 * Saved audio playing has no job, so the panel judges it by its file's freshness instead.
 	 */
-	isActiveReadStale(file: TFile, currentContent?: string): boolean {
+	activeReadAction(file: TFile, currentContent?: string): 'regenerate' | 'read' | null {
 		const job = this.activeJob;
 		// A selection read (no contentHash) isn't the note's audio, so the note's edits don't make it stale.
-		return !!job && job.contentHash !== null && job.file?.path === file.path && this.isJobStale(job, file, currentContent);
+		if (!job || job.contentHash === null || job.file?.path !== file.path) return null;
+		if (this.isJobStale(job, file, currentContent)) return 'regenerate';
+		return job.savedForSession && !job.saving && job.savedAudioPath === null ? 'read' : null;
 	}
 
 	/**
@@ -845,7 +850,13 @@ export class Reader extends Events {
 	 * the same reason.
 	 */
 	handleFileDeleted(path: string): void {
-		if (this.activeJob?.file?.path === path) this.activeJob.noteDeleted = true;
+		const active = this.activeJob;
+		if (active?.file?.path === path) active.noteDeleted = true;
+		// The active read's saved audio is gone, so it's unsaved again: the panel offers Read (see activeReadAction()).
+		if (active?.file && active.savedAudioPath === path) {
+			active.savedAudioPath = null;
+			this.trigger('audio-status-change', active.file);
+		}
 		this.cancelAutoGeneration(path);
 		this.backgroundQueue.handleFileDeleted(path);
 	}
@@ -858,6 +869,7 @@ export class Reader extends Events {
 	 * by path, so it moves along with its note.)
 	 */
 	handleFileRenamed(newPath: string, oldPath: string): void {
+		if (this.activeJob?.savedAudioPath === oldPath) this.activeJob.savedAudioPath = newPath;
 		this.backgroundQueue.handleFileRenamed(newPath, oldPath);
 		const autoGeneration = this.autoGenerations.get(oldPath);
 		if (autoGeneration) {

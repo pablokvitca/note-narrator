@@ -464,18 +464,45 @@ describe('Reader end to end: editing the note being read', () => {
 		// Not awaited: a read only resolves once it has played to the end.
 		void reader.readNote(vault.view('Note.md'));
 		await settle();
-		expect(reader.isActiveReadStale(note, vault.text.get('Note.md'))).toBe(false);
+		expect(reader.activeReadAction(note, vault.text.get('Note.md'))).toBeNull();
 
 		const edited = `${vault.text.get('Note.md') ?? ''}\n\nAn added line.`;
-		expect(reader.isActiveReadStale(note, edited)).toBe(true);
+		expect(reader.activeReadAction(note, edited)).toBe('regenerate');
 		// Another note's edits don't touch this read.
-		expect(reader.isActiveReadStale(vault.file('Other.md'), edited)).toBe(false);
+		expect(reader.activeReadAction(vault.file('Other.md'), edited)).toBeNull();
 
 		vault.write('Note.md', edited);
 		void reader.readNote(vault.view('Note.md'));
 		await settle();
-		expect(reader.isActiveReadStale(note, edited)).toBe(false);
+		expect(reader.activeReadAction(note, edited)).toBeNull();
 		expect(fakes.synthCalls.map((call) => call.text).join(' ')).toContain('An added line.');
+	});
+
+	it('offers Read again once the read\'s saved audio is deleted, following it if it moves first', async () => {
+		reader = new Reader(vault.app(), {
+			...DEFAULT_SETTINGS,
+			...migrateProfileSettings({}),
+			saveAudioFile: true,
+			linkAudioInNote: true,
+			saveAudioLocation: 'custom-folder',
+			saveAudioFolderPath: 'Audio',
+		});
+		const note = vault.file('Note.md');
+		void reader.readNote(vault.view('Note.md'));
+		await settle();
+		await finishGenerating();
+		const info = await reader.getAudioInfo(note);
+		if (!info) throw new Error('expected saved audio');
+		expect(reader.getState().status).toBe('playing');
+		expect(reader.activeReadAction(note, vault.text.get('Note.md'))).toBeNull();
+
+		expect(info.audioFile.path.startsWith('Audio/')).toBe(true);
+		vault.renameFolder('Audio', 'Archive');
+		expect(reader.activeReadAction(note, vault.text.get('Note.md'))).toBeNull();
+
+		vault.trash(info.audioFile.path);
+		expect(reader.activeReadAction(note, vault.text.get('Note.md'))).toBe('read');
+		expect(reader.getState().status).toBe('playing');
 	});
 
 	it('never counts a selection read as stale: it isn\'t the note\'s audio', async () => {
@@ -483,7 +510,7 @@ describe('Reader end to end: editing the note being read', () => {
 		void reader.readNote(vault.view('Note.md', undefined, 'A selection.'));
 		await settle();
 		expect(reader.getState().activeReadKind).toBe('selection');
-		expect(reader.isActiveReadStale(vault.file('Note.md'), 'Edited.')).toBe(false);
+		expect(reader.activeReadAction(vault.file('Note.md'), 'Edited.')).toBeNull();
 	});
 });
 
