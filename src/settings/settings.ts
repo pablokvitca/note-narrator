@@ -83,6 +83,8 @@ export interface NoteNarratorSettings extends ProfileSettings, ReadingConfig {
 	backgroundJobDisplayStyle: BackgroundJobDisplayStyle;
 	/** Show Play saved/Read/Cancel/Background as icon-only buttons (with the label as a tooltip) at every panel size, instead of icon + text. */
 	compactButtons: boolean;
+	/** Center the panel's note stats, "Part N of M" progress and time readout, instead of aligning them left. */
+	centerPanelText: boolean;
 	/** Show the volume slider + mute button row in the player view. */
 	showVolumeSlider: boolean;
 	/** Show the playback speed slider row in the player view. */
@@ -144,6 +146,7 @@ export const DEFAULT_SETTINGS: NoteNarratorSettings = {
 	quickStartCharCount: 750,
 	backgroundJobDisplayStyle: 'minimal',
 	compactButtons: false,
+	centerPanelText: true,
 	showVolumeSlider: true,
 	showPlaybackSpeedSlider: true,
 	timeDisplayMode: 'current',

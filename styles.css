@@ -313,6 +313,13 @@
 	color: var(--text-faint);
 }
 
+/* "Center panel text" setting. */
+.note-narrator-center-text .note-narrator-chunk-progress,
+.note-narrator-center-text .note-narrator-time,
+.note-narrator-center-text .note-narrator-note-stats {
+	text-align: center;
+}
+
 .note-narrator-primary-actions {
 	display: flex;
 	flex-wrap: wrap;
