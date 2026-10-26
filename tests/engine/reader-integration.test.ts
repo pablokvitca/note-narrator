@@ -364,7 +364,8 @@ describe('Reader end to end: a note with its own properties', () => {
 		expect(reader.getGenerateInBackgroundAction(note, vault.text.get('Note.md'))).toBe('ready-in-background');
 	});
 
-	it('treats a property edit as a change right away, before the metadata cache catches up', async () => {
+	it('treats a property edit as a change right away with Read properties on, before the metadata cache catches up', async () => {
+		reader = new Reader(vault.app(), { ...DEFAULT_SETTINGS, ...migrateProfileSettings({}), saveAudioFile: true, linkAudioInNote: true, readProperties: true });
 		vault.write('Note.md', WITH_PROPERTIES);
 		vault.refreshCache('Note.md');
 		const note = vault.file('Note.md');
@@ -377,6 +378,25 @@ describe('Reader end to end: a note with its own properties', () => {
 		expect(reader.getGenerateInBackgroundAction(note, vault.text.get('Note.md'))).toBe('generate');
 		expect(await reader.getAudioStatus(note)).toBe('outdated');
 
+		vault.refreshCache('Note.md');
+		expect(await reader.getAudioStatus(note)).toBe('outdated');
+	});
+
+	it('keeps the saved audio and the job current through a property edit with Read properties off', async () => {
+		vault.write('Note.md', WITH_PROPERTIES);
+		vault.refreshCache('Note.md');
+		const note = vault.file('Note.md');
+		reader.generateNoteInBackground(vault.view('Note.md'));
+		await settle();
+		await finishGenerating();
+
+		vault.write('Note.md', (vault.text.get('Note.md') ?? '').replace('status: draft', 'status: final'));
+		vault.refreshCache('Note.md');
+		expect(reader.getGenerateInBackgroundAction(note, vault.text.get('Note.md'))).not.toBe('generate');
+		expect(await reader.getAudioStatus(note)).toBe('up-to-date');
+
+		// The body is still what counts.
+		vault.write('Note.md', `${vault.text.get('Note.md') ?? ''}\nA new line.`);
 		vault.refreshCache('Note.md');
 		expect(await reader.getAudioStatus(note)).toBe('outdated');
 	});
