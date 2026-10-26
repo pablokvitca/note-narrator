@@ -19,6 +19,11 @@ export class AppearanceSection extends SettingsSection {
 						control: { type: 'toggle', key: 'compactButtons', defaultValue: DEFAULT_SETTINGS.compactButtons },
 					},
 					{
+						name: 'Center panel text',
+						desc: 'Center the note stats (characters and chunks), the "Part 1 of 3" progress line and the time readout in the panel. Turn off to align them left.',
+						control: { type: 'toggle', key: 'centerPanelText', defaultValue: DEFAULT_SETTINGS.centerPanelText },
+					},
+					{
 						name: 'Show volume slider in panel',
 						desc: "Show the volume slider and mute button row in the player view, for people who don't want the extra control taking up panel space.",
 						control: { type: 'toggle', key: 'showVolumeSlider', defaultValue: DEFAULT_SETTINGS.showVolumeSlider },

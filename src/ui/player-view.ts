@@ -236,6 +236,7 @@ export class PlayerView extends ItemView {
 		const { contentEl } = this;
 		contentEl.empty();
 		contentEl.addClass('note-narrator-player-view');
+		contentEl.toggleClass('note-narrator-center-text', this.plugin.settings.centerPanelText);
 
 		const state = this.plugin.reader.getState();
 		const active = state.status !== 'idle';
