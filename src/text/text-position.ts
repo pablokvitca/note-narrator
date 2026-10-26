@@ -1,4 +1,4 @@
-import { ChunkerStyle, StripMarkdownOptions, chunkBySentence, isHeadingSkipped, isPreambleOnlySection, stripMarkdown } from './text-utils';
+import { ChunkerStyle, StripMarkdownOptions, chunkBySentence, isHeadingSkipped, isPreambleOnlySection, stripMarkdown, withCarriedPreamble } from './text-utils';
 
 /** A half-open character range `[start, end)` into some raw text. */
 export interface RawSpan {
@@ -10,8 +10,6 @@ interface TrackedSection {
 	text: string;
 	start: number;
 	end: number;
-	/** Set on a preamble merged into the section after it: that section's heading line, since the merged text starts with the preamble instead. */
-	headingSpan?: RawSpan | null;
 }
 
 /** Same partitioning `chunkNote`'s markdown-aware style uses, but keeping each section's raw character range in `rawText` instead of discarding it. */
@@ -117,24 +115,31 @@ export function computeChunkPositions(
 			? splitIntoSectionsTracked(rawText, maxHeadingDepth)
 			: [{ text: rawText, start: 0, end: rawText.length }];
 
-	// Same merge as chunkNote()'s: a preamble-only first section is read with the section after it.
-	const [first, second] = sections;
-	if (
-		style === 'markdown-aware' &&
-		first !== undefined &&
-		second !== undefined &&
-		isPreambleOnlySection(first.text, second.text, preambleLength, maxHeadingDepth, skipHeadingPatterns)
-	) {
-		sections.splice(0, 2, {
-			text: rawText.slice(first.start, second.end),
-			start: first.start,
-			end: second.end,
-			headingSpan: headingSpan(second, maxHeadingDepth),
-		});
+	// Same as chunkNote()'s: a preamble-only first section is read with the first section that is read.
+	const [first] = sections;
+	let carried = '';
+	let preambleSection: TrackedSection | undefined;
+	if (style === 'markdown-aware' && first !== undefined && isPreambleOnlySection(first.text, preambleLength, maxHeadingDepth, stripOptions)) {
+		carried = stripMarkdown(first.text, stripOptions).trim();
+		preambleSection = sections.shift();
 	}
 
 	const chunks: string[] = [];
 	const positions: ChunkPosition[] = [];
+
+	const addSection = (section: TrackedSection, stripped: string, leadLength: number) => {
+		const sectionChunks = chunkBySentence(stripped, maxLength);
+		const sectionSpan: RawSpan = { start: section.start, end: section.end };
+		const sectionHeadingSpan = headingSpan(section, maxHeadingDepth);
+		// A carried preamble isn't part of this section's raw text, so it takes no share of its span.
+		const pieceLengths = sectionChunks.map((chunk, i) => (i === 0 ? Math.max(0, chunk.length - leadLength) : chunk.length));
+		const chunkSpans = proportionalSplit(sectionSpan, pieceLengths);
+
+		for (let i = 0; i < sectionChunks.length; i++) {
+			chunks.push(sectionChunks[i] ?? '');
+			positions.push({ span: chunkSpans[i] ?? null, sectionSpan, sectionHeadingSpan });
+		}
+	};
 
 	for (const section of sections) {
 		if (style === 'markdown-aware' && isHeadingSkipped(section.text, maxHeadingDepth, skipHeadingPatterns)) continue;
@@ -142,16 +147,11 @@ export function computeChunkPositions(
 		const stripped = stripMarkdown(section.text, stripOptions).trim();
 		if (!stripped) continue;
 
-		const sectionChunks = chunkBySentence(stripped, maxLength);
-		const sectionSpan: RawSpan = { start: section.start, end: section.end };
-		const sectionHeadingSpan = section.headingSpan !== undefined ? section.headingSpan : headingSpan(section, maxHeadingDepth);
-		const chunkSpans = proportionalSplit(sectionSpan, sectionChunks.map((chunk) => chunk.length));
-
-		for (let i = 0; i < sectionChunks.length; i++) {
-			chunks.push(sectionChunks[i] ?? '');
-			positions.push({ span: chunkSpans[i] ?? null, sectionSpan, sectionHeadingSpan });
-		}
+		addSection(section, withCarriedPreamble(carried, stripped), carried ? carried.length + 2 : 0);
+		carried = '';
 	}
+	// Nothing of the note's own is read: the preamble is all there is.
+	if (carried && preambleSection) addSection(preambleSection, carried, 0);
 
 	return { chunks, positions };
 }

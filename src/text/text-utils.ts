@@ -266,16 +266,20 @@ export function isHeadingSkipped(sectionText: string, maxHeadingDepth: number, p
 }
 
 /**
- * Whether a note's first two sections should be read as one: the first holds nothing but the spoken
- * preamble (title and properties, `preambleLength` characters at the very start of the text, including the
- * blank line after it), because the note itself starts with a heading. Read on its own, the preamble would
- * be a tiny first chunk followed by a long silent gap while the full-size second chunk generates. Not when
- * the second section is skipped by heading, which would otherwise be read after all.
+ * Whether a note's first section holds nothing that gets read but the spoken preamble (title and properties,
+ * `preambleLength` characters at the very start of the text, including the blank line after it): the note
+ * starts with a heading, or with only things stripping removes (a comment, a `---` rule) before its first
+ * heading. Read on its own, the preamble would be a tiny first chunk followed by a long silent gap while the
+ * full-size next chunk generates, so it's carried into the first section that is read instead.
  */
-export function isPreambleOnlySection(first: string, second: string, preambleLength: number, maxHeadingDepth: number, skipHeadingPatterns: RegExp[]): boolean {
-	if (preambleLength <= 0 || first.trim().length > preambleLength) return false;
-	if (sectionHeadingText(first, maxHeadingDepth) !== null) return false;
-	return !isHeadingSkipped(second, maxHeadingDepth, skipHeadingPatterns);
+export function isPreambleOnlySection(first: string, preambleLength: number, maxHeadingDepth: number, stripOptions: StripMarkdownOptions): boolean {
+	if (preambleLength <= 0 || sectionHeadingText(first, maxHeadingDepth) !== null) return false;
+	return !stripMarkdown(first.slice(preambleLength), stripOptions).trim();
+}
+
+/** Joins a carried preamble (see {@link isPreambleOnlySection}) onto the start of the stripped section it's read with. */
+export function withCarriedPreamble(carried: string, stripped: string): string {
+	return carried ? `${carried}\n\n${stripped}` : stripped;
 }
 
 /** Splits raw markdown by section (heading-delimited, up to maxHeadingDepth), then by sentence within each section. */
@@ -288,9 +292,11 @@ function chunkMarkdownAware(
 	preambleLength: number,
 ): string[] {
 	const sections = splitIntoSections(stripComments(stripFrontmatter(markdown), stripOptions), maxHeadingDepth);
-	const [first, second] = sections;
-	if (first !== undefined && second !== undefined && isPreambleOnlySection(first, second, preambleLength, maxHeadingDepth, skipHeadingPatterns)) {
-		sections.splice(0, 2, `${first}\n${second}`);
+	const [first] = sections;
+	let carried = '';
+	if (first !== undefined && isPreambleOnlySection(first, preambleLength, maxHeadingDepth, stripOptions)) {
+		carried = stripMarkdown(first, stripOptions).trim();
+		sections.shift();
 	}
 	const chunks: string[] = [];
 
@@ -298,8 +304,11 @@ function chunkMarkdownAware(
 		if (isHeadingSkipped(section, maxHeadingDepth, skipHeadingPatterns)) continue;
 		const stripped = stripMarkdown(section, stripOptions).trim();
 		if (!stripped) continue;
-		chunks.push(...chunkBySentence(stripped, maxLength));
+		chunks.push(...chunkBySentence(withCarriedPreamble(carried, stripped), maxLength));
+		carried = '';
 	}
+	// Nothing of the note's own is read: the preamble is all there is.
+	if (carried) chunks.push(...chunkBySentence(carried, maxLength));
 
 	return chunks;
 }

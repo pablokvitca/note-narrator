@@ -77,10 +77,41 @@ describe('computeChunkPositions with a spoken preamble', () => {
 		for (const chunk of chunks) expect(chunk.length).toBeLessThanOrEqual(40);
 	});
 
-	it('keeps the title on its own when the first section is skipped by heading', () => {
-		const { chunks } = computeChunkPositions(note, 5000, 'markdown-aware', 2, STRIP_OPTIONS, [/overview/i], preambleLength);
-		expect(chunks[0]).toBe('My note');
+	it('reads the title with the next section that is read when the first section is skipped by heading', () => {
+		const { chunks, positions } = computeChunkPositions(note, 5000, 'markdown-aware', 2, STRIP_OPTIONS, [/overview/i], preambleLength);
+		expect(chunks).toEqual(['My note\n\nDetails\nMore text.']);
 		expect(chunks.join(' ')).not.toContain('first sentence');
+		const heading = positions[0]?.sectionHeadingSpan;
+		expect(note.slice(heading!.start, heading!.end)).toBe('## Details');
+	});
+
+	it.each([
+		['a comment', '%% todo %%'],
+		['a horizontal rule', '---'],
+		['blank lines', '\n\n'],
+	])('reads the title with the first section when the note has only %s before its first heading', (_, lead) => {
+		const withLead = `${preamble}\n\n${lead}\n\n${body}`;
+		const { chunks, positions } = computeChunkPositions(withLead, 5000, 'markdown-aware', 2, STRIP_OPTIONS, [], preambleLength);
+
+		expect(chunks).toHaveLength(2);
+		expect(chunks[0]).toMatch(/^My note\s+Overview\s+The first sentence/);
+		const heading = positions[0]?.sectionHeadingSpan;
+		expect(withLead.slice(heading!.start, heading!.end)).toBe('## Overview');
+		expect(chunkNote(withLead, 5000, 'markdown-aware', 2, STRIP_OPTIONS, [], preambleLength)).toEqual(chunks);
+	});
+
+	it('gives the first chunk\'s span to the section, not to the carried title', () => {
+		const { positions } = computeChunkPositions(note, 5000, 'markdown-aware', 2, STRIP_OPTIONS, [], preambleLength);
+		const span = positions[0]?.span;
+		expect(span!.start).toBe(preambleLength);
+		expect(note.slice(span!.start, span!.end)).toMatch(/^## Overview\nThe first sentence/);
+	});
+
+	it('still reads the title when nothing else in the note is read', () => {
+		const titleOnly = `${preamble}\n\n%% just a comment %%`;
+		expect(computeChunkPositions(titleOnly, 5000, 'markdown-aware', 2, STRIP_OPTIONS, [], preambleLength).chunks).toEqual(['My note']);
+		const skippedOnly = `${preamble}\n\n## Changelog\nDrop this.`;
+		expect(computeChunkPositions(skippedOnly, 5000, 'markdown-aware', 2, STRIP_OPTIONS, [/changelog/i], preambleLength).chunks).toEqual(['My note']);
 	});
 
 	it('leaves a note that starts with text alone', () => {
