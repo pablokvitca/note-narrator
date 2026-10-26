@@ -4,7 +4,7 @@ import { NULL_CHUNK_POSITION, PositionBase } from './reader-types';
 import { parseNoteFrontmatter } from './note-frontmatter';
 import { NoteNarratorSettings, getGlobalReadingConfig } from '../settings/settings';
 import { ReadingConfig, ResolvedNarrator, getActiveProfile, providerCharLimit, resolveNarrator, resolveReadingConfig } from '../settings/profiles';
-import { StripMarkdownOptions, buildReadingPreamble, chunkBySentence, chunkByWordCount, chunkNote, parseHeadingSkipPatterns, stripFrontmatter } from '../text/text-utils';
+import { StripMarkdownOptions, buildReadingPreamble, chunkBySentence, chunkByWordCount, chunkNote, parseHeadingSkipPatterns, stripFrontmatter, stripMarkdown } from '../text/text-utils';
 
 /**
  * Turns a note into what gets spoken: the reading settings in effect (global defaults plus the active narrator
@@ -110,16 +110,29 @@ export class NoteText {
 			const [firstChunk, ...rest] = chunks;
 			const [firstPosition, ...restPositions] = positions;
 			if (firstChunk !== undefined) {
-				const leadPieces =
+				let leadPieces =
 					this.settings.quickStartUnit === 'words'
 						? chunkByWordCount(firstChunk, this.settings.quickStartWordCount)
 						: chunkBySentence(firstChunk, this.settings.quickStartCharCount);
+				// The lead-in is never just the preamble (a title ending in "?", or properties, followed by a
+				// sentence too long to fit beside it), which would be spoken at once and then leave a long gap.
+				const [lead, next, ...others] = leadPieces;
+				const preambleLength = this.spokenPreambleLength(rawText, positionBase);
+				if (preambleLength > 0 && lead !== undefined && next !== undefined && lead.trim().length <= preambleLength) {
+					leadPieces = [`${lead}\n\n${next}`, ...others];
+				}
 				chunks = [...leadPieces, ...rest];
 				positions = [...splitChunkPosition(firstPosition, leadPieces.map((piece) => piece.length)), ...restPositions];
 			}
 		}
 
 		return { chunks, positions };
+	}
+
+	/** Length of the preamble as it's spoken, i.e. as it starts the first chunk (0 if there is none). */
+	private spokenPreambleLength(rawText: string, positionBase: PositionBase | undefined): number {
+		if (!positionBase?.rawTextOffset) return 0;
+		return stripMarkdown(rawText.slice(0, positionBase.rawTextOffset), this.getStripMarkdownOptions()).trim().length;
 	}
 
 	/**
