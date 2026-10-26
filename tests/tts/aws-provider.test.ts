@@ -72,7 +72,9 @@ describe('AWSProvider.synthesize', () => {
 		expect(call.url).toBe('https://polly.us-east-1.amazonaws.com/v1/speech');
 		expect(JSON.parse(call.body)).toEqual({ Engine: 'neural', OutputFormat: 'mp3', Text: 'Hello world', VoiceId: 'Joanna' });
 		expect(call.headers.authorization).toMatch(/^AWS4-HMAC-SHA256 Credential=AKID\//);
-		expect(call.headers.host).toBe('polly.us-east-1.amazonaws.com');
+		// Signed, but left for the browser to set: Chromium refuses a request that sets Host.
+		expect(call.headers.authorization).toMatch(/SignedHeaders=[^,]*host/);
+		expect(call.headers).not.toHaveProperty('host');
 	});
 
 	it('uses a different region in the request URL and signature scope', async () => {

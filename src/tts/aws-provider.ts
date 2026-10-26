@@ -50,6 +50,9 @@ export class AWSProvider implements TTSProvider {
 					headers: { 'content-type': 'application/json' },
 					body,
 				});
+				// `host` is signed, but not sent: Chromium sets it itself (to the same value) and fails a request
+				// that sets it with ERR_INVALID_ARGUMENT.
+				delete headers.host;
 				return requestUrl({ url, method: 'POST', headers, body, throw: false });
 			},
 			RETRY_POLICY,
