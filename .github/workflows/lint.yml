@@ -6,6 +6,10 @@ on:
     pull_request:
         branches: ['**']
 
+# Builds, lints and tests only, so the token needs nothing beyond reading the repository.
+permissions:
+    contents: read
+
 jobs:
     build:
         runs-on: ubuntu-latest
