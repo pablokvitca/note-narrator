@@ -7,6 +7,7 @@ import {
 	migrateProfileSettings,
 	normalizeProfileSettings,
 	ProfileSettings,
+	ProviderType,
 	providerCharLimit,
 	resolveNarrator,
 	resolveReadingConfig,
@@ -16,7 +17,7 @@ import {
 } from '../../src/settings/profiles';
 
 function settingsWith(profileCount: number): ProfileSettings {
-	const provider = createProvider('elevenlabs', 'ElevenLabs');
+	const provider = createProvider(ProviderType.ElevenLabs, 'ElevenLabs');
 	const profiles = Array.from({ length: profileCount }, (_, i) => createProfile(provider, `Profile ${i + 1}`));
 	return { providers: [provider], profiles, activeProfileId: profiles[0]?.id ?? '' };
 }
@@ -39,7 +40,7 @@ describe('migrateProfileSettings', () => {
 		const providers = migrated.providers as ProfileSettings['providers'];
 		const profiles = migrated.profiles as ProfileSettings['profiles'];
 		expect(providers).toHaveLength(1);
-		expect(providers[0]).toMatchObject({ type: 'elevenlabs', apiKeySecretId: 'my-key', maxParallelGeneration: 4, parallelGenerationEnabled: false, maxBackgroundParallelGeneration: 2 });
+		expect(providers[0]).toMatchObject({ type: ProviderType.ElevenLabs, apiKeySecretId: 'my-key', maxParallelGeneration: 4, parallelGenerationEnabled: false, maxBackgroundParallelGeneration: 2 });
 		expect(profiles).toHaveLength(1);
 		expect(profiles[0]?.providerId).toBe(providers[0]?.id);
 		expect(profiles[0]?.voice).toMatchObject({ voiceId: 'voice-1', modelId: 'eleven_flash_v2_5', stability: 0.2, similarityBoost: 0.9 });
@@ -76,7 +77,7 @@ describe('migrateProfileSettings', () => {
 
 describe('voiceFingerprint / savedVoiceMatches', () => {
 	it('ignores the profile name and dropdown toggle but not voice settings', () => {
-		const provider = createProvider('elevenlabs', 'A');
+		const provider = createProvider(ProviderType.ElevenLabs, 'A');
 		const a = createProfile(provider, 'One');
 		const b = { ...createProfile(provider, 'Two'), showInDropdown: false };
 		expect(voiceFingerprint(a.voice)).toBe(voiceFingerprint(b.voice));
@@ -88,7 +89,7 @@ describe('voiceFingerprint / savedVoiceMatches', () => {
 	});
 
 	it('treats a legacy raw voice ID as a match for that voice only', () => {
-		const provider = createProvider('elevenlabs', 'A');
+		const provider = createProvider(ProviderType.ElevenLabs, 'A');
 		const profile = createProfile(provider, 'One');
 		expect(savedVoiceMatches(profile.voice.voiceId, profile.voice)).toBe(true);
 		expect(savedVoiceMatches(voiceFingerprint(profile.voice), profile.voice)).toBe(true);
@@ -163,7 +164,7 @@ describe('helpers', () => {
 	});
 
 	it('computes the generation window per provider', () => {
-		const provider = createProvider('elevenlabs', 'A');
+		const provider = createProvider(ProviderType.ElevenLabs, 'A');
 		provider.maxParallelGeneration = 5;
 		provider.maxBackgroundParallelGeneration = 2;
 		expect(generationWindow(provider, false)).toBe(5);
@@ -174,7 +175,7 @@ describe('helpers', () => {
 	});
 
 	it('looks up the model character limit', () => {
-		const provider = createProvider('elevenlabs', 'A');
+		const provider = createProvider(ProviderType.ElevenLabs, 'A');
 		const profile = createProfile(provider, 'One');
 		expect(providerCharLimit(profile.voice)).toBe(10000);
 		expect(providerCharLimit({ ...profile.voice, modelId: 'eleven_flash_v2_5' })).toBe(40000);

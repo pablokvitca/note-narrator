@@ -4,6 +4,9 @@ export const ELEVENLABS_MODELS: Record<string, string> = {
 	eleven_flash_v2_5: 'Eleven Flash v2.5',
 };
 
+/** How ElevenLabs is named in the settings and in error messages. Always one word, in plain text. */
+export const ELEVENLABS_NAME = 'ElevenLabs';
+
 /** The model a new narrator profile starts with. */
 export const DEFAULT_ELEVENLABS_MODEL_ID = 'eleven_multilingual_v2';
 

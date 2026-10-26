@@ -1,6 +1,6 @@
 import { App, DropdownComponent, Notice } from 'obsidian';
 import { ElevenLabsVoice, listElevenLabsVoices } from '../tts/elevenlabs-provider';
-import { ProviderEntry } from './profiles';
+import { ProviderEntry, ProviderType } from './profiles';
 import { getProviderCredentials } from '../tts/registry';
 
 /** The voices each provider's account offers, loaded on demand for the narrator profile voice dropdown. */
@@ -31,7 +31,7 @@ export class VoiceCache {
 		const credentials = getProviderCredentials(this.app, provider);
 		// VoiceCache is ElevenLabs-only today (see the class doc); a provider whose credentials aren't the
 		// single-API-key elevenlabs shape has no voice list to fetch here.
-		if (!credentials || credentials.type !== 'elevenlabs') return Promise.resolve();
+		if (!credentials || credentials.type !== ProviderType.ElevenLabs) return Promise.resolve();
 
 		const load = (async () => {
 			try {

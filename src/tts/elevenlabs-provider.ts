@@ -1,5 +1,6 @@
 import { requestUrl } from 'obsidian';
 import type { ElevenLabsVoiceConfig } from '../settings/profiles';
+import { ELEVENLABS_NAME } from './elevenlabs-models';
 import { AudioFormat, TTSProvider } from './provider';
 import { RetryPolicy, requestFailedError, requestWithRetry } from './request';
 
@@ -18,7 +19,7 @@ export async function listElevenLabsVoices(apiKey: string): Promise<ElevenLabsVo
 	});
 
 	if (response.status !== 200) {
-		throw requestFailedError('ElevenLabs', response.status, response.text);
+		throw requestFailedError(ELEVENLABS_NAME, response.status, response.text);
 	}
 
 	const body = response.json as { voices?: { voice_id: string; name: string }[] };
@@ -35,7 +36,7 @@ export async function getElevenLabsVoiceName(apiKey: string, voiceId: string): P
 	});
 
 	if (response.status !== 200) {
-		throw requestFailedError('ElevenLabs', response.status, response.text);
+		throw requestFailedError(ELEVENLABS_NAME, response.status, response.text);
 	}
 
 	const body = response.json as { name?: string };
@@ -54,7 +55,7 @@ export async function getElevenLabsVoiceName(apiKey: string, voiceId: string): P
 const RETRY_POLICY: RetryPolicy = { maxRetries: 8, baseBackoffMs: 1000, maxBackoffMs: 30000 };
 
 export class ElevenLabsProvider implements TTSProvider {
-	readonly outputFormat: AudioFormat = 'mp3';
+	readonly outputFormat = AudioFormat.Mp3;
 
 	constructor(
 		private apiKey: string,
@@ -65,7 +66,7 @@ export class ElevenLabsProvider implements TTSProvider {
 
 	async synthesize(text: string, isCancelled?: () => boolean): Promise<ArrayBuffer> {
 		const response = await requestWithRetry(
-			'ElevenLabs',
+			ELEVENLABS_NAME,
 			() =>
 				requestUrl({
 					url: `https://api.elevenlabs.io/v1/text-to-speech/${this.voice.voiceId}`,

@@ -1,15 +1,22 @@
-import type { AudioFormat } from '../tts/provider';
+import { AudioFormat, AudioMimeType } from '../tts/provider';
 import { WAV_HEADER_BYTES, readWavFormat, wavPcmData, wrapPcmAsWav } from './wav';
 
 /** The MIME type for a buffer of audio in `format`, e.g. for a playback Blob. */
-export function audioMimeType(format: AudioFormat): string {
-	return format === 'wav' ? 'audio/wav' : 'audio/mpeg';
+export function audioMimeType(format: AudioFormat): AudioMimeType {
+	switch (format) {
+		case AudioFormat.Mp3:
+			return AudioMimeType.Mp3;
+		case AudioFormat.Wav:
+			return AudioMimeType.Wav;
+	}
 }
+
+/** Each {@link AudioFormat} by its file extension, which is its value. */
+const FORMATS_BY_EXTENSION = new Map<string, AudioFormat>(Object.values(AudioFormat).map((format) => [format, format]));
 
 /** The saved-audio format a file extension stands for, or null for one saving never writes. */
 export function audioFormatForExtension(extension: string): AudioFormat | null {
-	const lower = extension.toLowerCase();
-	return lower === 'mp3' || lower === 'wav' ? lower : null;
+	return FORMATS_BY_EXTENSION.get(extension.toLowerCase()) ?? null;
 }
 
 /**
@@ -22,7 +29,7 @@ export function audioFormatForExtension(extension: string): AudioFormat | null {
  * to the file's size.
  */
 export function joinAudioChunks(buffers: ArrayBuffer[], format: AudioFormat): { data: ArrayBuffer; byteLengths: number[] } {
-	if (format === 'mp3' || buffers.length === 0) {
+	if (format === AudioFormat.Mp3 || buffers.length === 0) {
 		return { data: concatBuffers(buffers), byteLengths: buffers.map((buffer) => buffer.byteLength) };
 	}
 
@@ -42,7 +49,7 @@ export function joinAudioChunks(buffers: ArrayBuffer[], format: AudioFormat): { 
 export function splitAudioChunks(data: ArrayBuffer, byteLengths: number[], format: AudioFormat): ArrayBuffer[] | null {
 	const total = byteLengths.reduce((sum, length) => sum + length, 0);
 	if (total !== data.byteLength) return null;
-	if (format === 'mp3') return sliceBuffer(data, byteLengths);
+	if (format === AudioFormat.Mp3) return sliceBuffer(data, byteLengths);
 
 	const wavFormat = readWavFormat(data);
 	if (!wavFormat || byteLengths.length === 0 || byteLengths[0]! < WAV_HEADER_BYTES) return null;

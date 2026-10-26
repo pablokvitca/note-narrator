@@ -8,7 +8,7 @@ const DOCS_URL = 'https://publish.obsidian.md/pablokvitca-plugin-note-narrator/n
 
 /** Each provider type's setup guide in the docs, linked from its credential rows. */
 const PROVIDER_SETUP_GUIDES: Record<ProviderType, string> = {
-	elevenlabs: `${DOCS_URL}/getting-started/setting-up-elevenlabs`,
+	[ProviderType.ElevenLabs]: `${DOCS_URL}/getting-started/setting-up-elevenlabs`,
 };
 
 export class ProvidersSection extends SettingsSection {
@@ -133,7 +133,7 @@ export class ProvidersSection extends SettingsSection {
 	/** The credential rows for a provider's type. */
 	private providerCredentialRows(provider: ProviderEntry): SettingGroupItem[] {
 		switch (provider.type) {
-			case 'elevenlabs':
+			case ProviderType.ElevenLabs:
 				return [
 					{
 						name: 'API key',

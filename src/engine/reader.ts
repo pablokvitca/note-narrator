@@ -8,7 +8,7 @@ import { GenerateInBackgroundAction, decideGenerateInBackground, hasPendingGener
 import { BackgroundQueue } from './background-queue';
 import { ProviderCredentials, createTTSProvider, getProviderCredentials, missingCredentialsMessage } from '../tts/registry';
 import { NoteText } from './note-text';
-import type { AudioFormat } from '../tts/provider';
+import { AudioFormat } from '../tts/provider';
 import { SavedAudio } from './saved-audio';
 import { SavedAudioFreshness, savedAudioFreshness } from './saved-audio-freshness';
 
@@ -1059,7 +1059,7 @@ export class Reader extends Events {
 			// to playing it as one opaque chunk with no timeline -- no Previous/Next part, no highlighting,
 			// rather than slicing at the wrong offsets.
 			// Saving only writes .mp3 and .wav files, and only those are linked as a note's audio.
-			const format = audioFormatForExtension(audioFile.extension) ?? 'mp3';
+			const format = audioFormatForExtension(audioFile.extension) ?? AudioFormat.Mp3;
 			const sliced = timeline ? splitAudioChunks(data, timeline.chunkByteLengths, format) : null;
 			this.savedPlaybackTimeline = sliced ? timeline : null;
 			const buffers = sliced ?? [data];

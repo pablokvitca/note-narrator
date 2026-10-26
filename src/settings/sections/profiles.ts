@@ -1,7 +1,7 @@
 import { DropdownComponent, Notice, SettingDefinitionItem, SettingDefinitionPage, SettingGroupItem } from 'obsidian';
 import { ChunkerStyle, findHeadingPatternIssues } from '../../text/text-utils';
 import { DEFAULT_ELEVENLABS_MODEL_ID, ELEVENLABS_MODELS } from '../../tts/elevenlabs-models';
-import { ElevenLabsVoiceConfig, NarratorProfile, ReadingConfig, ReadingOverrides, createProfile, defaultVoiceConfig, getActiveProfile, getProvider, normalizeProfileSettings, resolveReadingConfig, uniqueName } from '../profiles';
+import { ElevenLabsVoiceConfig, NarratorProfile, ProviderType, ReadingConfig, ReadingOverrides, createProfile, defaultVoiceConfig, getActiveProfile, getProvider, normalizeProfileSettings, resolveReadingConfig, uniqueName } from '../profiles';
 import { SettingsSection } from '../section';
 import { getGlobalReadingConfig } from '../settings';
 
@@ -157,7 +157,7 @@ export class ProfilesSection extends SettingsSection {
 
 	private profileSummary(profile: NarratorProfile): string {
 		const provider = getProvider(this.settings, profile.providerId);
-		const voice = profile.voice.type === 'elevenlabs' ? (this.voices.voicesByProvider.get(profile.providerId)?.find((v) => v.voiceId === profile.voice.voiceId)?.name ?? profile.voice.voiceId) : '';
+		const voice = profile.voice.type === ProviderType.ElevenLabs ? (this.voices.voicesByProvider.get(profile.providerId)?.find((v) => v.voiceId === profile.voice.voiceId)?.name ?? profile.voice.voiceId) : '';
 		return [provider?.name ?? 'No provider', voice].filter(Boolean).join(' · ');
 	}
 
@@ -181,7 +181,7 @@ export class ProfilesSection extends SettingsSection {
 	/** The voice configuration rows for a profile's provider type. */
 	private voiceRows(profile: NarratorProfile): SettingGroupItem[] {
 		switch (profile.voice.type) {
-			case 'elevenlabs':
+			case ProviderType.ElevenLabs:
 				return this.elevenLabsVoiceRows(profile);
 		}
 	}
@@ -192,7 +192,7 @@ export class ProfilesSection extends SettingsSection {
 	 */
 	private elevenLabsVoiceRows(profile: NarratorProfile): SettingGroupItem[] {
 		const voice = (): ElevenLabsVoiceConfig => {
-			if (profile.voice.type !== 'elevenlabs') throw new Error('Narrator profile is not an ElevenLabs profile.');
+			if (profile.voice.type !== ProviderType.ElevenLabs) throw new Error('Narrator profile is not an ElevenLabs profile.');
 			return profile.voice;
 		};
 

@@ -3,6 +3,22 @@
  * imports, so it can be unit tested.
  */
 
+/** The IDs of the RIFF/WAVE chunks this reads and writes. */
+enum RiffId {
+	Riff = 'RIFF',
+	Wave = 'WAVE',
+	Format = 'fmt ',
+	Data = 'data',
+}
+
+/** Each {@link RiffId} by its text. */
+const RIFF_IDS = new Map<string, RiffId>(Object.values(RiffId).map((id) => [id, id]));
+
+/** The chunk ID at `offset`, or null for one this doesn't use. */
+function riffId(view: DataView, offset: number): RiffId | null {
+	return RIFF_IDS.get(ascii(view, offset, 4)) ?? null;
+}
+
 /** The size of the header {@link wrapPcmAsWav} writes: RIFF, a 16-byte `fmt ` chunk and the `data` chunk's header. */
 export const WAV_HEADER_BYTES = 44;
 
@@ -22,16 +38,16 @@ function ascii(view: DataView, offset: number, length: number): string {
 /** The byte range of `data`'s `fmt ` and `data` chunks, or null if it isn't a RIFF/WAVE file. */
 function findChunks(data: ArrayBuffer): { fmt: number | null; dataStart: number; dataLength: number } | null {
 	const view = new DataView(data);
-	if (data.byteLength < 12 || ascii(view, 0, 4) !== 'RIFF' || ascii(view, 8, 4) !== 'WAVE') return null;
+	if (data.byteLength < 12 || riffId(view, 0) !== RiffId.Riff || riffId(view, 8) !== RiffId.Wave) return null;
 
 	let fmt: number | null = null;
 	let offset = 12;
 	while (offset + 8 <= data.byteLength) {
-		const id = ascii(view, offset, 4);
+		const id = riffId(view, offset);
 		const size = view.getUint32(offset + 4, true);
 		const body = offset + 8;
-		if (id === 'fmt ' && size >= 16) fmt = body;
-		if (id === 'data') {
+		if (id === RiffId.Format && size >= 16) fmt = body;
+		if (id === RiffId.Data) {
 			// Streamed WAVs may give the data size as 0 or 0xFFFFFFFF; the data then runs to the end of the file.
 			const dataLength = size === 0 || body + size > data.byteLength ? data.byteLength - body : size;
 			return { fmt, dataStart: body, dataLength };
@@ -73,10 +89,10 @@ export function wrapPcmAsWav(pcm: ArrayBuffer, format: WavFormat): ArrayBuffer {
 		for (let i = 0; i < text.length; i++) view.setUint8(offset + i, text.charCodeAt(i));
 	};
 
-	writeAscii(0, 'RIFF');
+	writeAscii(0, RiffId.Riff);
 	view.setUint32(4, WAV_HEADER_BYTES - 8 + pcm.byteLength, true);
-	writeAscii(8, 'WAVE');
-	writeAscii(12, 'fmt ');
+	writeAscii(8, RiffId.Wave);
+	writeAscii(12, RiffId.Format);
 	view.setUint32(16, 16, true);
 	view.setUint16(20, 1, true);
 	view.setUint16(22, format.channels, true);
@@ -84,7 +100,7 @@ export function wrapPcmAsWav(pcm: ArrayBuffer, format: WavFormat): ArrayBuffer {
 	view.setUint32(28, format.sampleRate * blockAlign, true);
 	view.setUint16(32, blockAlign, true);
 	view.setUint16(34, format.bitsPerSample, true);
-	writeAscii(36, 'data');
+	writeAscii(36, RiffId.Data);
 	view.setUint32(40, pcm.byteLength, true);
 	new Uint8Array(buffer, WAV_HEADER_BYTES).set(new Uint8Array(pcm));
 	return buffer;
