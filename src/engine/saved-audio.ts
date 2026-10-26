@@ -2,18 +2,22 @@ import { App, Notice, TFile, normalizePath } from 'obsidian';
 import { AudioLinkStatus } from './reader-types';
 import { formatTimestampForFilename, toLocalISOString } from './time-utils';
 import { cleanVaultFolderPath } from './vault-path';
-import { DEFAULT_SETTINGS, NoteNarratorSettings } from '../settings/settings';
-import { ResolvedNarrator, VoiceConfig } from '../settings/profiles';
+import { DEFAULT_SETTINGS, NoteNarratorSettings, getGlobalReadingConfig } from '../settings/settings';
+import { ResolvedNarrator, VoiceConfig, getActiveProfile, resolveReadingConfig } from '../settings/profiles';
 import { concatArrayBuffers, sanitizeFilenameComponent } from './audio-utils';
 import { getProviderApiKey, resolveVoiceLabel } from '../tts/registry';
 import { hashText, stripFrontmatter } from '../text/text-utils';
 import { parseNoteFrontmatter } from './note-frontmatter';
 
 /**
- * Marks staleness hashes computed by {@link SavedAudio.stalenessHash} (1.1+). Hashes stored by 1.0.0 have no
- * prefix and are checked with the 1.0.0 algorithm instead, so existing saved audio stays up to date.
+ * Marks staleness hashes computed by {@link SavedAudio.stalenessHash} (1.1.6+). Older hashes are checked with
+ * the algorithm they were saved with, so existing saved audio stays up to date: `v2:` (1.1.0 to 1.1.5) with
+ * {@link SavedAudio.v2StalenessHash}, unprefixed ones (1.0.0) with {@link SavedAudio.legacyStalenessHash}.
  */
-const HASH_VERSION_PREFIX = 'v2:';
+const HASH_VERSION_PREFIX = 'v3:';
+
+/** Marks hashes stored by 1.1.0 to 1.1.5, which always covered the note's properties, read aloud or not. */
+const V2_HASH_PREFIX = 'v2:';
 
 /** The frontmatter block as 1.0.0 stripped it: LF line endings only, so a CRLF note's frontmatter stayed in its body. */
 const LEGACY_FRONTMATTER_BLOCK = /^---\n[\s\S]*?\n---(\n|$)/;
@@ -166,7 +170,23 @@ export class SavedAudio {
 	 */
 	stalenessHash(rawContent: string, file: TFile): string {
 		const content = rawContent.replace(/\r\n/g, '\n');
-		return `${HASH_VERSION_PREFIX}${this.hashNote(parseNoteFrontmatter(this.app, content, file), stripFrontmatter(content))}`;
+		// Properties are only part of what's spoken with Read properties on; otherwise editing them changes nothing heard.
+		const frontmatter = this.readsProperties() ? parseNoteFrontmatter(this.app, content, file) : {};
+		return `${HASH_VERSION_PREFIX}${this.hashNote(frontmatter, stripFrontmatter(content))}`;
+	}
+
+	/** Whether Read properties is on in the reading settings in effect (the global ones with the active profile's overrides). */
+	private readsProperties(): boolean {
+		return resolveReadingConfig(getGlobalReadingConfig(this.settings), getActiveProfile(this.settings)?.readingOverrides).readProperties;
+	}
+
+	/**
+	 * The hash from 1.1.0 to 1.1.5: like {@link stalenessHash}, but always over the note's properties. Only
+	 * used to check hashes stored then, never stored, so their audio doesn't all turn "outdated" on update.
+	 */
+	private v2StalenessHash(rawContent: string, file: TFile): string {
+		const content = rawContent.replace(/\r\n/g, '\n');
+		return `${V2_HASH_PREFIX}${this.hashNote(parseNoteFrontmatter(this.app, content, file), stripFrontmatter(content))}`;
 	}
 
 	/**
@@ -297,10 +317,14 @@ export class SavedAudio {
 
 		if (typeof storedHash !== 'string') return 'outdated';
 		const content = await this.app.vault.cachedRead(file);
-		// A hash saved since 1.1 is versioned and only ever compared with the current algorithm. Falling back
-		// to the 1.0.0 one for it too would briefly undo reading frontmatter from the text: right after a
-		// property edit, the cache-based 1.0.0 hash still matches until Obsidian re-indexes the note.
-		const currentHash = storedHash.startsWith(HASH_VERSION_PREFIX) ? this.stalenessHash(content, file) : this.legacyStalenessHash(content, file);
+		// A hash saved since 1.1 is versioned and only ever compared with the algorithm of its own version.
+		// Falling back to the 1.0.0 one for it too would briefly undo reading frontmatter from the text: right
+		// after a property edit, the cache-based 1.0.0 hash still matches until Obsidian re-indexes the note.
+		const currentHash = storedHash.startsWith(HASH_VERSION_PREFIX)
+			? this.stalenessHash(content, file)
+			: storedHash.startsWith(V2_HASH_PREFIX)
+				? this.v2StalenessHash(content, file)
+				: this.legacyStalenessHash(content, file);
 		return storedHash === currentHash ? 'up-to-date' : 'outdated';
 	}
 

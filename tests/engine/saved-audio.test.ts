@@ -48,11 +48,32 @@ describe('SavedAudio.stalenessHash', () => {
 		expect(withBookkeeping).toBe(plain);
 	});
 
-	it('changes when the body or a real property changes', () => {
-		const { saved, note } = makeSavedAudio({ content: '' });
+	it('changes when the body or a real property changes, with Read properties on', () => {
+		const { saved, note } = makeSavedAudio({ content: '' }, { readProperties: true });
 		const base = saved.stalenessHash('---\ntitle: Hello\n---\nBody', note);
 		expect(saved.stalenessHash('---\ntitle: Hello\n---\nBody edited', note)).not.toBe(base);
 		expect(saved.stalenessHash('---\ntitle: Bye\n---\nBody', note)).not.toBe(base);
+	});
+
+	it('ignores properties with Read properties off, since they are not spoken', () => {
+		const { saved, note } = makeSavedAudio({ content: '' }, { readProperties: false });
+		const base = saved.stalenessHash('---\ntitle: Hello\n---\nBody', note);
+		expect(saved.stalenessHash('---\ntitle: Bye\nstatus: final\n---\nBody', note)).toBe(base);
+		expect(saved.stalenessHash('Body', note)).toBe(base);
+		expect(saved.stalenessHash('---\ntitle: Hello\n---\nBody edited', note)).not.toBe(base);
+	});
+
+	it('follows the active narrator profile\'s Read properties override', () => {
+		const profile = { id: 'p', name: 'P', readingOverrides: { readProperties: true } };
+		const { saved, note } = makeSavedAudio({ content: '' }, fake<Partial<NoteNarratorSettings>>({ readProperties: false, profiles: [profile], activeProfileId: 'p' }));
+		expect(saved.stalenessHash('---\ntitle: Bye\n---\nBody', note)).not.toBe(saved.stalenessHash('---\ntitle: Hello\n---\nBody', note));
+	});
+
+	it('changes when Read properties is turned on or off, since what is spoken changes', () => {
+		const off = makeSavedAudio({ content: '' }, { readProperties: false });
+		const on = makeSavedAudio({ content: '' }, { readProperties: true });
+		const text = '---\ntitle: Hello\n---\nBody';
+		expect(off.saved.stalenessHash(text, off.note)).not.toBe(on.saved.stalenessHash(text, on.note));
 	});
 
 	it('hashes CRLF and LF versions of the same note the same', () => {
@@ -63,14 +84,14 @@ describe('SavedAudio.stalenessHash', () => {
 	});
 
 	it('takes the frontmatter from the text it is given, not the (possibly lagging) metadata cache', () => {
-		const stale = makeSavedAudio({ content: '', cachedFrontmatter: { title: 'Old' } });
-		const fresh = makeSavedAudio({ content: '', cachedFrontmatter: { title: 'New' } });
+		const stale = makeSavedAudio({ content: '', cachedFrontmatter: { title: 'Old' } }, { readProperties: true });
+		const fresh = makeSavedAudio({ content: '', cachedFrontmatter: { title: 'New' } }, { readProperties: true });
 		const text = '---\ntitle: New\n---\nBody';
 		expect(stale.saved.stalenessHash(text, stale.note)).toBe(fresh.saved.stalenessHash(text, fresh.note));
 	});
 
 	it('falls back to the metadata cache\'s frontmatter when the YAML does not parse', () => {
-		const { saved, note } = makeSavedAudio({ content: '', cachedFrontmatter: { title: 'Hello' } });
+		const { saved, note } = makeSavedAudio({ content: '', cachedFrontmatter: { title: 'Hello' } }, { readProperties: true });
 		expect(saved.stalenessHash('---\ntitle: [unclosed\n---\nBody', note)).toBe(saved.stalenessHash('---\ntitle: Hello\n---\nBody', note));
 	});
 });
@@ -109,7 +130,7 @@ describe('SavedAudio.getAudioStatus', () => {
 	it('reports a property edit as outdated right away, even before the metadata cache catches up', async () => {
 		const before = '---\nstatus: draft\n---\nBody';
 		const vault: Vault = { content: before };
-		const { saved, note, settings } = makeSavedAudio(vault);
+		const { saved, note, settings } = makeSavedAudio(vault, { readProperties: true });
 		// Saved by 1.1 (a versioned hash); the cache still shows the pre-edit property.
 		vault.cachedFrontmatter = { status: 'draft', ...linked(settings, saved.stalenessHash(before, note)) };
 
@@ -139,6 +160,27 @@ describe('SavedAudio.getAudioStatus', () => {
 		const hashFrom100 = hashText(`${JSON.stringify(cachedFrontmatter)}\n${content}`);
 
 		vault.cachedFrontmatter = { ...cachedFrontmatter, ...linked(settings, hashFrom100) };
+		expect(await saved.getAudioStatus(note)).toBe('up-to-date');
+	});
+
+	it('checks a hash 1.1.0 to 1.1.5 stored with that version\'s algorithm, which covered properties either way', async () => {
+		const content = '---\nstatus: draft\n---\nBody';
+		const vault: Vault = { content };
+		const { saved, note, settings } = makeSavedAudio(vault, { readProperties: false });
+		const hashFrom115 = `v2:${hashText(`${JSON.stringify({ status: 'draft' })}\nBody`)}`;
+		vault.cachedFrontmatter = linked(settings, hashFrom115);
+		expect(await saved.getAudioStatus(note)).toBe('up-to-date');
+
+		vault.content = '---\nstatus: final\n---\nBody';
+		expect(await saved.getAudioStatus(note)).toBe('outdated');
+	});
+
+	it('is up to date through a property edit with Read properties off', async () => {
+		const vault: Vault = { content: '---\nstatus: draft\n---\nBody' };
+		const { saved, note, settings } = makeSavedAudio(vault, { readProperties: false });
+		vault.cachedFrontmatter = linked(settings, saved.stalenessHash(vault.content, note));
+
+		vault.content = '---\nstatus: final\ntags: [new]\n---\nBody';
 		expect(await saved.getAudioStatus(note)).toBe('up-to-date');
 	});
 
