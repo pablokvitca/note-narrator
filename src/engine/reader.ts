@@ -3,7 +3,7 @@ import { audioFormatForExtension, audioMimeType, decodeAudioDuration, splitAudio
 import { AudioLinkStatus, ChunkOutcome, GenerationJob, IDLE_STATE, JobStaleReason, PoolResult, PositionBase, ReaderState, SavedPlaybackTimeline } from './reader-types';
 import { ChunkPosition, RawSpan } from '../text/text-position';
 import { HighlightGranularity, NoteNarratorSettings } from '../settings/settings';
-import { ResolvedNarrator, generationWindow } from '../settings/profiles';
+import { PROVIDER_TYPE_LABELS, ResolvedNarrator, generationWindow } from '../settings/profiles';
 import { GenerateInBackgroundAction, decideGenerateInBackground, hasPendingGeneration } from './background-job';
 import { BackgroundQueue } from './background-queue';
 import { ProviderCredentials, createTTSProvider, getProviderCredentials, missingCredentialsMessage } from '../tts/registry';
@@ -694,7 +694,7 @@ export class Reader extends Events {
 	private handleRateLimited(job: GenerationJob): void {
 		if (job.rateLimited) return;
 		job.rateLimited = true;
-		new Notice('ElevenLabs rate limit hit — retrying with backoff and switching to sequential chunk generation.');
+		new Notice(`${PROVIDER_TYPE_LABELS[job.narrator.provider.type]} rate limit hit. Retrying with backoff and generating one chunk at a time.`);
 	}
 
 	/**
