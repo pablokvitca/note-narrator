@@ -41,17 +41,17 @@ Note Narrator uses only Obsidian's cross-platform APIs, so every feature is the 
 
 ## Text to speech providers
 
-| | ElevenLabs | Google Gemini | Apple OS (Local) |
-| --- | --- | --- | --- |
-| Status | ✅ Available | 🔜 Planned | 🔜 Planned |
-| Platforms | All | All | Apple devices only |
-| Needs an account and API key | Yes | Yes | No |
-| Needs an internet connection | Yes | Yes | No |
-| Costs | Credits on your ElevenLabs plan | Google's API pricing | Free |
-| Voices | Your account's voices | 🔜 | 🔜 |
-| Models | Eleven v3, Eleven Multilingual v2, Eleven Flash v2.5 | 🔜 | 🔜 |
-| Voice settings | Stability, similarity | 🔜 | 🔜 |
-| Parallel generation | Yes, with automatic retry when rate-limited | 🔜 | 🔜 |
+| | ElevenLabs | OpenAI | Google Gemini | Apple OS (Local) |
+| --- | --- | --- | --- | --- |
+| Status | ✅ Available | ✅ Available | 🔜 Planned | 🔜 Planned |
+| Platforms | All | All | All | Apple devices only |
+| Needs an account and API key | Yes | Yes | Yes | No |
+| Needs an internet connection | Yes | Yes | Yes | No |
+| Costs | Credits on your ElevenLabs plan | OpenAI's API pricing | Google's API pricing | Free |
+| Voices | Your account's voices | 13 built-in voices | 🔜 | 🔜 |
+| Models | Eleven v3, Eleven Multilingual v2, Eleven Flash v2.5 | GPT-4o mini TTS, TTS-1, TTS-1 HD | 🔜 | 🔜 |
+| Voice settings | Stability, similarity | Speaking speed, instructions | 🔜 | 🔜 |
+| Parallel generation | Yes, with automatic retry when rate-limited | Yes, with automatic retry when rate-limited | 🔜 | 🔜 |
 
 Planned providers are on the [Roadmap](https://publish.obsidian.md/pablokvitca-plugin-note-narrator/note-narrator/roadmap). Plans can change.
 
@@ -81,6 +81,7 @@ Obsidian asks plugins to be clear about what they do with your data. For Note Na
   - **Listing voices**: sends your API key whenever you open a narrator profile's settings (with an API key set) or press the voice refresh button.
   - **Naming a saved audio file** after its voice: sends your API key and the voice ID, each time audio is saved (including automatic saves).
   - Replaying saved audio needs no network access and uses no credits.
+  - **With an OpenAI provider** instead, reading and regenerating send the same text, voice and model settings and your API key to **OpenAI (`api.openai.com`)**, under OpenAI's [Terms of Use](https://openai.com/policies/terms-of-use) and [Privacy Policy](https://openai.com/policies/privacy-policy), and OpenAI charges for it. Its voices are a fixed list, so nothing is sent to list or name them.
 - **What is read.** The text sent is the note or selection after Markdown is stripped, plus the note title and properties if you enabled those. **Anything you read leaves your device and is processed by ElevenLabs** under their [Terms of Service](https://elevenlabs.io/terms-of-use) and [Privacy Policy](https://elevenlabs.io/privacy-policy). The plugin author has no control over how ElevenLabs stores or uses that data. Do not read notes containing text you are not willing to send to them.
 - **Your API key** is stored in Obsidian's built-in secret storage, not in the plugin's `data.json`. Only the name of the secret is saved.
 - **Files it writes.** Settings in the plugin's `data.json`. If you turn on saving: `.mp3` files in your vault (next to the note, or in a folder you choose) and, with linking on, a few properties in the note's frontmatter. **Clear Note Narrator files** moves the linked `.mp3` to the trash (following your vault's deletion setting) and removes those properties. The plugin does not read or write files outside your vault.

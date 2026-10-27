@@ -1,6 +1,8 @@
 import { App } from 'obsidian';
 import { ProviderEntry, ProviderType, VoiceConfig } from '../settings/profiles';
 import { ElevenLabsProvider, getElevenLabsVoiceName } from './elevenlabs-provider';
+import { OPENAI_VOICES } from './openai-models';
+import { OpenAIProvider } from './openai-provider';
 import { AudioFormat, TTSProvider } from './provider';
 
 /*
@@ -12,7 +14,7 @@ import { AudioFormat, TTSProvider } from './provider';
  * A provider's credentials, shaped per provider type: most are a single API key, but a provider that signs its
  * requests needs several fields instead of one string. Each provider type adds its own member.
  */
-export type ProviderCredentials = { type: ProviderType.ElevenLabs; apiKey: string };
+export type ProviderCredentials = { type: ProviderType.ElevenLabs; apiKey: string } | { type: ProviderType.OpenAI; apiKey: string };
 
 /** The provider's credentials from Obsidian's secret storage, or null when they aren't all set. */
 export function getProviderCredentials(app: App, provider: ProviderEntry): ProviderCredentials | null {
@@ -21,6 +23,10 @@ export function getProviderCredentials(app: App, provider: ProviderEntry): Provi
 			const apiKey = app.secretStorage.getSecret(provider.apiKeySecretId);
 			return apiKey ? { type: ProviderType.ElevenLabs, apiKey } : null;
 		}
+		case ProviderType.OpenAI: {
+			const apiKey = app.secretStorage.getSecret(provider.apiKeySecretId);
+			return apiKey ? { type: ProviderType.OpenAI, apiKey } : null;
+		}
 	}
 }
 
@@ -28,6 +34,7 @@ export function getProviderCredentials(app: App, provider: ProviderEntry): Provi
 export function credentialsLabel(type: ProviderType): string {
 	switch (type) {
 		case ProviderType.ElevenLabs:
+		case ProviderType.OpenAI:
 			return 'API key';
 	}
 }
@@ -43,6 +50,10 @@ export function createTTSProvider(provider: ProviderEntry, voice: VoiceConfig, c
 			if (voice.type !== ProviderType.ElevenLabs) throw new Error("The narrator's voice configuration doesn't match its provider type.");
 			if (credentials.type !== ProviderType.ElevenLabs) throw new Error("The narrator's credentials don't match its provider type.");
 			return new ElevenLabsProvider(credentials.apiKey, voice, onRateLimited);
+		case ProviderType.OpenAI:
+			if (voice.type !== ProviderType.OpenAI) throw new Error("The narrator's voice configuration doesn't match its provider type.");
+			if (credentials.type !== ProviderType.OpenAI) throw new Error("The narrator's credentials don't match its provider type.");
+			return new OpenAIProvider(credentials.apiKey, voice, onRateLimited);
 	}
 }
 
@@ -58,6 +69,10 @@ export async function resolveVoiceLabel(provider: ProviderEntry, voice: VoiceCon
 				console.error('Note Narrator: failed to resolve voice name for filename', error);
 				return fallbackVoiceLabel(voice);
 			}
+		case ProviderType.OpenAI:
+			if (voice.type !== ProviderType.OpenAI) return 'voice';
+			// A fixed list: nothing to look up.
+			return OPENAI_VOICES[voice.voice] ?? voice.voice;
 	}
 }
 
@@ -66,6 +81,8 @@ export function fallbackVoiceLabel(voice: VoiceConfig): string {
 	switch (voice.type) {
 		case ProviderType.ElevenLabs:
 			return voice.voiceId;
+		case ProviderType.OpenAI:
+			return voice.voice;
 	}
 }
 
@@ -73,6 +90,7 @@ export function fallbackVoiceLabel(voice: VoiceConfig): string {
 export function providerOutputFormat(type: ProviderType): AudioFormat {
 	switch (type) {
 		case ProviderType.ElevenLabs:
+		case ProviderType.OpenAI:
 			return AudioFormat.Mp3;
 	}
 }

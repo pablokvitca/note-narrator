@@ -8,6 +8,7 @@ import { extractFrontmatterYaml, stripFrontmatter } from '../../src/text/text-ut
 import { savedAudioFreshness } from '../../src/engine/saved-audio-freshness';
 import { backgroundButtonSpec } from '../../src/ui/background-button';
 import { editorTextForNote, savedAudioPanelUpdate } from '../../src/ui/panel-decisions';
+import { ProviderType } from '../../src/settings/profiles';
 
 /**
  * Reader with its real collaborators (NoteText, SavedAudio, profiles, text chunking) against an in-memory
@@ -29,7 +30,7 @@ const fakes = vi.hoisted(() => ({
 }));
 
 vi.mock('../../src/tts/registry', () => ({
-	getProviderCredentials: () => ({ type: 'elevenlabs', apiKey: 'key' }),
+	getProviderCredentials: () => ({ type: ProviderType.ElevenLabs, apiKey: 'key' }),
 	providerOutputFormat: () => 'mp3',
 	missingCredentialsMessage: () => 'No API key.',
 	resolveVoiceLabel: () =>
@@ -506,7 +507,7 @@ describe('Reader end to end: a stale background job\'s badge', () => {
 		expect(await reader.backgroundJobStaleness(jobId)).toBe('note-edited');
 
 		const profile = settings.profiles[0]!;
-		profile.voice = { ...profile.voice, voiceId: `${profile.voice.voiceId}-other` };
+		if (profile.voice.type === ProviderType.ElevenLabs) profile.voice = { ...profile.voice, voiceId: `${profile.voice.voiceId}-other` };
 		expect(await reader.backgroundJobStaleness(jobId)).toBe('narrator-changed');
 
 		expect(await reader.backgroundJobStaleness(jobId + 100)).toBeNull();
@@ -524,7 +525,7 @@ describe('Reader end to end: a stale background job\'s badge', () => {
 		expect(await reader.backgroundJobStaleness(jobId)).toBeNull();
 
 		const profile = settings.profiles[0]!;
-		profile.voice = { ...profile.voice, voiceId: `${profile.voice.voiceId}-other` };
+		if (profile.voice.type === ProviderType.ElevenLabs) profile.voice = { ...profile.voice, voiceId: `${profile.voice.voiceId}-other` };
 		expect(await reader.backgroundJobStaleness(jobId)).toBe('narrator-changed');
 		vault.failReads = false;
 		expect(await reader.backgroundJobStaleness(jobId)).toBe('narrator-changed');
@@ -995,7 +996,7 @@ describe('Reader end to end: saved audio freshness after the narrator changes', 
 		expect(await reader.getSavedAudioFreshness(note)).toBe('current');
 
 		const profile = settings.profiles[0]!;
-		profile.voice = { ...profile.voice, voiceId: `${profile.voice.voiceId}-other` };
+		if (profile.voice.type === ProviderType.ElevenLabs) profile.voice = { ...profile.voice, voiceId: `${profile.voice.voiceId}-other` };
 		expect(await reader.getSavedAudioFreshness(note)).toBe('other-narrator');
 	});
 });

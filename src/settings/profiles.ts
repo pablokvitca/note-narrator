@@ -1,5 +1,6 @@
 import { ChunkerStyle, hashText } from '../text/text-utils';
 import { DEFAULT_ELEVENLABS_CHAR_LIMIT, DEFAULT_ELEVENLABS_MODEL_ID, ELEVENLABS_MODEL_CHAR_LIMITS, ELEVENLABS_NAME } from '../tts/elevenlabs-models';
+import { DEFAULT_OPENAI_MODEL, DEFAULT_OPENAI_VOICE, OPENAI_CHAR_LIMIT, OPENAI_NAME } from '../tts/openai-models';
 
 /*
  * Providers and narrator profiles. Pure data + helpers (no Obsidian imports) so they can be unit tested.
@@ -12,10 +13,12 @@ import { DEFAULT_ELEVENLABS_CHAR_LIMIT, DEFAULT_ELEVENLABS_MODEL_ID, ELEVENLABS_
 
 export enum ProviderType {
 	ElevenLabs = 'elevenlabs',
+	OpenAI = 'openai',
 }
 
 export const PROVIDER_TYPE_LABELS: Record<ProviderType, string> = {
 	[ProviderType.ElevenLabs]: ELEVENLABS_NAME,
+	[ProviderType.OpenAI]: OPENAI_NAME,
 };
 
 interface ProviderBase {
@@ -35,7 +38,13 @@ export interface ElevenLabsProviderEntry extends ProviderBase {
 	apiKeySecretId: string;
 }
 
-export type ProviderEntry = ElevenLabsProviderEntry;
+export interface OpenAIProviderEntry extends ProviderBase {
+	type: ProviderType.OpenAI;
+	/** Name of the secret in Obsidian's SecretStorage holding the OpenAI API key. */
+	apiKeySecretId: string;
+}
+
+export type ProviderEntry = ElevenLabsProviderEntry | OpenAIProviderEntry;
 
 export interface ElevenLabsVoiceConfig {
 	type: ProviderType.ElevenLabs;
@@ -45,8 +54,18 @@ export interface ElevenLabsVoiceConfig {
 	similarityBoost: number;
 }
 
+export interface OpenAIVoiceConfig {
+	type: ProviderType.OpenAI;
+	voice: string;
+	model: string;
+	/** How fast the voice speaks, from 0.25 to 4. 1 is normal. */
+	speed: number;
+	/** Optional guidance on tone, accent or pacing. Only GPT-4o mini TTS uses it. */
+	instructions: string;
+}
+
 /** A provider type's own voice configuration; the `type` always matches the owning provider's. */
-export type VoiceConfig = ElevenLabsVoiceConfig;
+export type VoiceConfig = ElevenLabsVoiceConfig | OpenAIVoiceConfig;
 
 /** The reading settings a narrator profile may override; the global values are the defaults. */
 export interface ReadingConfig {
@@ -106,6 +125,7 @@ export interface ResolvedNarrator {
 
 export const DEFAULT_ELEVENLABS_API_KEY_SECRET_ID = 'elevenlabs-api-key';
 export const DEFAULT_ELEVENLABS_VOICE_ID = '21m00Tcm4TlvDq8ikWAM';
+export const DEFAULT_OPENAI_API_KEY_SECRET_ID = 'openai-api-key';
 
 export function newId(prefix: string): string {
 	const random = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID().slice(0, 8) : Math.random().toString(36).slice(2, 10);
@@ -113,17 +133,12 @@ export function newId(prefix: string): string {
 }
 
 export function createProvider(type: ProviderType, name: string): ProviderEntry {
+	const base = { id: newId('provider'), name, parallelGenerationEnabled: true, maxParallelGeneration: 2, maxBackgroundParallelGeneration: 1 };
 	switch (type) {
 		case ProviderType.ElevenLabs:
-			return {
-				id: newId('provider'),
-				name,
-				type,
-				apiKeySecretId: DEFAULT_ELEVENLABS_API_KEY_SECRET_ID,
-				parallelGenerationEnabled: true,
-				maxParallelGeneration: 2,
-				maxBackgroundParallelGeneration: 1,
-			};
+			return { ...base, type, apiKeySecretId: DEFAULT_ELEVENLABS_API_KEY_SECRET_ID };
+		case ProviderType.OpenAI:
+			return { ...base, type, apiKeySecretId: DEFAULT_OPENAI_API_KEY_SECRET_ID };
 	}
 }
 
@@ -131,6 +146,8 @@ export function defaultVoiceConfig(type: ProviderType): VoiceConfig {
 	switch (type) {
 		case ProviderType.ElevenLabs:
 			return { type, voiceId: DEFAULT_ELEVENLABS_VOICE_ID, modelId: DEFAULT_ELEVENLABS_MODEL_ID, stability: 0.5, similarityBoost: 0.75 };
+		case ProviderType.OpenAI:
+			return { type, voice: DEFAULT_OPENAI_VOICE, model: DEFAULT_OPENAI_MODEL, speed: 1, instructions: '' };
 	}
 }
 
@@ -177,6 +194,8 @@ export function voiceFingerprint(voice: VoiceConfig): string {
 	switch (voice.type) {
 		case ProviderType.ElevenLabs:
 			return hashText(JSON.stringify([voice.type, voice.voiceId, voice.modelId, voice.stability, voice.similarityBoost]));
+		case ProviderType.OpenAI:
+			return hashText(JSON.stringify([voice.type, voice.voice, voice.model, voice.speed, voice.instructions]));
 	}
 }
 
@@ -185,7 +204,8 @@ export function voiceFingerprint(voice: VoiceConfig): string {
  * profiles existed recorded the raw voice ID, so that still counts as a match for the same voice.
  */
 export function savedVoiceMatches(stored: string, voice: VoiceConfig): boolean {
-	return stored === voiceFingerprint(voice) || stored === voice.voiceId;
+	// The raw voice ID predates every provider type but ElevenLabs.
+	return stored === voiceFingerprint(voice) || (voice.type === ProviderType.ElevenLabs && stored === voice.voiceId);
 }
 
 export function resolveNarrator(settings: ProfileSettings, profile: NarratorProfile | undefined = getActiveProfile(settings)): ResolvedNarrator | null {
@@ -209,6 +229,7 @@ export function resolveReadingConfig(global: ReadingConfig, overrides: ReadingOv
 
 export function providerCharLimit(voice: VoiceConfig | undefined): number {
 	if (voice?.type === ProviderType.ElevenLabs) return ELEVENLABS_MODEL_CHAR_LIMITS[voice.modelId] ?? DEFAULT_ELEVENLABS_CHAR_LIMIT;
+	if (voice?.type === ProviderType.OpenAI) return OPENAI_CHAR_LIMIT;
 	return DEFAULT_ELEVENLABS_CHAR_LIMIT;
 }
 
