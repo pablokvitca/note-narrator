@@ -1,8 +1,8 @@
 # Note Narrator
 
-Note Narrator is an Obsidian plugin that **reads your notes aloud** using text to speech. Open the panel, press **Read**, and it starts playing while the rest of the note is still being generated. It can save the audio as an `.mp3` next to your note, so you can listen again for free.
+Note Narrator is an Obsidian plugin that **reads your notes aloud** using text to speech, with ElevenLabs, OpenAI, Google Gemini or Amazon Polly. Open the panel, press **Read**, and it starts playing while the rest of the note is still being generated. It can save the audio next to your note, so you can listen again for free.
 
-**Requires an ElevenLabs account and API key, and ElevenLabs charges for the audio it generates** (credits on your plan; free tier limits apply). The text you read is sent to ElevenLabs. See [Requirements and costs](#requirements-and-costs) and [Disclosures](#disclosures) before installing.
+**Requires an account and API key with one of those providers, and the provider charges for the audio it generates.** The text you read is sent to that provider. See [Requirements and costs](#requirements-and-costs) and [Disclosures](#disclosures) before installing.
 
 **Full documentation and usage guide: [the Note Narrator docs](https://publish.obsidian.md/pablokvitca-plugin-note-narrator/note-narrator).**
 
@@ -14,7 +14,8 @@ Note Narrator is an Obsidian plugin that **reads your notes aloud** using text t
 - **Playback controls:** pause, rewind and skip, previous and next part, speed and volume.
 - **Highlighting:** the part being read is marked in the editor, as a margin marker, background wash or underline, and you can scroll to it.
 - **Background generation:** generate notes without playing them, one at a time, and play them from the panel when they're ready. A note edited since is marked **Outdated**.
-- **Saved audio:** save the audio as an `.mp3` in your vault, link it from the note, and see when it's out of date. Replaying it uses no credits.
+- **Saved audio:** save the audio in your vault (`.mp3`, or `.wav` with Google Gemini), link it from the note, and see when it's out of date. Replaying it costs nothing.
+- **Four providers:** ElevenLabs, OpenAI, Google Gemini and Amazon Polly. Add several, even of the same type, each with its own key.
 - **Narrator profiles:** a provider, a voice and its settings, and optional reading options, switchable from the panel.
 - **Reading options:** read the title and properties, skip sections by heading, skip comments, and choose how notes are split into parts.
 - Works on desktop and mobile.
@@ -24,6 +25,8 @@ Note Narrator is an Obsidian plugin that **reads your notes aloud** using text t
 ![Highlighting the part being read with a background wash](docs/screenshots/highlighting.png)
 
 ![Settings tabs: General, Providers, Profiles, Appearance, Performance and Files](docs/screenshots/settings-tabs.png)
+
+![Adding a provider: the + button lists ElevenLabs, OpenAI, Google Gemini and Amazon Polly](docs/screenshots/settings-add-provider.png)
 
 ## Platforms
 
@@ -64,39 +67,37 @@ Requires **Obsidian 1.13.1 or newer**.
 - **BRAT:** install [BRAT](https://github.com/TfTHacker/obsidian42-brat), run **BRAT: Add a beta plugin for testing**, and enter `pablokvitca/note-narrator`, to get updates ahead of the community directory or a beta build.
 - **Manually:** download `main.js`, `manifest.json` and `styles.css` from the [latest release](https://github.com/pablokvitca/note-narrator/releases/latest) into `<your vault>/.obsidian/plugins/note-narrator/`, then enable it under **Settings → Community plugins**.
 
-Then follow the [Quick start](https://publish.obsidian.md/pablokvitca-plugin-note-narrator/note-narrator/getting-started/quick-start): add your ElevenLabs API key under **Settings → Note Narrator → Providers**, open a note, open the panel from the ribbon, and press **Read**.
+Then follow the [Quick start](https://publish.obsidian.md/pablokvitca-plugin-note-narrator/note-narrator/getting-started/quick-start): add a provider and its key under **Settings → Note Narrator → Providers**, open a note, open the panel from the ribbon, and press **Read**. Each provider has a guide to creating a key with only the permissions it needs, a spending limit and an expiration date: [ElevenLabs](https://publish.obsidian.md/pablokvitca-plugin-note-narrator/note-narrator/getting-started/setting-up-elevenlabs), [OpenAI](https://publish.obsidian.md/pablokvitca-plugin-note-narrator/note-narrator/getting-started/setting-up-openai), [Google Gemini](https://publish.obsidian.md/pablokvitca-plugin-note-narrator/note-narrator/getting-started/setting-up-google-gemini) and [Amazon Polly](https://publish.obsidian.md/pablokvitca-plugin-note-narrator/note-narrator/getting-started/setting-up-amazon-polly).
 
 ## Requirements and costs
 
-- You need an **ElevenLabs account and API key**. Note Narrator is free, but **ElevenLabs charges for the audio it generates** (credits on your ElevenLabs plan, and free tier limits apply). You are responsible for those costs.
+- You need an **account and API key with at least one provider**: ElevenLabs, OpenAI, Google Gemini or Amazon Polly (AWS access keys). Note Narrator is free, but **the provider charges for the audio it generates** (credits on your ElevenLabs plan, or the API prices of OpenAI, Google or AWS). You are responsible for those costs. Set a spending limit with your provider: the setup guides above show how.
 - Reading needs an **internet connection**. There is no offline mode yet.
-- Saved audio replays for free. Regenerating it, or reading again, uses credits again.
-- **ElevenLabs' terms apply to you and the audio.** You must be 18 or over (or of legal age where you live). Free accounts may use the service for non-commercial purposes only, while paid plans may use it commercially. Check your plan before using saved audio commercially.
+- Saved audio replays for free. Regenerating it, or reading again, costs again.
+- **Your provider's terms apply to you and the audio.** For example, ElevenLabs requires you to be 18 or over (or of legal age where you live), and its free accounts may only be used for non-commercial purposes. Check your provider's terms and plan before using saved audio commercially.
 
 ## Disclosures
 
 Obsidian asks plugins to be clear about what they do with your data. For Note Narrator:
 
-- **Network use.** The plugin talks to **one external service, ElevenLabs (`api.elevenlabs.io`)**, and only in these cases:
-  - **Reading and regenerating audio** (including background generation, and "Auto-generate on open" if you turn it on, which also needs saving and linking turned on): sends the **text being read**, the chosen voice and model settings, and your API key. Requests that ElevenLabs rate-limits are retried automatically and resend the same text, which can use more credits.
-  - **Listing voices**: sends your API key whenever you open a narrator profile's settings (with an API key set) or press the voice refresh button.
-  - **Naming a saved audio file** after its voice: sends your API key and the voice ID, each time audio is saved (including automatic saves).
-  - Replaying saved audio needs no network access and uses no credits.
-  - **With an OpenAI provider** instead, reading and regenerating send the same text, voice and model settings and your API key to **OpenAI (`api.openai.com`)**, under OpenAI's [Terms of Use](https://openai.com/policies/terms-of-use) and [Privacy Policy](https://openai.com/policies/privacy-policy), and OpenAI charges for it. Its voices are a fixed list, so nothing is sent to list or name them.
-  - **With a Google Gemini provider**, they go to **Google (`generativelanguage.googleapis.com`)** instead, under the [Gemini API Additional Terms](https://ai.google.dev/gemini-api/terms) (on the free tier, Google may use what you send to improve its products), and Google charges for it on paid tiers. Its voices are a fixed list too.
-  - **With an Amazon Polly provider**, they go to **AWS (`polly.<region>.amazonaws.com`, in the region you choose)** instead, signed with your access keys (which are never sent themselves), under the [AWS Customer Agreement](https://aws.amazon.com/agreement/) and [AWS Privacy Notice](https://aws.amazon.com/privacy/), and AWS charges for it. Its voices are a fixed list too.
-- **What is read.** The text sent is the note or selection after Markdown is stripped, plus the note title and properties if you enabled those. **Anything you read leaves your device and is processed by ElevenLabs** under their [Terms of Service](https://elevenlabs.io/terms-of-use) and [Privacy Policy](https://elevenlabs.io/privacy-policy). The plugin author has no control over how ElevenLabs stores or uses that data. Do not read notes containing text you are not willing to send to them.
+- **Network use.** The plugin only talks to the providers you set up, and only when you read, regenerate, or generate in the background (or open a note with "Auto-generate on open" turned on, which also needs saving and linking). Each read sends the **text being read**, the narrator profile's voice and model settings, and your key, to that profile's provider:
+  - **ElevenLabs (`api.elevenlabs.io`)**, under its [Terms of Service](https://elevenlabs.io/terms-of-use) and [Privacy Policy](https://elevenlabs.io/privacy-policy). ElevenLabs is also asked for your account's voices whenever you open a narrator profile's settings (with an API key set) or press the voice refresh button, and for the voice's name each time audio is saved, to name the file.
+  - **OpenAI (`api.openai.com`)**, under its [Services Agreement](https://openai.com/policies/services-agreement) and [Privacy Policy](https://openai.com/policies/privacy-policy).
+  - **Google (`generativelanguage.googleapis.com`)**, under the [Gemini API Additional Terms](https://ai.google.dev/gemini-api/terms). On the free tier, Google may use what you send to improve its products.
+  - **AWS (`polly.<region>.amazonaws.com`, in the region you choose)**, under the [AWS Customer Agreement](https://aws.amazon.com/agreement/) and [Privacy Notice](https://aws.amazon.com/privacy/). Requests are signed with your access keys, which are never sent themselves.
+  - Requests a provider rate-limits are retried automatically and resend the same text, which can cost more. OpenAI's, Google's and AWS's voices are fixed lists, so nothing is sent to list or name them. Replaying saved audio needs no network access and costs nothing.
+- **What is read.** The text sent is the note or selection after Markdown is stripped, plus the note title and properties if you enabled those. **Anything you read leaves your device and is processed by your provider** under its own terms and privacy policy. The plugin author has no control over how providers store or use that data. Do not read notes containing text you are not willing to send to them.
 - **Your API key** (or AWS access keys) is stored in Obsidian's built-in secret storage, not in the plugin's `data.json`. Only the name of the secret is saved.
 - **Files it writes.** Settings in the plugin's `data.json`. If you turn on saving: `.mp3` files (`.wav` with Google Gemini) in your vault (next to the note, or in a folder you choose) and, with linking on, a few properties in the note's frontmatter. **Clear Note Narrator files** moves the linked audio file to the trash (following your vault's deletion setting) and removes those properties. The plugin does not read or write files outside your vault.
 - **Other notes it looks at.** Only one thing, on by default: before replacing or trashing a note's saved audio, it checks the other notes' Note Narrator audio path property, from Obsidian's metadata cache and never the notes' text, so a copied note doesn't overwrite or trash audio it shares with the original. That check lists every note in your vault, which is why Obsidian's plugin scanner reports "vault enumeration". Nothing it sees leaves your device. Turning off **Protect audio shared with copied notes** (Files tab) skips it, but then regenerating or clearing a copied note can overwrite or trash the original's audio.
 - **No telemetry, no ads, no self-updates.** The plugin collects no usage data, shows no advertising, and does not install or update itself or any code.
-- **Synthetic voices.** The audio is AI-generated. If you share it, consider saying so, and follow ElevenLabs' rules on voice rights and permitted content (see their [Prohibited Use Policy](https://elevenlabs.io/use-policy)).
+- **Synthetic voices.** The audio is AI-generated. If you share it, consider saying so, and follow your provider's rules on voice rights and permitted content (for example ElevenLabs' [Prohibited Use Policy](https://elevenlabs.io/use-policy), OpenAI's [Usage Policies](https://openai.com/policies/usage-policies), Google's [Generative AI Prohibited Use Policy](https://policies.google.com/terms/generative-ai/use-policy) and AWS's [Acceptable Use Policy](https://aws.amazon.com/aup/)).
 
 More detail: [Privacy and network use](https://publish.obsidian.md/pablokvitca-plugin-note-narrator/note-narrator/reference/privacy). Known limitations, such as HTML comments being read aloud, are listed in the [docs](https://publish.obsidian.md/pablokvitca-plugin-note-narrator/note-narrator/reference/known-limitations).
 
 ## Disclaimer
 
-Note Narrator is provided **"as is", without warranty of any kind**. The author is not liable for any costs, data loss, or other damages arising from its use, including ElevenLabs charges. It is an independent project, **not affiliated with, endorsed by, or sponsored by ElevenLabs or Obsidian**. All trademarks belong to their owners.
+Note Narrator is provided **"as is", without warranty of any kind**. The author is not liable for any costs, data loss, or other damages arising from its use, including charges from any provider. It is an independent project, **not affiliated with, endorsed by, or sponsored by ElevenLabs, OpenAI, Google, Amazon Web Services or Obsidian**. All trademarks belong to their owners.
 
 ## License
 

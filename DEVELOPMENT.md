@@ -28,7 +28,7 @@ CI runs the build, lint and tests on every push.
 - `src/ui/`: the panel, background job list, editor highlighting and other UI.
 - `src/settings/`: settings, defaults, profiles, and one file per settings tab in `sections/`.
 - `src/text/`: Markdown stripping, chunking and other text helpers.
-- `src/tts/`: text to speech providers (ElevenLabs).
+- `src/tts/`: text to speech providers (ElevenLabs, OpenAI, Google Gemini and Amazon Polly), the registry that maps a provider type to one, and the request and retry code they share.
 - `tests/`: unit and integration tests, mirroring `src/` (`src/text/text-utils.ts` is tested by `tests/text/text-utils.test.ts`). They are type-checked by `npm run build` but never bundled into `main.js`. `tests/stubs/obsidian.ts` stands in for the `obsidian` package at runtime.
 
 ## Trying it in a vault
@@ -37,7 +37,7 @@ CI runs the build, lint and tests on every push.
 2. Copy `main.js`, `manifest.json` and `styles.css` into `<your vault>/.obsidian/plugins/note-narrator/`, or symlink the folder.
 3. Reload Obsidian and enable **Note Narrator** under **Settings → Community plugins**.
 
-Reading spends ElevenLabs credits. A separate test vault with **Auto-generate on open** turned off is a good idea, since opening a note without saved audio generates it when that setting is on.
+Reading costs money with every provider. A separate test vault with **Auto-generate on open** turned off is a good idea, since opening a note without saved audio generates it when that setting is on.
 
 ## Releases
 

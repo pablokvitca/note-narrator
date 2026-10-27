@@ -3,7 +3,7 @@
 	"name": "Note Narrator",
 	"version": "1.2.0",
 	"minAppVersion": "1.13.1",
-	"description": "Read notes aloud with text to speech. Requires an ElevenLabs account and API key. ElevenLabs charges for generated audio.",
+	"description": "Read notes aloud with text to speech from ElevenLabs, OpenAI, Google Gemini or Amazon Polly. Requires an account and API key with one of them, which charges for generated audio.",
 	"author": "Pablo Kvitca",
 	"isDesktopOnly": false
 }
