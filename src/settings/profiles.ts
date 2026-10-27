@@ -1,5 +1,6 @@
 import { ChunkerStyle, hashText } from '../text/text-utils';
 import { DEFAULT_ELEVENLABS_CHAR_LIMIT, DEFAULT_ELEVENLABS_MODEL_ID, ELEVENLABS_MODEL_CHAR_LIMITS, ELEVENLABS_NAME } from '../tts/elevenlabs-models';
+import { AWS_CHAR_LIMIT, AWS_POLLY_NAME, AWSEngine, DEFAULT_AWS_ENGINE, DEFAULT_AWS_REGION, DEFAULT_AWS_VOICE_ID } from '../tts/aws-models';
 import { DEFAULT_GEMINI_CHAR_LIMIT, DEFAULT_GEMINI_MODEL_ID, DEFAULT_GEMINI_VOICE_NAME, GEMINI_MODEL_CHAR_LIMITS, GEMINI_NAME } from '../tts/gemini-models';
 import { DEFAULT_OPENAI_MODEL, DEFAULT_OPENAI_VOICE, OPENAI_CHAR_LIMIT, OPENAI_NAME } from '../tts/openai-models';
 
@@ -16,12 +17,14 @@ export enum ProviderType {
 	ElevenLabs = 'elevenlabs',
 	OpenAI = 'openai',
 	Gemini = 'gemini',
+	AWS = 'aws',
 }
 
 export const PROVIDER_TYPE_LABELS: Record<ProviderType, string> = {
 	[ProviderType.ElevenLabs]: ELEVENLABS_NAME,
 	[ProviderType.OpenAI]: OPENAI_NAME,
 	[ProviderType.Gemini]: GEMINI_NAME,
+	[ProviderType.AWS]: AWS_POLLY_NAME,
 };
 
 interface ProviderBase {
@@ -53,7 +56,17 @@ export interface GeminiProviderEntry extends ProviderBase {
 	apiKeySecretId: string;
 }
 
-export type ProviderEntry = ElevenLabsProviderEntry | OpenAIProviderEntry | GeminiProviderEntry;
+/** Amazon Polly signs its requests with an access key pair, both kept in secret storage. The region isn't secret. */
+export interface AWSProviderEntry extends ProviderBase {
+	type: ProviderType.AWS;
+	/** Name of the secret in Obsidian's SecretStorage holding the AWS access key ID. */
+	accessKeyIdSecretId: string;
+	/** Name of the secret in Obsidian's SecretStorage holding the AWS secret access key. */
+	secretAccessKeySecretId: string;
+	region: string;
+}
+
+export type ProviderEntry = ElevenLabsProviderEntry | OpenAIProviderEntry | GeminiProviderEntry | AWSProviderEntry;
 
 export interface ElevenLabsVoiceConfig {
 	type: ProviderType.ElevenLabs;
@@ -82,8 +95,14 @@ export interface GeminiVoiceConfig {
 	instructions: string;
 }
 
+export interface AWSVoiceConfig {
+	type: ProviderType.AWS;
+	voiceId: string;
+	engine: AWSEngine;
+}
+
 /** A provider type's own voice configuration; the `type` always matches the owning provider's. */
-export type VoiceConfig = ElevenLabsVoiceConfig | OpenAIVoiceConfig | GeminiVoiceConfig;
+export type VoiceConfig = ElevenLabsVoiceConfig | OpenAIVoiceConfig | GeminiVoiceConfig | AWSVoiceConfig;
 
 /** The reading settings a narrator profile may override; the global values are the defaults. */
 export interface ReadingConfig {
@@ -145,6 +164,8 @@ export const DEFAULT_ELEVENLABS_API_KEY_SECRET_ID = 'elevenlabs-api-key';
 export const DEFAULT_ELEVENLABS_VOICE_ID = '21m00Tcm4TlvDq8ikWAM';
 export const DEFAULT_OPENAI_API_KEY_SECRET_ID = 'openai-api-key';
 export const DEFAULT_GEMINI_API_KEY_SECRET_ID = 'gemini-api-key';
+export const DEFAULT_AWS_ACCESS_KEY_ID_SECRET_ID = 'aws-access-key-id';
+export const DEFAULT_AWS_SECRET_ACCESS_KEY_SECRET_ID = 'aws-secret-access-key';
 
 export function newId(prefix: string): string {
 	const random = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID().slice(0, 8) : Math.random().toString(36).slice(2, 10);
@@ -160,6 +181,14 @@ export function createProvider(type: ProviderType, name: string): ProviderEntry 
 			return { ...base, type, apiKeySecretId: DEFAULT_OPENAI_API_KEY_SECRET_ID };
 		case ProviderType.Gemini:
 			return { ...base, type, apiKeySecretId: DEFAULT_GEMINI_API_KEY_SECRET_ID };
+		case ProviderType.AWS:
+			return {
+				...base,
+				type,
+				accessKeyIdSecretId: DEFAULT_AWS_ACCESS_KEY_ID_SECRET_ID,
+				secretAccessKeySecretId: DEFAULT_AWS_SECRET_ACCESS_KEY_SECRET_ID,
+				region: DEFAULT_AWS_REGION,
+			};
 	}
 }
 
@@ -171,6 +200,8 @@ export function defaultVoiceConfig(type: ProviderType): VoiceConfig {
 			return { type, voice: DEFAULT_OPENAI_VOICE, model: DEFAULT_OPENAI_MODEL, speed: 1, instructions: '' };
 		case ProviderType.Gemini:
 			return { type, voiceName: DEFAULT_GEMINI_VOICE_NAME, modelId: DEFAULT_GEMINI_MODEL_ID, instructions: '' };
+		case ProviderType.AWS:
+			return { type, voiceId: DEFAULT_AWS_VOICE_ID, engine: DEFAULT_AWS_ENGINE };
 	}
 }
 
@@ -221,6 +252,8 @@ export function voiceFingerprint(voice: VoiceConfig): string {
 			return hashText(JSON.stringify([voice.type, voice.voice, voice.model, voice.speed, voice.instructions]));
 		case ProviderType.Gemini:
 			return hashText(JSON.stringify([voice.type, voice.voiceName, voice.modelId, voice.instructions]));
+		case ProviderType.AWS:
+			return hashText(JSON.stringify([voice.type, voice.voiceId, voice.engine]));
 	}
 }
 
@@ -256,6 +289,7 @@ export function providerCharLimit(voice: VoiceConfig | undefined): number {
 	if (voice?.type === ProviderType.ElevenLabs) return ELEVENLABS_MODEL_CHAR_LIMITS[voice.modelId] ?? DEFAULT_ELEVENLABS_CHAR_LIMIT;
 	if (voice?.type === ProviderType.OpenAI) return OPENAI_CHAR_LIMIT;
 	if (voice?.type === ProviderType.Gemini) return GEMINI_MODEL_CHAR_LIMITS[voice.modelId] ?? DEFAULT_GEMINI_CHAR_LIMIT;
+	if (voice?.type === ProviderType.AWS) return AWS_CHAR_LIMIT;
 	return DEFAULT_ELEVENLABS_CHAR_LIMIT;
 }
 
@@ -291,7 +325,7 @@ export function migrateProfileSettings(raw: Record<string, unknown>): Record<str
 	const data: Record<string, unknown> = { ...raw };
 
 	if (!Array.isArray(data.providers) || data.providers.length === 0) {
-		const provider = createProvider(ProviderType.ElevenLabs, ELEVENLABS_NAME);
+		const provider = createProvider(ProviderType.ElevenLabs, ELEVENLABS_NAME) as ElevenLabsProviderEntry;
 		provider.apiKeySecretId = pick(data.apiKeySecretId, provider.apiKeySecretId, (v) => typeof v === 'string' && v.length > 0);
 		provider.parallelGenerationEnabled = pick(data.parallelGenerationEnabled, provider.parallelGenerationEnabled, (v) => typeof v === 'boolean');
 		provider.maxParallelGeneration = pick(data.maxParallelGeneration, provider.maxParallelGeneration, (v) => typeof v === 'number' && Number.isFinite(v));

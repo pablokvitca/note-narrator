@@ -1,9 +1,10 @@
 import { DropdownComponent, Notice, SettingDefinitionItem, SettingDefinitionPage, SettingGroupItem } from 'obsidian';
 import { ChunkerStyle, findHeadingPatternIssues } from '../../text/text-utils';
 import { DEFAULT_ELEVENLABS_MODEL_ID, ELEVENLABS_MODELS } from '../../tts/elevenlabs-models';
+import { AWS_ENGINE_LABELS, DEFAULT_AWS_ENGINE, awsVoicesForEngine, findAwsVoice } from '../../tts/aws-models';
 import { DEFAULT_GEMINI_MODEL_ID, DEFAULT_GEMINI_VOICE_NAME, GEMINI_MODELS, GEMINI_VOICES } from '../../tts/gemini-models';
 import { DEFAULT_OPENAI_MODEL, DEFAULT_OPENAI_VOICE, OPENAI_INSTRUCTION_MODELS, OPENAI_MODELS, OPENAI_VOICES } from '../../tts/openai-models';
-import { ProviderType, ElevenLabsVoiceConfig, GeminiVoiceConfig, NarratorProfile, OpenAIVoiceConfig, ReadingConfig, ReadingOverrides, createProfile, defaultVoiceConfig, getActiveProfile, getProvider, normalizeProfileSettings, resolveReadingConfig, uniqueName } from '../profiles';
+import { ProviderType, AWSVoiceConfig, ElevenLabsVoiceConfig, GeminiVoiceConfig, NarratorProfile, OpenAIVoiceConfig, ReadingConfig, ReadingOverrides, createProfile, defaultVoiceConfig, getActiveProfile, getProvider, normalizeProfileSettings, resolveReadingConfig, uniqueName } from '../profiles';
 import { SettingsSection } from '../section';
 import { getGlobalReadingConfig } from '../settings';
 
@@ -19,6 +20,7 @@ const OPENAI_MODEL_OPTIONS = withDefaultMarked(OPENAI_MODELS, DEFAULT_OPENAI_MOD
 const OPENAI_VOICE_OPTIONS = withDefaultMarked(OPENAI_VOICES, DEFAULT_OPENAI_VOICE);
 const GEMINI_MODEL_OPTIONS = withDefaultMarked(GEMINI_MODELS, DEFAULT_GEMINI_MODEL_ID);
 const GEMINI_VOICE_OPTIONS = withDefaultMarked(GEMINI_VOICES, DEFAULT_GEMINI_VOICE_NAME);
+const AWS_ENGINE_OPTIONS = withDefaultMarked(AWS_ENGINE_LABELS, DEFAULT_AWS_ENGINE);
 
 export class ProfilesSection extends SettingsSection {
 	/** Reloads a profile's voice dropdown (keyed by profile id) after its provider changes, while its page is open. */
@@ -186,6 +188,8 @@ export class ProfilesSection extends SettingsSection {
 				return OPENAI_VOICES[voice.voice] ?? voice.voice;
 			case ProviderType.Gemini:
 				return voice.voiceName;
+			case ProviderType.AWS:
+				return findAwsVoice(voice.voiceId)?.name ?? voice.voiceId;
 		}
 	}
 
@@ -215,6 +219,8 @@ export class ProfilesSection extends SettingsSection {
 				return this.openAIVoiceRows(profile);
 			case ProviderType.Gemini:
 				return this.geminiVoiceRows(profile);
+			case ProviderType.AWS:
+				return this.awsVoiceRows(profile);
 		}
 	}
 
@@ -335,6 +341,50 @@ export class ProfilesSection extends SettingsSection {
 				},
 				{ placeholder: 'Say in a calm, warm voice' },
 			),
+		];
+	}
+
+	/**
+	 * Like {@link elevenLabsVoiceRows}, these read `profile.voice` when they render or change. Not every voice
+	 * has every engine, so the Voice dropdown lists the chosen engine's voices.
+	 */
+	private awsVoiceRows(profile: NarratorProfile): SettingGroupItem[] {
+		const voice = (): AWSVoiceConfig => {
+			if (profile.voice.type !== ProviderType.AWS) throw new Error('Narrator profile is not an Amazon Polly profile.');
+			return profile.voice;
+		};
+		/** Lists the engine's voices in the Voice dropdown, once it has rendered. */
+		let populateVoices = () => {};
+
+		return [
+			this.dropdownRow('Engine', 'The Polly engine to use. Not every voice has every engine.', AWS_ENGINE_OPTIONS, () => voice().engine, (value) => {
+				const config = voice();
+				config.engine = value as AWSVoiceConfig['engine'];
+				// Keep the voice if it has the new engine; otherwise switch to the engine's first voice.
+				const voices = awsVoicesForEngine(config.engine);
+				if (!voices.some((v) => v.voiceId === config.voiceId)) config.voiceId = voices[0]?.voiceId ?? config.voiceId;
+				populateVoices();
+			}),
+			{
+				name: 'Voice',
+				desc: "The chosen engine's voices, with their language.",
+				render: (setting) => {
+					setting.addDropdown((dropdown) => {
+						populateVoices = () => {
+							const options = awsVoicesForEngine(voice().engine);
+							dropdown.selectEl.empty();
+							for (const option of options) dropdown.addOption(option.voiceId, `${option.name} (${option.languageName})`);
+							if (!options.some((option) => option.voiceId === voice().voiceId)) dropdown.addOption(voice().voiceId, `${voice().voiceId} (custom)`);
+							dropdown.setValue(voice().voiceId);
+						};
+						populateVoices();
+						dropdown.onChange(async (value) => {
+							voice().voiceId = value;
+							await this.plugin.saveSettings();
+						});
+					});
+				},
+			},
 		];
 	}
 

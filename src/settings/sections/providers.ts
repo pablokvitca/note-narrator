@@ -3,6 +3,12 @@ import { ConfirmModal } from '../../ui/confirm-modal';
 import { PROVIDER_TYPE_LABELS, ProviderEntry, ProviderType, createProfile, createProvider, defaultVoiceConfig, normalizeProfileSettings, uniqueName } from '../profiles';
 import { SettingsSection } from '../section';
 import { credentialsLabel } from '../../tts/registry';
+import { AWS_POLLY_REGIONS, DEFAULT_AWS_REGION } from '../../tts/aws-models';
+
+/** The Region dropdown's options, the default marked like every other dropdown's. */
+const REGION_OPTIONS: Record<string, string> = Object.fromEntries(
+	Object.entries(AWS_POLLY_REGIONS).map(([id, label]) => [id, id === DEFAULT_AWS_REGION ? `${label} (default)` : label]),
+);
 
 const DOCS_URL = 'https://publish.obsidian.md/pablokvitca-plugin-note-narrator/note-narrator';
 
@@ -11,6 +17,7 @@ const PROVIDER_SETUP_GUIDES: Record<ProviderType, string> = {
 	[ProviderType.ElevenLabs]: `${DOCS_URL}/getting-started/setting-up-elevenlabs`,
 	[ProviderType.OpenAI]: `${DOCS_URL}/getting-started/setting-up-openai`,
 	[ProviderType.Gemini]: `${DOCS_URL}/getting-started/setting-up-google-gemini`,
+	[ProviderType.AWS]: `${DOCS_URL}/getting-started/setting-up-amazon-polly`,
 };
 
 export class ProvidersSection extends SettingsSection {
@@ -149,19 +156,59 @@ export class ProvidersSection extends SettingsSection {
 			case ProviderType.OpenAI:
 			case ProviderType.Gemini:
 				return [this.apiKeyRow(provider)];
+			case ProviderType.AWS:
+				return [
+					this.secretRow(
+						'Access key ID',
+						'For an AWS user or role allowed to use Polly (the polly:SynthesizeSpeech permission). Stored in Obsidian\'s secret storage, not in this plugin\'s settings file.',
+						() => provider.accessKeyIdSecretId,
+						(value) => {
+							provider.accessKeyIdSecretId = value;
+						},
+					),
+					this.secretRow(
+						'Secret access key',
+						"Stored in Obsidian's secret storage, not in this plugin's settings file.",
+						() => provider.secretAccessKeySecretId,
+						(value) => {
+							provider.secretAccessKeySecretId = value;
+						},
+					),
+					this.dropdownRow(
+						'Region',
+						'The AWS region Polly requests go to. Some voices and engines are only offered in some regions.',
+						REGION_OPTIONS,
+						() => provider.region,
+						(value) => {
+							provider.region = value;
+						},
+					),
+				];
 		}
 	}
 
 	private apiKeyRow(provider: ProviderEntry & { apiKeySecretId: string }, onChange?: () => void): SettingGroupItem {
+		return this.secretRow(
+			'API key',
+			"Stored in Obsidian's secret storage, not in this plugin's settings file.",
+			() => provider.apiKeySecretId,
+			(value) => {
+				provider.apiKeySecretId = value;
+				onChange?.();
+			},
+		);
+	}
+
+	/** A row choosing a secret from Obsidian's secret storage; `get` and `set` are the secret's name. */
+	private secretRow(name: string, desc: string, get: () => string, set: (value: string) => void): SettingGroupItem {
 		return {
-			name: 'API key',
-			desc: "Stored in Obsidian's secret storage, not in this plugin's settings file.",
+			name,
+			desc,
 			render: (setting) => {
 				setting.addComponent((el) =>
-					new SecretComponent(this.app, el).setValue(provider.apiKeySecretId).onChange(async (value) => {
-						provider.apiKeySecretId = value;
+					new SecretComponent(this.app, el).setValue(get()).onChange(async (value) => {
+						set(value);
 						await this.plugin.saveSettings();
-						onChange?.();
 					}),
 				);
 			},
