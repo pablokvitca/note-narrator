@@ -3,7 +3,7 @@ import NoteNarratorPlugin from '../main';
 import { NoteNarratorSettings } from './settings';
 import { ProviderEntry } from './profiles';
 import { VoiceCache } from './voices';
-import { getProviderApiKey } from '../tts/registry';
+import { getProviderCredentials } from '../tts/registry';
 
 export type SettingsTabId = 'general' | 'providers' | 'profiles' | 'appearance' | 'performance' | 'files';
 
@@ -55,6 +55,11 @@ export abstract class SettingsSection {
 
 	abstract definitions(): SettingDefinitionItem[];
 
+	/** Re-renders the settings if a provider's or profile's name changed from `builtName`, the one they show. */
+	protected updateIfRenamed(currentName: string, builtName: string): void {
+		if (currentName !== builtName) this.update();
+	}
+
 	/** A predicate for `visible` that is true while the given settings tab is the one showing. */
 	protected onTab(id: SettingsTabId): () => boolean {
 		return () => this.host.activeTab === id;
@@ -76,7 +81,7 @@ export abstract class SettingsSection {
 		desc: string,
 		get: () => string,
 		set: (value: string) => void,
-		options: { placeholder?: string; disabled?: () => boolean } = {},
+		options: { placeholder?: string; disabled?: () => boolean; onCommit?: () => void } = {},
 	): SettingGroupItem {
 		return {
 			name,
@@ -88,6 +93,9 @@ export abstract class SettingsSection {
 						set(value);
 						await this.plugin.saveSettings();
 					});
+					// Saved on every keystroke, but `onCommit` waits until the field is left, so a re-render it
+					// triggers doesn't take the focus away mid-word.
+					if (options.onCommit) text.inputEl.addEventListener('blur', options.onCommit);
 				});
 				if (options.disabled) this.trackDisabled(setting, options.disabled);
 			},
@@ -176,7 +184,7 @@ export abstract class SettingsSection {
 	}
 
 	protected providerHasCredentials(provider: ProviderEntry): boolean {
-		return getProviderApiKey(this.app, provider) !== null;
+		return getProviderCredentials(this.app, provider) !== null;
 	}
 
 	/** A destructive button row, shown at the bottom of a provider's or profile's page. */

@@ -1,5 +1,5 @@
 import { ChunkerStyle, hashText } from '../text/text-utils';
-import { DEFAULT_ELEVENLABS_CHAR_LIMIT, DEFAULT_ELEVENLABS_MODEL_ID, ELEVENLABS_MODEL_CHAR_LIMITS } from '../tts/elevenlabs-models';
+import { DEFAULT_ELEVENLABS_CHAR_LIMIT, DEFAULT_ELEVENLABS_MODEL_ID, ELEVENLABS_MODEL_CHAR_LIMITS, ELEVENLABS_NAME } from '../tts/elevenlabs-models';
 
 /*
  * Providers and narrator profiles. Pure data + helpers (no Obsidian imports) so they can be unit tested.
@@ -10,10 +10,12 @@ import { DEFAULT_ELEVENLABS_CHAR_LIMIT, DEFAULT_ELEVENLABS_MODEL_ID, ELEVENLABS_
  * that provider type's voice configuration, and may override the global reading settings.
  */
 
-export type ProviderType = 'elevenlabs';
+export enum ProviderType {
+	ElevenLabs = 'elevenlabs',
+}
 
 export const PROVIDER_TYPE_LABELS: Record<ProviderType, string> = {
-	elevenlabs: 'ElevenLabs',
+	[ProviderType.ElevenLabs]: ELEVENLABS_NAME,
 };
 
 interface ProviderBase {
@@ -28,7 +30,7 @@ interface ProviderBase {
 }
 
 export interface ElevenLabsProviderEntry extends ProviderBase {
-	type: 'elevenlabs';
+	type: ProviderType.ElevenLabs;
 	/** Name of the secret in Obsidian's SecretStorage holding the ElevenLabs API key. */
 	apiKeySecretId: string;
 }
@@ -36,7 +38,7 @@ export interface ElevenLabsProviderEntry extends ProviderBase {
 export type ProviderEntry = ElevenLabsProviderEntry;
 
 export interface ElevenLabsVoiceConfig {
-	type: 'elevenlabs';
+	type: ProviderType.ElevenLabs;
 	voiceId: string;
 	modelId: string;
 	stability: number;
@@ -112,7 +114,7 @@ export function newId(prefix: string): string {
 
 export function createProvider(type: ProviderType, name: string): ProviderEntry {
 	switch (type) {
-		case 'elevenlabs':
+		case ProviderType.ElevenLabs:
 			return {
 				id: newId('provider'),
 				name,
@@ -127,7 +129,7 @@ export function createProvider(type: ProviderType, name: string): ProviderEntry 
 
 export function defaultVoiceConfig(type: ProviderType): VoiceConfig {
 	switch (type) {
-		case 'elevenlabs':
+		case ProviderType.ElevenLabs:
 			return { type, voiceId: DEFAULT_ELEVENLABS_VOICE_ID, modelId: DEFAULT_ELEVENLABS_MODEL_ID, stability: 0.5, similarityBoost: 0.75 };
 	}
 }
@@ -173,7 +175,7 @@ export function getDropdownProfiles(settings: ProfileSettings): NarratorProfile[
  */
 export function voiceFingerprint(voice: VoiceConfig): string {
 	switch (voice.type) {
-		case 'elevenlabs':
+		case ProviderType.ElevenLabs:
 			return hashText(JSON.stringify([voice.type, voice.voiceId, voice.modelId, voice.stability, voice.similarityBoost]));
 	}
 }
@@ -206,7 +208,7 @@ export function resolveReadingConfig(global: ReadingConfig, overrides: ReadingOv
 }
 
 export function providerCharLimit(voice: VoiceConfig | undefined): number {
-	if (voice?.type === 'elevenlabs') return ELEVENLABS_MODEL_CHAR_LIMITS[voice.modelId] ?? DEFAULT_ELEVENLABS_CHAR_LIMIT;
+	if (voice?.type === ProviderType.ElevenLabs) return ELEVENLABS_MODEL_CHAR_LIMITS[voice.modelId] ?? DEFAULT_ELEVENLABS_CHAR_LIMIT;
 	return DEFAULT_ELEVENLABS_CHAR_LIMIT;
 }
 
@@ -242,7 +244,7 @@ export function migrateProfileSettings(raw: Record<string, unknown>): Record<str
 	const data: Record<string, unknown> = { ...raw };
 
 	if (!Array.isArray(data.providers) || data.providers.length === 0) {
-		const provider = createProvider('elevenlabs', 'ElevenLabs');
+		const provider = createProvider(ProviderType.ElevenLabs, ELEVENLABS_NAME);
 		provider.apiKeySecretId = pick(data.apiKeySecretId, provider.apiKeySecretId, (v) => typeof v === 'string' && v.length > 0);
 		provider.parallelGenerationEnabled = pick(data.parallelGenerationEnabled, provider.parallelGenerationEnabled, (v) => typeof v === 'boolean');
 		provider.maxParallelGeneration = pick(data.maxParallelGeneration, provider.maxParallelGeneration, (v) => typeof v === 'number' && Number.isFinite(v));
@@ -253,7 +255,7 @@ export function migrateProfileSettings(raw: Record<string, unknown>): Record<str
 		);
 
 		const profile = createProfile(provider, 'Default');
-		if (profile.voice.type === 'elevenlabs') {
+		if (profile.voice.type === ProviderType.ElevenLabs) {
 			profile.voice.voiceId = pick(data.voiceId, profile.voice.voiceId, (v) => typeof v === 'string' && v.length > 0);
 			profile.voice.modelId = pick(data.modelId, profile.voice.modelId, (v) => typeof v === 'string' && v.length > 0);
 			profile.voice.stability = pick(data.stability, profile.voice.stability, (v) => typeof v === 'number');

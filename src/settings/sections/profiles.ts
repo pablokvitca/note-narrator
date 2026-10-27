@@ -1,7 +1,7 @@
 import { DropdownComponent, Notice, SettingDefinitionItem, SettingDefinitionPage, SettingGroupItem } from 'obsidian';
 import { ChunkerStyle, findHeadingPatternIssues } from '../../text/text-utils';
 import { DEFAULT_ELEVENLABS_MODEL_ID, ELEVENLABS_MODELS } from '../../tts/elevenlabs-models';
-import { ElevenLabsVoiceConfig, NarratorProfile, ReadingConfig, ReadingOverrides, createProfile, defaultVoiceConfig, getActiveProfile, getProvider, normalizeProfileSettings, resolveReadingConfig, uniqueName } from '../profiles';
+import { ElevenLabsVoiceConfig, NarratorProfile, ProviderType, ReadingConfig, ReadingOverrides, createProfile, defaultVoiceConfig, getActiveProfile, getProvider, normalizeProfileSettings, resolveReadingConfig, uniqueName } from '../profiles';
 import { SettingsSection } from '../section';
 import { getGlobalReadingConfig } from '../settings';
 
@@ -81,11 +81,12 @@ export class ProfilesSection extends SettingsSection {
 
 	private profilePage(profile: NarratorProfile): SettingDefinitionPage {
 		const settings = this.settings;
+		const builtName = profile.name;
 		const providerOptions = Object.fromEntries(settings.providers.map((provider) => [provider.id, provider.name]));
 
 		return {
 			type: 'page',
-			name: profile.name,
+			name: builtName,
 			desc: this.profileSummary(profile),
 			displayValue: () => (getActiveProfile(settings)?.id === profile.id ? 'Default' : ''),
 			status: () => {
@@ -96,9 +97,16 @@ export class ProfilesSection extends SettingsSection {
 				{
 					type: 'group',
 					items: [
-						this.textRow('Name', 'How this profile is listed in the panel and here.', () => profile.name, (value) => {
-							profile.name = value.trim() || profile.name;
-						}),
+						this.textRow(
+							'Name',
+							'How this profile is listed in the panel and here.',
+							() => profile.name,
+							(value) => {
+								profile.name = value.trim() || profile.name;
+							},
+							// The list, this page's title and the Default narrator dropdown show the name it was built with.
+							{ onCommit: () => this.updateIfRenamed(profile.name, builtName) },
+						),
 						this.dropdownRow('Provider', 'Which provider generates this narrator\'s audio.', providerOptions, () => profile.providerId, (value) => {
 							void this.changeProfileProvider(profile, value);
 						}),
@@ -157,7 +165,7 @@ export class ProfilesSection extends SettingsSection {
 
 	private profileSummary(profile: NarratorProfile): string {
 		const provider = getProvider(this.settings, profile.providerId);
-		const voice = profile.voice.type === 'elevenlabs' ? (this.voices.voicesByProvider.get(profile.providerId)?.find((v) => v.voiceId === profile.voice.voiceId)?.name ?? profile.voice.voiceId) : '';
+		const voice = profile.voice.type === ProviderType.ElevenLabs ? (this.voices.voicesByProvider.get(profile.providerId)?.find((v) => v.voiceId === profile.voice.voiceId)?.name ?? profile.voice.voiceId) : '';
 		return [provider?.name ?? 'No provider', voice].filter(Boolean).join(' · ');
 	}
 
@@ -166,8 +174,14 @@ export class ProfilesSection extends SettingsSection {
 		if (!provider || profile.providerId === providerId) return;
 		const previous = getProvider(this.settings, profile.providerId);
 		profile.providerId = providerId;
-		if (previous?.type !== provider.type) profile.voice = defaultVoiceConfig(provider.type);
+		const typeChanged = previous?.type !== provider.type;
+		if (typeChanged) profile.voice = defaultVoiceConfig(provider.type);
 		await this.plugin.saveSettings();
+		// Another provider type has other voice rows.
+		if (typeChanged) {
+			this.update();
+			return;
+		}
 		// The voice list belongs to the provider's account; reload it into the open page's dropdown.
 		this.voiceRefreshers.get(profile.id)?.();
 	}
@@ -175,7 +189,7 @@ export class ProfilesSection extends SettingsSection {
 	/** The voice configuration rows for a profile's provider type. */
 	private voiceRows(profile: NarratorProfile): SettingGroupItem[] {
 		switch (profile.voice.type) {
-			case 'elevenlabs':
+			case ProviderType.ElevenLabs:
 				return this.elevenLabsVoiceRows(profile);
 		}
 	}
@@ -186,7 +200,7 @@ export class ProfilesSection extends SettingsSection {
 	 */
 	private elevenLabsVoiceRows(profile: NarratorProfile): SettingGroupItem[] {
 		const voice = (): ElevenLabsVoiceConfig => {
-			if (profile.voice.type !== 'elevenlabs') throw new Error('Narrator profile is not an ElevenLabs profile.');
+			if (profile.voice.type !== ProviderType.ElevenLabs) throw new Error('Narrator profile is not an ElevenLabs profile.');
 			return profile.voice;
 		};
 

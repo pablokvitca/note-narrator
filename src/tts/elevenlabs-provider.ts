@@ -1,20 +1,12 @@
 import { requestUrl } from 'obsidian';
 import type { ElevenLabsVoiceConfig } from '../settings/profiles';
-import { TTSProvider } from './provider';
+import { ELEVENLABS_NAME } from './elevenlabs-models';
+import { AudioFormat, TTSProvider } from './provider';
+import { RetryPolicy, requestFailedError, requestWithRetry } from './request';
 
 export interface ElevenLabsVoice {
 	voiceId: string;
 	name: string;
-}
-
-/** How much of an error response's body goes into the error message (and so into notices and the console). */
-const MAX_ERROR_BODY_CHARS = 200;
-
-/** The error for a failed ElevenLabs request: its status plus the start of its body, so an unexpectedly large or odd response can't flood a notice or the console. */
-export function requestFailedError(status: number, body: string): Error {
-	const trimmed = body.trim();
-	const shown = trimmed.length > MAX_ERROR_BODY_CHARS ? `${trimmed.slice(0, MAX_ERROR_BODY_CHARS)}…` : trimmed;
-	return new Error(shown ? `ElevenLabs request failed (${status}): ${shown}` : `ElevenLabs request failed (${status})`);
 }
 
 /** Fetches up to 100 voices available to the account (ElevenLabs' /v2/voices is paginated; MVP fetches the first page only). */
@@ -27,7 +19,7 @@ export async function listElevenLabsVoices(apiKey: string): Promise<ElevenLabsVo
 	});
 
 	if (response.status !== 200) {
-		throw requestFailedError(response.status, response.text);
+		throw requestFailedError(ELEVENLABS_NAME, response.status, response.text);
 	}
 
 	const body = response.json as { voices?: { voice_id: string; name: string }[] };
@@ -44,7 +36,7 @@ export async function getElevenLabsVoiceName(apiKey: string, voiceId: string): P
 	});
 
 	if (response.status !== 200) {
-		throw requestFailedError(response.status, response.text);
+		throw requestFailedError(ELEVENLABS_NAME, response.status, response.text);
 	}
 
 	const body = response.json as { name?: string };
@@ -53,22 +45,18 @@ export async function getElevenLabsVoiceName(apiKey: string, voiceId: string): P
 
 /**
  * With a high "max parallel chunk generation" setting, many requests can be dispatched at once and hit
- * ElevenLabs' "too many concurrent requests" 429 together -- they don't retry in lockstep (backoff is
- * jittered below), but capacity only frees up as other in-flight requests finish, which can take a while
+ * ElevenLabs' "too many concurrent requests" 429 together -- they don't retry in lockstep (the backoff is
+ * jittered), but capacity only frees up as other in-flight requests finish, which can take a while
  * under heavy concurrency. 3 retries at a ~1-4s backoff wasn't enough margin for that to clear: several
  * requests would exhaust their retries and throw before the account's concurrency limit came back down,
  * and `Promise.all` in the caller's worker pool fails the *entire* read the moment any one of them does.
  * A higher retry budget with a longer capped backoff gives real congestion time to actually clear.
  */
-const MAX_RATE_LIMIT_RETRIES = 8;
-const RATE_LIMIT_BASE_BACKOFF_MS = 1000;
-const RATE_LIMIT_MAX_BACKOFF_MS = 30000;
-
-function sleep(ms: number): Promise<void> {
-	return new Promise((resolve) => window.setTimeout(resolve, ms));
-}
+const RETRY_POLICY: RetryPolicy = { maxRetries: 8, baseBackoffMs: 1000, maxBackoffMs: 30000 };
 
 export class ElevenLabsProvider implements TTSProvider {
+	readonly outputFormat = AudioFormat.Mp3;
+
 	constructor(
 		private apiKey: string,
 		private voice: ElevenLabsVoiceConfig,
@@ -77,38 +65,29 @@ export class ElevenLabsProvider implements TTSProvider {
 	) {}
 
 	async synthesize(text: string, isCancelled?: () => boolean): Promise<ArrayBuffer> {
-		for (let attempt = 0; ; attempt++) {
-			if (isCancelled?.()) throw new Error('Generation was cancelled.');
-			const response = await requestUrl({
-				url: `https://api.elevenlabs.io/v1/text-to-speech/${this.voice.voiceId}`,
-				method: 'POST',
-				headers: {
-					'xi-api-key': this.apiKey,
-					'Content-Type': 'application/json',
-				},
-				body: JSON.stringify({
-					text,
-					model_id: this.voice.modelId,
-					voice_settings: {
-						stability: this.voice.stability,
-						similarity_boost: this.voice.similarityBoost,
+		const response = await requestWithRetry(
+			ELEVENLABS_NAME,
+			() =>
+				requestUrl({
+					url: `https://api.elevenlabs.io/v1/text-to-speech/${this.voice.voiceId}`,
+					method: 'POST',
+					headers: {
+						'xi-api-key': this.apiKey,
+						'Content-Type': 'application/json',
 					},
+					body: JSON.stringify({
+						text,
+						model_id: this.voice.modelId,
+						voice_settings: {
+							stability: this.voice.stability,
+							similarity_boost: this.voice.similarityBoost,
+						},
+					}),
+					throw: false,
 				}),
-				throw: false,
-			});
-
-			if (response.status === 200) return response.arrayBuffer;
-
-			if (response.status === 429 && attempt < MAX_RATE_LIMIT_RETRIES) {
-				this.onRateLimited?.();
-				const backoff = Math.min(RATE_LIMIT_BASE_BACKOFF_MS * 2 ** attempt, RATE_LIMIT_MAX_BACKOFF_MS);
-				// +/-20% jitter so many requests rate-limited at the same moment (a high parallel-generation
-				// setting) don't all retry in lockstep and collide again.
-				await sleep(backoff * (0.8 + Math.random() * 0.4));
-				continue;
-			}
-
-			throw requestFailedError(response.status, response.text);
-		}
+			RETRY_POLICY,
+			{ isCancelled, onRateLimited: this.onRateLimited },
+		);
+		return response.arrayBuffer;
 	}
 }

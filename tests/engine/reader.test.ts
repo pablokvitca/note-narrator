@@ -45,11 +45,13 @@ const fakes = vi.hoisted(() => ({
 }));
 
 vi.mock('../../src/tts/registry', () => ({
-	getProviderApiKey: () => 'key',
-	missingApiKeyMessage: () => 'No API key.',
-	createTTSProvider: (_provider: unknown, _voice: unknown, _apiKey: unknown, onRateLimited?: () => void) => {
+	getProviderCredentials: () => ({ type: 'elevenlabs', apiKey: 'key' }),
+	providerOutputFormat: () => 'mp3',
+	missingCredentialsMessage: () => 'No API key.',
+	createTTSProvider: (_provider: unknown, _voice: unknown, _credentials: unknown, onRateLimited?: () => void) => {
 		fakes.reportRateLimit = onRateLimited ?? null;
 		return {
+		outputFormat: 'mp3',
 		synthesize: (text: string, isCancelled: () => boolean = () => false) =>
 			new Promise<ArrayBuffer>((resolve, reject) => {
 				fakes.synthCalls.push({ text, isCancelled, resolve: () => resolve(new ArrayBuffer(8)), reject });
@@ -97,7 +99,9 @@ vi.mock('../../src/engine/saved-audio', () => ({
 vi.mock('../../src/engine/audio-utils', () => ({
 	decodeAudioDuration: () =>
 		fakes.holdDecodes ? new Promise<number>((resolve) => fakes.heldDecodes.push(() => resolve(1))) : Promise.resolve(1),
-	sliceIntoChunks: () => null,
+	splitAudioChunks: () => null,
+	audioFormatForExtension: () => 'mp3',
+	audioMimeType: () => 'audio/mpeg',
 }));
 
 class FakeAudio {

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { savedAudioFreshness } from '../../src/engine/saved-audio-freshness';
-import { VoiceConfig, voiceFingerprint } from '../../src/settings/profiles';
+import { ProviderType, VoiceConfig, voiceFingerprint } from '../../src/settings/profiles';
 
-const voice: VoiceConfig = { type: 'elevenlabs', voiceId: 'voice-1', modelId: 'eleven_flash_v2_5', stability: 0.5, similarityBoost: 0.75 };
+const voice: VoiceConfig = { type: ProviderType.ElevenLabs, voiceId: 'voice-1', modelId: 'eleven_flash_v2_5', stability: 0.5, similarityBoost: 0.75 };
 const otherVoice: VoiceConfig = { ...voice, voiceId: 'voice-2' };
 
 describe('savedAudioFreshness', () => {
