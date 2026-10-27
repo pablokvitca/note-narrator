@@ -10,7 +10,7 @@ const REGION_OPTIONS: Record<string, string> = Object.fromEntries(
 	Object.entries(AWS_POLLY_REGIONS).map(([id, label]) => [id, id === DEFAULT_AWS_REGION ? `${label} (default)` : label]),
 );
 
-const DOCS_URL = 'https://publish.obsidian.md/pablokvitca-plugin-note-narrator/note-narrator';
+const DOCS_URL = 'https://obsidian-plugins.pablokvitca.com/note-narrator';
 
 /** Each provider type's setup guide in the docs, linked from its credential rows. */
 const PROVIDER_SETUP_GUIDES: Record<ProviderType, string> = {

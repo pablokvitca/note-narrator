@@ -4,7 +4,7 @@ Note Narrator is an Obsidian plugin that **reads your notes aloud** using text t
 
 **Requires an account and API key with one of those providers, and the provider charges for the audio it generates** (some have limited free tiers). The text you read is sent to that provider. See [Requirements and costs](#requirements-and-costs) and [Disclosures](#disclosures) before installing.
 
-**Full documentation and usage guide: [the Note Narrator docs](https://publish.obsidian.md/pablokvitca-plugin-note-narrator/note-narrator).**
+**Full documentation and usage guide: [the Note Narrator docs](https://obsidian-plugins.pablokvitca.com/note-narrator).**
 
 ![Note Narrator reading a note aloud: the panel on the right, with the part being read marked in the editor](docs/screenshots/panel-reading.png)
 
@@ -40,7 +40,7 @@ Note Narrator uses only Obsidian's cross-platform APIs, so every feature is the 
 | Saved audio | ✅ | ❔ | ❔ | ✅ | ✅ | ✅ | ❔ |
 | Narrator profiles and settings | ✅ | ❔ | ❔ | ✅ | ✅ | ✅ | ❔ |
 
-✅ Tested on a real device. ❔ Should work, but nobody has tried it yet; reports welcome. iPad includes iPad mini. Requires **Obsidian 1.13.1 or newer** everywhere. Details: [Supported platforms](https://publish.obsidian.md/pablokvitca-plugin-note-narrator/note-narrator/reference/supported-platforms).
+✅ Tested on a real device. ❔ Should work, but nobody has tried it yet; reports welcome. iPad includes iPad mini. Requires **Obsidian 1.13.1 or newer** everywhere. Details: [Supported platforms](https://obsidian-plugins.pablokvitca.com/note-narrator/reference/supported-platforms).
 
 ## Text to speech providers
 
@@ -57,7 +57,7 @@ Note Narrator uses only Obsidian's cross-platform APIs, so every feature is the 
 | Voice settings | Stability, similarity | Speaking speed, instructions | Instructions | Engine (the region is set on the provider) | 🔜 |
 | Parallel generation | Yes, with automatic retry when rate-limited | Yes, with automatic retry when rate-limited | Yes, with automatic retry when rate-limited | Yes, with automatic retry when throttled | 🔜 |
 
-Planned providers are on the [Roadmap](https://publish.obsidian.md/pablokvitca-plugin-note-narrator/note-narrator/roadmap). Plans can change.
+Planned providers are on the [Roadmap](https://obsidian-plugins.pablokvitca.com/note-narrator/roadmap). Plans can change.
 
 ## Install
 
@@ -67,7 +67,7 @@ Requires **Obsidian 1.13.1 or newer**.
 - **BRAT:** install [BRAT](https://github.com/TfTHacker/obsidian42-brat), run **BRAT: Add a beta plugin for testing**, and enter `pablokvitca/note-narrator`, to get updates ahead of the community directory or a beta build.
 - **Manually:** download `main.js`, `manifest.json` and `styles.css` from the [latest release](https://github.com/pablokvitca/note-narrator/releases/latest) into `<your vault>/.obsidian/plugins/note-narrator/`, then enable it under **Settings → Community plugins**.
 
-Then follow the [Quick start](https://publish.obsidian.md/pablokvitca-plugin-note-narrator/note-narrator/getting-started/quick-start): add a provider and its key under **Settings → Note Narrator → Providers**, open a note, open the panel from the ribbon, and press **Read**. Each provider has a guide to creating a key with only the permissions it needs, a spending limit and an expiration date: [ElevenLabs](https://publish.obsidian.md/pablokvitca-plugin-note-narrator/note-narrator/getting-started/setting-up-elevenlabs), [OpenAI](https://publish.obsidian.md/pablokvitca-plugin-note-narrator/note-narrator/getting-started/setting-up-openai), [Google Gemini](https://publish.obsidian.md/pablokvitca-plugin-note-narrator/note-narrator/getting-started/setting-up-google-gemini) and [Amazon Polly](https://publish.obsidian.md/pablokvitca-plugin-note-narrator/note-narrator/getting-started/setting-up-amazon-polly).
+Then follow the [Quick start](https://obsidian-plugins.pablokvitca.com/note-narrator/getting-started/quick-start): add a provider and its key under **Settings → Note Narrator → Providers**, open a note, open the panel from the ribbon, and press **Read**. Each provider has a guide to creating a key with only the permissions it needs, a spending limit and an expiration date: [ElevenLabs](https://obsidian-plugins.pablokvitca.com/note-narrator/getting-started/setting-up-elevenlabs), [OpenAI](https://obsidian-plugins.pablokvitca.com/note-narrator/getting-started/setting-up-openai), [Google Gemini](https://obsidian-plugins.pablokvitca.com/note-narrator/getting-started/setting-up-google-gemini) and [Amazon Polly](https://obsidian-plugins.pablokvitca.com/note-narrator/getting-started/setting-up-amazon-polly).
 
 ## Requirements and costs
 
@@ -93,7 +93,7 @@ Obsidian asks plugins to be clear about what they do with your data. For Note Na
 - **No telemetry, no ads, no self-updates.** The plugin collects no usage data, shows no advertising, and does not install or update itself or any code.
 - **Synthetic voices.** The audio is AI-generated. If you share it, consider saying so, and follow your provider's rules on voice rights and permitted content (for example ElevenLabs' [Prohibited Use Policy](https://elevenlabs.io/use-policy), OpenAI's [Usage Policies](https://openai.com/policies/usage-policies), Google's [Generative AI Prohibited Use Policy](https://policies.google.com/terms/generative-ai/use-policy) and AWS's [Acceptable Use Policy](https://aws.amazon.com/aup/)).
 
-More detail: [Privacy and network use](https://publish.obsidian.md/pablokvitca-plugin-note-narrator/note-narrator/reference/privacy). Known limitations, such as HTML comments being read aloud, are listed in the [docs](https://publish.obsidian.md/pablokvitca-plugin-note-narrator/note-narrator/reference/known-limitations).
+More detail: [Privacy and network use](https://obsidian-plugins.pablokvitca.com/note-narrator/reference/privacy). Known limitations, such as HTML comments being read aloud, are listed in the [docs](https://obsidian-plugins.pablokvitca.com/note-narrator/reference/known-limitations).
 
 ## Disclaimer
 
