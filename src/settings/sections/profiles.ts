@@ -81,11 +81,12 @@ export class ProfilesSection extends SettingsSection {
 
 	private profilePage(profile: NarratorProfile): SettingDefinitionPage {
 		const settings = this.settings;
+		const builtName = profile.name;
 		const providerOptions = Object.fromEntries(settings.providers.map((provider) => [provider.id, provider.name]));
 
 		return {
 			type: 'page',
-			name: profile.name,
+			name: builtName,
 			desc: this.profileSummary(profile),
 			displayValue: () => (getActiveProfile(settings)?.id === profile.id ? 'Default' : ''),
 			status: () => {
@@ -96,9 +97,16 @@ export class ProfilesSection extends SettingsSection {
 				{
 					type: 'group',
 					items: [
-						this.textRow('Name', 'How this profile is listed in the panel and here.', () => profile.name, (value) => {
-							profile.name = value.trim() || profile.name;
-						}),
+						this.textRow(
+							'Name',
+							'How this profile is listed in the panel and here.',
+							() => profile.name,
+							(value) => {
+								profile.name = value.trim() || profile.name;
+							},
+							// The list, this page's title and the Default narrator dropdown show the name it was built with.
+							{ onCommit: () => this.updateIfRenamed(profile.name, builtName) },
+						),
 						this.dropdownRow('Provider', 'Which provider generates this narrator\'s audio.', providerOptions, () => profile.providerId, (value) => {
 							void this.changeProfileProvider(profile, value);
 						}),

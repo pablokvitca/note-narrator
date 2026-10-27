@@ -34,9 +34,10 @@ export class ProvidersSection extends SettingsSection {
 	}
 
 	private providerPage(provider: ProviderEntry): SettingDefinitionPage {
+		const builtName = provider.name;
 		return {
 			type: 'page',
-			name: provider.name,
+			name: builtName,
 			desc: `${PROVIDER_TYPE_LABELS[provider.type]}${this.providerHasCredentials(provider) ? '' : ` (no ${credentialsLabel(provider.type)} set)`}`,
 			status: () => (this.providerHasCredentials(provider) ? null : 'warning'),
 			items: [
@@ -44,9 +45,16 @@ export class ProvidersSection extends SettingsSection {
 					type: 'group',
 					heading: 'Connection',
 					items: [
-						this.textRow('Name', 'How this provider is listed here and when choosing a provider for a profile.', () => provider.name, (value) => {
-							provider.name = value.trim() || provider.name;
-						}),
+						this.textRow(
+							'Name',
+							'How this provider is listed here and when choosing a provider for a profile.',
+							() => provider.name,
+							(value) => {
+								provider.name = value.trim() || provider.name;
+							},
+							// The list, this page's title and the profiles' Provider dropdowns show the name it was built with.
+							{ onCommit: () => this.updateIfRenamed(provider.name, builtName) },
+						),
 						this.dropdownRow('Type', 'Which text to speech service this provider connects to.', PROVIDER_TYPE_LABELS, () => provider.type, (value) =>
 							void this.changeProviderType(provider, value as ProviderType),
 						),
