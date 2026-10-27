@@ -6,6 +6,7 @@ import { DEFAULT_SETTINGS, NoteNarratorSettings } from '../../src/settings/setti
 import { migrateProfileSettings } from '../../src/settings/profiles';
 import { extractFrontmatterYaml, stripFrontmatter } from '../../src/text/text-utils';
 import { savedAudioFreshness } from '../../src/engine/saved-audio-freshness';
+import { readWavFormat, wavPcmData } from '../../src/engine/wav';
 import { backgroundButtonSpec } from '../../src/ui/background-button';
 import { editorTextForNote, savedAudioPanelUpdate } from '../../src/ui/panel-decisions';
 import { ProviderType } from '../../src/settings/profiles';
@@ -27,20 +28,26 @@ const fakes = vi.hoisted(() => ({
 	/** When true, the voice name lookup a save starts with stays pending until the test calls releaseVoiceLabels(). */
 	holdVoiceLabels: false,
 	heldVoiceLabels: [] as (() => void)[],
+	/** The narrator's audio format: with 'wav', every chunk is a WAV file holding CHUNK_BYTES of samples. */
+	format: 'mp3',
 }));
 
-vi.mock('../../src/tts/registry', () => ({
-	getProviderCredentials: () => ({ type: ProviderType.ElevenLabs, apiKey: 'key' }),
-	providerOutputFormat: () => 'mp3',
-	missingCredentialsMessage: () => 'No API key.',
-	resolveVoiceLabel: () =>
-		fakes.holdVoiceLabels ? new Promise<string>((resolve) => fakes.heldVoiceLabels.push(() => resolve('Voice'))) : Promise.resolve('Voice'),
-	createTTSProvider: () => ({
-		outputFormat: 'mp3',
-		synthesize: (text: string) =>
-			new Promise<ArrayBuffer>((resolve) => fakes.synthCalls.push({ text, resolve: () => resolve(new ArrayBuffer(8)) })),
-	}),
-}));
+vi.mock('../../src/tts/registry', async () => {
+	const { wrapPcmAsWav } = await import('../../src/engine/wav');
+	const chunkAudio = () => (fakes.format === 'wav' ? wrapPcmAsWav(new ArrayBuffer(8), { sampleRate: 24000, channels: 1, bitsPerSample: 16 }) : new ArrayBuffer(8));
+	return {
+		getProviderCredentials: () => ({ type: ProviderType.ElevenLabs, apiKey: 'key' }),
+		providerOutputFormat: () => fakes.format,
+		missingCredentialsMessage: () => 'No API key.',
+		resolveVoiceLabel: () =>
+			fakes.holdVoiceLabels ? new Promise<string>((resolve) => fakes.heldVoiceLabels.push(() => resolve('Voice'))) : Promise.resolve('Voice'),
+		createTTSProvider: () => ({
+			outputFormat: fakes.format,
+			synthesize: (text: string) =>
+				new Promise<ArrayBuffer>((resolve) => fakes.synthCalls.push({ text, resolve: () => resolve(chunkAudio()) })),
+		}),
+	};
+});
 
 vi.mock('../../src/engine/audio-utils', async (importOriginal) => ({
 	...(await importOriginal<typeof import('../../src/engine/audio-utils')>()),
@@ -169,6 +176,22 @@ class FakeVault {
 		}
 	}
 
+	/** Renames one file the way Obsidian does: the TFile keeps its identity, with its path updated. */
+	rename(oldPath: string, newPath: string): void {
+		const file = this.file(oldPath);
+		for (const map of [this.text, this.binary, this.cache] as Map<string, unknown>[]) {
+			if (!map.has(oldPath)) continue;
+			map.set(newPath, map.get(oldPath));
+			map.delete(oldPath);
+		}
+		this.files.delete(oldPath);
+		this.files.set(newPath, file);
+		file.path = newPath;
+		file.extension = newPath.split('.').pop() ?? '';
+		file.basename = newPath.replace(/^.*\//, '').replace(/\.[^.]+$/, '');
+		for (const handler of this.renameHandlers) handler(file, oldPath);
+	}
+
 	/** Sets a note's text, as an edit in the editor would; the metadata cache lags until refreshCache(). */
 	write(path: string, content: string): void {
 		this.text.set(path, content);
@@ -232,6 +255,10 @@ class FakeVault {
 			},
 			fileManager: {
 				generateMarkdownLink: (f: TFile) => `[[${f.path}]]`,
+				renameFile: (f: TFile, newPath: string) => {
+					this.rename(f.path, newPath);
+					return Promise.resolve();
+				},
 				trashFile: (f: TFile) => {
 					this.trash(f.path);
 					return Promise.resolve();
@@ -290,6 +317,7 @@ beforeEach(() => {
 	fakes.synthCalls.length = 0;
 	fakes.holdVoiceLabels = false;
 	fakes.heldVoiceLabels.length = 0;
+	fakes.format = 'mp3';
 	FakeAudio.instances = [];
 	Notice.messages = [];
 	vault = new FakeVault();
@@ -1348,5 +1376,47 @@ describe('Reader end to end: the limit on unsaved finished background jobs', () 
 		await finishNotes(2, { saveAudioFile: true, linkAudioInNote: true, maxUnsavedBackgroundJobs: 1 });
 
 		expect(cards()).toEqual(['B']);
+	});
+});
+
+describe('Reader end to end: a narrator whose audio is WAV', () => {
+	beforeEach(() => {
+		fakes.format = 'wav';
+	});
+
+	it('saves one .wav file holding every chunk, and plays it back chunk by chunk', async () => {
+		reader.generateNoteInBackground(vault.view('Note.md'));
+		await settle();
+		await finishGenerating();
+		const chunkCount = reader.getState().backgroundJobs[0]?.chunkCount ?? 0;
+		expect(chunkCount).toBeGreaterThan(1);
+		const info = await reader.getAudioInfo(vault.file('Note.md'));
+		if (!info) throw new Error('expected saved audio');
+		expect(info.audioFile.extension).toBe('wav');
+		const saved = vault.binary.get(info.audioFile.path)!;
+		expect(readWavFormat(saved)).not.toBeNull();
+		expect(wavPcmData(saved).byteLength).toBe(chunkCount * CHUNK_BYTES);
+		reader.discardBackgroundJob(reader.getState().backgroundJobs[0]?.id ?? -1);
+
+		void reader.playSavedFile(info.audioFile, vault.file('Note.md'));
+		await settle();
+
+		expect(reader.getState().chunkCount).toBe(chunkCount);
+		expect(FakeAudio.instances).toHaveLength(1);
+	});
+
+	it('renames the note\'s old .mp3 to .wav in Replace mode, and links it', async () => {
+		vault.binary.set('Note (Voice).mp3', new ArrayBuffer(1));
+		const frontmatter = `---\n${DEFAULT_SETTINGS.audioLinkProperty}: "[[Note (Voice).mp3]]"\n${DEFAULT_SETTINGS.audioHashProperty}: v2:stale\n${DEFAULT_SETTINGS.audioPathProperty}: Note (Voice).mp3\n---\n`;
+		vault.write('Note.md', `${frontmatter}${NOTE}`);
+		vault.refreshCache('Note.md');
+
+		reader.generateNoteInBackground(vault.view('Note.md'));
+		await settle();
+		await finishGenerating();
+
+		expect([...vault.binary.keys()]).toEqual(['Note (Voice).wav']);
+		expect(vault.frontmatter('Note.md')?.[DEFAULT_SETTINGS.audioPathProperty]).toBe('Note (Voice).wav');
+		expect(await reader.getAudioStatus(vault.file('Note.md'))).toBe('up-to-date');
 	});
 });

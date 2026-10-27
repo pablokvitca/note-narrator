@@ -43,15 +43,16 @@ Note Narrator uses only Obsidian's cross-platform APIs, so every feature is the 
 
 | | ElevenLabs | OpenAI | Google Gemini | Apple OS (Local) |
 | --- | --- | --- | --- | --- |
-| Status | ✅ Available | ✅ Available | 🔜 Planned | 🔜 Planned |
+| Status | ✅ Available | ✅ Available | ✅ Available (preview models) | 🔜 Planned |
 | Platforms | All | All | All | Apple devices only |
 | Needs an account and API key | Yes | Yes | Yes | No |
 | Needs an internet connection | Yes | Yes | Yes | No |
 | Costs | Credits on your ElevenLabs plan | OpenAI's API pricing | Google's API pricing | Free |
-| Voices | Your account's voices | 13 built-in voices | 🔜 | 🔜 |
-| Models | Eleven v3, Eleven Multilingual v2, Eleven Flash v2.5 | GPT-4o mini TTS, TTS-1, TTS-1 HD | 🔜 | 🔜 |
-| Voice settings | Stability, similarity | Speaking speed, instructions | 🔜 | 🔜 |
-| Parallel generation | Yes, with automatic retry when rate-limited | Yes, with automatic retry when rate-limited | 🔜 | 🔜 |
+| Saved audio | `.mp3` | `.mp3` | `.wav` | 🔜 |
+| Voices | Your account's voices | 13 built-in voices | 30 prebuilt voices | 🔜 |
+| Models | Eleven v3, Eleven Multilingual v2, Eleven Flash v2.5 | GPT-4o mini TTS, TTS-1, TTS-1 HD | Gemini 2.5 Flash TTS, Gemini 2.5 Pro TTS | 🔜 |
+| Voice settings | Stability, similarity | Speaking speed, instructions | Instructions | 🔜 |
+| Parallel generation | Yes, with automatic retry when rate-limited | Yes, with automatic retry when rate-limited | Yes, with automatic retry when rate-limited | 🔜 |
 
 Planned providers are on the [Roadmap](https://publish.obsidian.md/pablokvitca-plugin-note-narrator/note-narrator/roadmap). Plans can change.
 
@@ -82,9 +83,10 @@ Obsidian asks plugins to be clear about what they do with your data. For Note Na
   - **Naming a saved audio file** after its voice: sends your API key and the voice ID, each time audio is saved (including automatic saves).
   - Replaying saved audio needs no network access and uses no credits.
   - **With an OpenAI provider** instead, reading and regenerating send the same text, voice and model settings and your API key to **OpenAI (`api.openai.com`)**, under OpenAI's [Terms of Use](https://openai.com/policies/terms-of-use) and [Privacy Policy](https://openai.com/policies/privacy-policy), and OpenAI charges for it. Its voices are a fixed list, so nothing is sent to list or name them.
+  - **With a Google Gemini provider**, they go to **Google (`generativelanguage.googleapis.com`)** instead, under the [Gemini API Additional Terms](https://ai.google.dev/gemini-api/terms) (on the free tier, Google may use what you send to improve its products), and Google charges for it on paid tiers. Its voices are a fixed list too.
 - **What is read.** The text sent is the note or selection after Markdown is stripped, plus the note title and properties if you enabled those. **Anything you read leaves your device and is processed by ElevenLabs** under their [Terms of Service](https://elevenlabs.io/terms-of-use) and [Privacy Policy](https://elevenlabs.io/privacy-policy). The plugin author has no control over how ElevenLabs stores or uses that data. Do not read notes containing text you are not willing to send to them.
 - **Your API key** is stored in Obsidian's built-in secret storage, not in the plugin's `data.json`. Only the name of the secret is saved.
-- **Files it writes.** Settings in the plugin's `data.json`. If you turn on saving: `.mp3` files in your vault (next to the note, or in a folder you choose) and, with linking on, a few properties in the note's frontmatter. **Clear Note Narrator files** moves the linked `.mp3` to the trash (following your vault's deletion setting) and removes those properties. The plugin does not read or write files outside your vault.
+- **Files it writes.** Settings in the plugin's `data.json`. If you turn on saving: `.mp3` files (`.wav` with Google Gemini) in your vault (next to the note, or in a folder you choose) and, with linking on, a few properties in the note's frontmatter. **Clear Note Narrator files** moves the linked audio file to the trash (following your vault's deletion setting) and removes those properties. The plugin does not read or write files outside your vault.
 - **Other notes it looks at.** Only one thing, on by default: before replacing or trashing a note's saved audio, it checks the other notes' Note Narrator audio path property, from Obsidian's metadata cache and never the notes' text, so a copied note doesn't overwrite or trash audio it shares with the original. That check lists every note in your vault, which is why Obsidian's plugin scanner reports "vault enumeration". Nothing it sees leaves your device. Turning off **Protect audio shared with copied notes** (Files tab) skips it, but then regenerating or clearing a copied note can overwrite or trash the original's audio.
 - **No telemetry, no ads, no self-updates.** The plugin collects no usage data, shows no advertising, and does not install or update itself or any code.
 - **Synthetic voices.** The audio is AI-generated. If you share it, consider saying so, and follow ElevenLabs' rules on voice rights and permitted content (see their [Prohibited Use Policy](https://elevenlabs.io/use-policy)).
