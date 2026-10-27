@@ -71,6 +71,12 @@ describe('requestWithRetry', () => {
 		expect(waits).toEqual([5000]);
 	});
 
+	it("caps the wait the service asks for at the policy's longest backoff", async () => {
+		const send = vi.fn().mockResolvedValueOnce(response(429, { 'retry-after': '120' })).mockResolvedValueOnce(response(200));
+		await requestWithRetry('Service', send, { ...POLICY, requestedDelayMs: (r) => Number(getHeader(r, 'retry-after')) * 1000 });
+		expect(waits).toEqual([30000]);
+	});
+
 	it('uses its own test for a rate limit when it has one', async () => {
 		const send = vi.fn().mockResolvedValueOnce(response(400)).mockResolvedValueOnce(response(200));
 		expect((await requestWithRetry('Service', send, { ...POLICY, isRateLimited: (r) => r.status === 400 })).status).toBe(200);

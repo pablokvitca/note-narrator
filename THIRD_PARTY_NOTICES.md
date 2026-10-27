@@ -30,7 +30,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 ## Services and trademarks
 
-Note Narrator sends text to the [ElevenLabs](https://elevenlabs.io) text to speech API when you ask it to read. No ElevenLabs software or code is included. "ElevenLabs" and "Obsidian" are trademarks of their respective owners. Note Narrator is an independent project and is not affiliated with, endorsed by, or sponsored by either company.
+Note Narrator sends text to the text to speech API of the provider you set up, [ElevenLabs](https://elevenlabs.io), [OpenAI](https://openai.com), [Google Gemini](https://ai.google.dev) or [Amazon Polly](https://aws.amazon.com/polly/), when you ask it to read. No software or code from any of them is included: the plugin talks to their public APIs directly. "ElevenLabs", "OpenAI", "Google", "Gemini", "Amazon Web Services", "Amazon Polly" and "Obsidian" are trademarks of their respective owners. Note Narrator is an independent project and is not affiliated with, endorsed by, or sponsored by any of them.
 
 ## Development tools
 
