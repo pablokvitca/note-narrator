@@ -51,8 +51,8 @@ export class ProvidersSection extends SettingsSection {
 			status: () => (this.providerHasCredentials(provider) ? null : 'warning'),
 			items: [
 				{
+					// General settings at the top of the page, without a heading.
 					type: 'group',
-					heading: 'Connection',
 					items: [
 						this.textRow(
 							'Name',

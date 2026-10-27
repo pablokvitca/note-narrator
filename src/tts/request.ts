@@ -58,9 +58,11 @@ export async function requestWithRetry(
 
 		if (attempt < policy.maxRetries && isRateLimited(response)) {
 			options.onRateLimited?.();
+			// A wait the service asks for is capped too, so an unusually long one can't hold a timer (and
+			// this read) long after the plugin is disabled.
 			const requested = policy.requestedDelayMs?.(response);
 			const backoff = Math.min(policy.baseBackoffMs * 2 ** attempt, policy.maxBackoffMs);
-			await sleep(requested ?? backoff * (0.8 + Math.random() * 0.4));
+			await sleep(requested != null ? Math.min(requested, policy.maxBackoffMs) : backoff * (0.8 + Math.random() * 0.4));
 			continue;
 		}
 
