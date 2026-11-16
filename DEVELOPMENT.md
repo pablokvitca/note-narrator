@@ -41,4 +41,4 @@ Reading costs money with every provider. A separate test vault with **Auto-gener
 
 ## Releases
 
-Releases are built by GitHub Actions from tags; never attach a hand-built `main.js`. The branching model (`main`, `next/X.Y`, `release/X.Y`), the version-bump rule and the beta and stable procedures are documented in [AGENTS.md](AGENTS.md) and `.claude/skills/release/`.
+Releases are built by GitHub Actions from tags; never attach a hand-built `main.js`. The branching model (`main`, `next/X.Y`, `release/X.Y`), the version-bump rule and the beta and stable procedures are shared by all the maintainer's plugins and live in the maintainer's `obsidian-plugin-standards` repository, kept next to this one (see the "Shared standards" section of [AGENTS.md](AGENTS.md)). This plugin's own release notes are in `.claude/project/`.

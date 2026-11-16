@@ -1,33 +1,15 @@
 ---
 name: release
-description: Publish a release of Note Narrator. `/release beta` pushes a beta build for BRAT testers; `/release stable` cuts a stable release (Kaneo release checklist, guideline review, version bump, tag, GitHub release, main fast-forward). Use for EVERY release and for any push to a next/** or release/** branch, never run the release commands by hand.
+description: "Publish a release of the Obsidian plugin in the current repository. `/release beta` pushes a beta build for BRAT testers; `/release stable` cuts a stable release (Kaneo release checklist, guideline review, version bump, tag, GitHub release, main fast-forward). Use for EVERY release and for any push to a next/** or release/** branch, never run the release commands by hand."
 argument-hint: "beta | stable [X.Y.Z]"
 ---
 
-# Release
+# Release (pointer)
 
-The single entry point for releasing this plugin. The detailed procedure lives in the files next to this one and is only loaded when you release; do not copy it into `AGENTS.md`.
+This file is only a pointer. The real skill is shared by every plugin and lives in the `obsidian-plugin-standards` repository, next to this one.
 
-## 1. Pick the mode
+1. Find it: the plugin repository root is `git rev-parse --show-toplevel`; the skill is `../obsidian-plugin-standards/skills/release/SKILL.md` relative to that root. Inside a git worktree, use the main checkout instead: `dirname "$(git rev-parse --path-format=absolute --git-common-dir)"` is its root, and the standards repository is that root's sibling.
+2. Read that `SKILL.md` and follow it, using this repository's `.claude/project/` files (`profile.md`, and `release.md` if present) for everything project-specific.
+3. If the standards repository is not there, stop and tell the user to clone it next to the plugin repository. Do not improvise the release from memory.
 
-The argument is `beta` or `stable` (optionally followed by the target version for `stable`, e.g. `/release stable 0.18.0`).
-
-- No argument, or anything else: ask the user which they want. Do not guess.
-- **`beta`**: read [beta.md](beta.md) and follow it.
-- **`stable`**: read [stable.md](stable.md) and follow it. A stable release is gated: only continue when the user explicitly asked for a stable release (or shipping) in this conversation. "The fix is done" or "tests pass" is never a request.
-
-Both modes rely on the rules and background in [reference.md](reference.md): read it first if you are unsure about the branching model, the version-bump rule, how betas are built, or the special cases (rebase-merged PRs, force pushes, immutable releases).
-
-## 2. Common preconditions (both modes)
-
-1. `git branch --show-current`: must be a tracking branch, `next/X.Y` (new minor) or `release/X.Y` (patch). On `main` or any other branch, stop and tell the user.
-2. `git fetch origin` and check the branch is not behind its remote.
-3. `git status --short`: if there are uncommitted changes, show them and ask whether to commit them as part of this release. Never commit unrelated changes. Commit messages end with the co-author trailer given in the session's attribution instructions.
-4. `npm run build && npm run lint && npm test` must pass before anything is pushed or tagged.
-
-## 3. Hard rules
-
-- Never create a version tag, run `npm version`, or touch `main` in `beta` mode.
-- Never create a beta tag or release by hand: pushing a commit is what publishes a beta.
-- Never push, tag or release without the user's request in this conversation. A `beta` push publishes something, so it needs the user asking for a beta (or for a push to a tracking branch).
-- Report what actually happened: "pushed a beta for testing", not "released", unless the stable steps ran.
+Never copy the shared skill's content into this file. Fixes and improvements go to the standards repository through a pull request; plugin-only notes go in `.claude/project/release.md`.
