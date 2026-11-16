@@ -1,5 +1,9 @@
 # Obsidian community plugin
 
+## Shared standards
+
+The rules, branch model, task tracking, release procedure and review guidelines shared by all the owner's Obsidian plugins live in the sibling repository [`../obsidian-plugin-standards`](../obsidian-plugin-standards/AGENTS.md) (start at its `AGENTS.md`). This file only holds what is specific to Note Narrator. The facts the shared skills need about this plugin, and its release notes, standing waivers and guideline overrides, are in [`.claude/project/`](.claude/project/) (`profile.md`, `release.md`, `guidelines.md`); the skills in `.claude/skills/` are pointers to the shared ones. Changes to shared rules or skills are made in `obsidian-plugin-standards` through a pull request, never here.
+
 ## Project overview
 
 - Target: Obsidian Community Plugin (TypeScript → bundled JavaScript).
@@ -80,11 +84,8 @@ npm run build
 
 ## Testing
 
-- Manual install for testing: copy `main.js`, `manifest.json`, `styles.css` (if any) to:
-    ```
-    <Vault>/.obsidian/plugins/<plugin-id>/
-    ```
-- Reload Obsidian and enable the plugin in **Settings → Community plugins**.
+- Test only in this plugin's own test vault, `note-narrator-test-vault` (sibling folder); see [test vaults](../obsidian-plugin-standards/docs/test-vaults.md).
+- Every read costs money with the configured provider: keep **Auto-generate on open** off in the test vault unless that flow is under test.
 
 ## Commands & settings
 
@@ -95,20 +96,12 @@ npm run build
 
 ## Versioning & releases
 
-**Every release goes through the `release` skill** (`.claude/skills/release/`): `/release beta` publishes a beta build for BRAT testers, `/release stable` cuts a stable release. Invoke it whenever the user asks to release, ship, publish a beta or push a tracking branch. The branching model, the version-bump rule, the beta and stable procedures and the release checklist live in the skill and are only loaded when you use it; do not duplicate them here.
-
-Rules that hold even when you are "just pushing":
-
-- **Every push to a `next/**` or `release/**` branch publishes a beta build**, so treat any such push as a beta release and do it through `/release beta`.
-- **Never run `npm version`, create or push a version tag, or touch `main` outside `/release stable`**, and only when the user explicitly asked for a stable release in that conversation. "The fix is done" and "tests pass" are never that request.
-- The first commit of new work on a tracking branch must bump `manifest.json`'s version (the skill explains how and why).
-- Say "pushed a beta for testing", not "released" or "shipped", unless the stable steps ran.
+Every release, and every push to a `next/**` or `release/**` branch, goes through the shared `release` skill (`/release beta`, `/release stable`). Branch model and version-bump rule: [branching and releases](../obsidian-plugin-standards/docs/branching-and-releases.md). This plugin's version lines, release history and exceptions: [`.claude/project/profile.md`](.claude/project/profile.md) and [`.claude/project/release.md`](.claude/project/release.md).
 
 ## Task tracking
 
-- Tasks live in **Kaneo**, project "Obsidian Plugin: Note Narrator". Always access it through the `kaneo` MCP server (tools `mcp__kaneo__*`). `search` needs the project's workspace id: read it from the project (`list_workspaces` and `list_projects`). Ticket ids are `OBNN-N`; use them in branch names and commit messages.
-- Linear is retired for this plugin; do not create Linear issues. Older commits, PRs and `guidelines.md` cite Linear ids (`OBS-N`). The migrated Kaneo task keeps that id in its `Linear-Migration-ID` custom field. `search` does not look at custom fields, so to find one, search by the task's title, or read the field with `get_task_custom_field_values`.
-- Releases are milestones: the `Milestone` dropdown custom field on each task. The MCP tools cannot add dropdown options, so ask the user to add a missing version in the Kaneo UI.
+- Tasks live in the Kaneo project "Obsidian Plugin: Note Narrator", ticket key `OBNN`, accessed through the `kaneo` MCP server. How tasks, statuses, milestones and labels work, and how to write about the tracker: [task tracking](../obsidian-plugin-standards/docs/task-tracking.md).
+- Older commits, pull requests and `.claude/project/guidelines.md` cite ids from the retired tracker (`OBS-N`). The migrated Kaneo task keeps that id in its `Linear-Migration-ID` custom field; `search` does not look at custom fields, so search by the task's title, or read the field with `get_task_custom_field_values`.
 
 ## Security, privacy, and compliance
 
@@ -142,12 +135,8 @@ Follow Obsidian's **Developer Policies** and **Plugin Guidelines**. In particula
 
 ## Coding conventions
 
-- TypeScript with `"strict": true` preferred.
-- **Keep `main.ts` minimal**: Focus only on plugin lifecycle (onload, onunload, addCommand calls). Delegate all feature logic to separate modules.
-- **Split large files**: If any file exceeds ~200-300 lines, consider breaking it into smaller, focused modules.
+- Tooling and code rules shared by all the plugins (strict TypeScript, a lifecycle-only `main.ts`, file size, bundling, no Node or Electron APIs, CSS and UI text rules): [repository conventions](../obsidian-plugin-standards/docs/repo-conventions.md).
 - **Use clear module boundaries**: Each file should have a single, well-defined responsibility.
-- Bundle everything into `main.js` (no unbundled runtime deps).
-- Avoid Node/Electron APIs if you want mobile compatibility; set `isDesktopOnly` accordingly.
 - Prefer `async/await` over promise chains; handle errors gracefully.
 
 ## Mobile
