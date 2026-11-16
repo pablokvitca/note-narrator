@@ -95,7 +95,7 @@ npm run build
 
 ## Versioning & releases
 
-**Every release goes through the `release` skill** (`.claude/skills/release/`): `/release beta` publishes a beta build for BRAT testers, `/release stable` cuts a stable release. Invoke it whenever the user asks to release, ship, publish a beta or push a tracking branch. The branching model, the version-bump rule, the beta and stable procedures and the Linear release checklist live in the skill and are only loaded when you use it; do not duplicate them here.
+**Every release goes through the `release` skill** (`.claude/skills/release/`): `/release beta` publishes a beta build for BRAT testers, `/release stable` cuts a stable release. Invoke it whenever the user asks to release, ship, publish a beta or push a tracking branch. The branching model, the version-bump rule, the beta and stable procedures and the release checklist live in the skill and are only loaded when you use it; do not duplicate them here.
 
 Rules that hold even when you are "just pushing":
 
@@ -103,6 +103,12 @@ Rules that hold even when you are "just pushing":
 - **Never run `npm version`, create or push a version tag, or touch `main` outside `/release stable`**, and only when the user explicitly asked for a stable release in that conversation. "The fix is done" and "tests pass" are never that request.
 - The first commit of new work on a tracking branch must bump `manifest.json`'s version (the skill explains how and why).
 - Say "pushed a beta for testing", not "released" or "shipped", unless the stable steps ran.
+
+## Task tracking
+
+- Tasks live in the self-hosted **Kaneo** (MCP server `kaneo`, tools `mcp__kaneo__*`), workspace QuantumKaneo (`3qw8FRDJUrFJ3NScXHFQ0gW1HDNosbhf`; `search` needs it), project "Obsidian Plugin: Note Narrator" (`dy2omrakaedxbijf6srgsy7e`). Ticket ids are `OBNN-N`; use them in branch names and commit messages.
+- Linear is retired for this plugin; do not create Linear issues. Older commits, PRs and `guidelines.md` cite Linear ids (`OBS-N`). The migrated Kaneo task keeps that id in its `Linear-Migration-ID` custom field. `search` does not look at custom fields, so to find one, search by the task's title, or read the field with `get_task_custom_field_values`.
+- Releases are milestones: the `Milestone` dropdown custom field on each task. The MCP tools cannot add dropdown options, so ask the user to add a missing version in the Kaneo UI.
 
 ## Security, privacy, and compliance
 

@@ -1,6 +1,6 @@
 ---
 name: release
-description: Publish a release of Note Narrator. `/release beta` pushes a beta build for BRAT testers; `/release stable` cuts a stable release (Linear release checklist, guideline review, version bump, tag, GitHub release, main fast-forward). Use for EVERY release and for any push to a next/** or release/** branch, never run the release commands by hand.
+description: Publish a release of Note Narrator. `/release beta` pushes a beta build for BRAT testers; `/release stable` cuts a stable release (Kaneo release checklist, guideline review, version bump, tag, GitHub release, main fast-forward). Use for EVERY release and for any push to a next/** or release/** branch, never run the release commands by hand.
 argument-hint: "beta | stable [X.Y.Z]"
 ---
 
